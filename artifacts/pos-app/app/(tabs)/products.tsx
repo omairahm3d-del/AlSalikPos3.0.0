@@ -176,7 +176,6 @@ export default function ProductsScreen() {
         {
           backgroundColor: colors.background,
           paddingTop: topPadding,
-          paddingBottom: Platform.OS === "web" ? 34 : 0,
         },
       ]}
     >
@@ -207,7 +206,7 @@ export default function ProductsScreen() {
           {
             backgroundColor: colors.primary,
             borderRadius: 28,
-            bottom: insets.bottom + (Platform.OS === "web" ? 44 : 20),
+            bottom: insets.bottom + 20,
           },
         ]}
       >

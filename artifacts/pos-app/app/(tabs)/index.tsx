@@ -172,7 +172,6 @@ export default function POSScreen() {
         {
           backgroundColor: colors.background,
           paddingTop: Platform.OS === "web" ? insets.top + 8 : 0,
-          paddingBottom: Platform.OS === "web" ? 34 : 0,
         },
       ]}
     >

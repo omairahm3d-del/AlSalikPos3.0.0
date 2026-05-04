@@ -66,7 +66,6 @@ export default function HistoryScreen() {
         {
           backgroundColor: colors.background,
           paddingTop: topPadding,
-          paddingBottom: Platform.OS === "web" ? 34 : 0,
         },
       ]}
     >
