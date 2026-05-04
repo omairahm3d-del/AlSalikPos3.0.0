@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -29,6 +28,15 @@ interface Props {
   onClose: () => void;
 }
 
+type PayMethod = "Cash" | "Card" | "Bank Transfer" | "Cheque";
+
+const PAYMENT_METHODS: { key: PayMethod; icon: "dollar-sign" | "credit-card" | "repeat" | "file-text" }[] = [
+  { key: "Cash", icon: "dollar-sign" },
+  { key: "Card", icon: "credit-card" },
+  { key: "Bank Transfer", icon: "repeat" },
+  { key: "Cheque", icon: "file-text" },
+];
+
 export function CreditCollectionModal({ visible, onClose }: Props) {
   const colors = useColors();
   const { loadCustomers, loadSales, recordCreditPayment } = useDatabase();
@@ -41,15 +49,10 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
   const [selected, setSelected] = useState<CreditEntry | null>(null);
   const [payAmount, setPayAmount] = useState("");
   const [payNote, setPayNote] = useState("");
-  const [payMethod, setPayMethod] = useState<"Cash" | "Card" | "Bank Transfer" | "Cheque">("Cash");
+  const [payMethod, setPayMethod] = useState<PayMethod>("Cash");
   const [saving, setSaving] = useState(false);
-
-  const PAYMENT_METHODS = [
-    { key: "Cash" as const, icon: "dollar-sign" as const },
-    { key: "Card" as const, icon: "credit-card" as const },
-    { key: "Bank Transfer" as const, icon: "repeat" as const },
-    { key: "Cheque" as const, icon: "file-text" as const },
-  ];
+  const [errorMsg, setErrorMsg] = useState("");
+  const [successInfo, setSuccessInfo] = useState<{ name: string; amount: number; method: PayMethod } | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -70,6 +73,9 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
       setSelected(null);
       setPayAmount("");
       setPayNote("");
+      setPayMethod("Cash");
+      setErrorMsg("");
+      setSuccessInfo(null);
       fetchData();
     }
   }, [visible]);
@@ -92,7 +98,7 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
     const byInvoice = allSales.find(
       (s) => s.invoiceNumber?.toLowerCase() === q && s.paymentMethod === "Credit" && !s.isRefund
     );
-    if (byInvoice && byInvoice.customerId) {
+    if (byInvoice?.customerId) {
       const cust = allCustomers.find((c) => c.id === byInvoice.customerId);
       if (cust && cust.creditBalance > 0) {
         return [{
@@ -117,32 +123,43 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
     setSelected(entry);
     setPayAmount(entry.customer.creditBalance.toFixed(2));
     setPayNote("");
+    setPayMethod("Cash");
+    setErrorMsg("");
   };
 
   const handleRecordPayment = async () => {
     if (!selected) return;
-    const amt = parseFloat(payAmount);
+    setErrorMsg("");
+
+    const amt = Math.round(parseFloat(payAmount) * 100) / 100;
+    const balance = Math.round(selected.customer.creditBalance * 100) / 100;
+
     if (isNaN(amt) || amt <= 0) {
-      Alert.alert("Invalid Amount", "Please enter a valid payment amount.");
+      setErrorMsg("Please enter a valid payment amount.");
       return;
     }
-    if (amt > selected.customer.creditBalance) {
-      Alert.alert("Exceeds Balance", `Payment cannot exceed outstanding balance of ${formatCurrency(selected.customer.creditBalance)}.`);
+    if (amt > balance + 0.005) {
+      setErrorMsg(`Payment (${formatCurrency(amt)}) cannot exceed outstanding balance of ${formatCurrency(balance)}.`);
       return;
     }
+
+    const custName = selected.customer.name;
+    const custId = selected.customer.id;
+    const method = payMethod;
+
     setSaving(true);
     try {
-      const noteText = [payMethod, payNote.trim()].filter(Boolean).join(" — ");
-      await recordCreditPayment(selected.customer.id, amt, noteText || "Credit payment collected");
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const noteText = [method, payNote.trim()].filter(Boolean).join(" — ");
+      await recordCreditPayment(custId, amt, noteText || "Credit payment collected");
+      try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch { /* ignore on web */ }
+      setSuccessInfo({ name: custName, amount: amt, method });
       await fetchData();
       setSelected(null);
       setPayAmount("");
       setPayNote("");
       setPayMethod("Cash");
-      Alert.alert("Payment Recorded", `${formatCurrency(amt)} collected from ${selected.customer.name} via ${payMethod}.`);
     } catch (e: any) {
-      Alert.alert("Error", e.message || "Failed to record payment.");
+      setErrorMsg(e?.message || "Failed to record payment. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -176,12 +193,12 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
       );
     }
     return (
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {results.map((entry) => (
           <TouchableOpacity
             key={entry.customer.id}
             onPress={() => handleSelectEntry(entry)}
-            style={[s.resultCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
+            style={[s.resultCard, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius }]}
           >
             <View style={[s.avatar, { backgroundColor: colors.primary + "20" }]}>
               <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 16 }}>
@@ -192,7 +209,7 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
               <Text style={[s.custName, { color: colors.foreground }]}>{entry.customer.name}</Text>
               {!!entry.customer.phone && (
                 <Text style={[s.custSub, { color: colors.mutedForeground }]}>
-                  <Feather name="phone" size={11} /> {entry.customer.phone}
+                  {entry.customer.phone}
                 </Text>
               )}
               <Text style={[s.custSub, { color: colors.mutedForeground }]}>
@@ -215,9 +232,11 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
   const renderPaymentForm = () => {
     if (!selected) return null;
     const cust = selected.customer;
+    const balance = Math.round(cust.creditBalance * 100) / 100;
     return (
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView showsVerticalScrollIndicator={false}>
+      <View style={{ flex: 1 }}>
+        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 8 }}>
+
           {/* Customer card */}
           <View style={[s.custCard, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}>
             <View style={[s.avatar, { backgroundColor: colors.primary + "20" }]}>
@@ -231,7 +250,7 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
             </View>
             <View style={s.balanceCol}>
               <Text style={[s.balanceLabel, { color: colors.mutedForeground }]}>Outstanding</Text>
-              <Text style={[s.balanceAmt, { color: colors.destructive }]}>{formatCurrency(cust.creditBalance)}</Text>
+              <Text style={[s.balanceAmt, { color: colors.destructive }]}>{formatCurrency(balance)}</Text>
             </View>
           </View>
 
@@ -239,7 +258,7 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
           {selected.sales.length > 0 && (
             <View style={[s.invoiceBox, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}>
               <Text style={[s.sectionLabel, { color: colors.foreground }]}>Credit Invoices</Text>
-              {selected.sales
+              {[...selected.sales]
                 .sort((a, b) => b.createdAt - a.createdAt)
                 .map((sale) => (
                   <View key={sale.id} style={[s.invoiceRow, { borderTopColor: colors.border }]}>
@@ -263,7 +282,7 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
               return (
                 <TouchableOpacity
                   key={m.key}
-                  onPress={() => setPayMethod(m.key)}
+                  onPress={() => { setPayMethod(m.key); setErrorMsg(""); }}
                   style={[s.methodBtn, {
                     borderRadius: colors.radius,
                     backgroundColor: active ? colors.primary : colors.secondary,
@@ -283,7 +302,7 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
           <Text style={[s.fieldLabel, { color: colors.mutedForeground }]}>Amount Received</Text>
           <View style={[s.amtRow, {
             backgroundColor: colors.secondary,
-            borderColor: colors.border,
+            borderColor: errorMsg ? colors.destructive : colors.border,
             borderRadius: colors.radius,
           }]}>
             <View style={[s.aedBadge, { backgroundColor: colors.primary }]}>
@@ -291,21 +310,30 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
             </View>
             <TextInput
               value={payAmount}
-              onChangeText={setPayAmount}
+              onChangeText={(v) => { setPayAmount(v); setErrorMsg(""); }}
               placeholder="0.00"
               placeholderTextColor={colors.mutedForeground}
               keyboardType="decimal-pad"
               style={[s.amtInput, { color: colors.foreground, flex: 1 }]}
             />
           </View>
+
           <TouchableOpacity
-            onPress={() => setPayAmount(cust.creditBalance.toFixed(2))}
+            onPress={() => { setPayAmount(balance.toFixed(2)); setErrorMsg(""); }}
             style={s.fullPayBtn}
           >
             <Text style={{ color: colors.primary, fontSize: 13, fontWeight: "600" }}>
-              Pay full balance ({formatCurrency(cust.creditBalance)})
+              Pay full balance ({formatCurrency(balance)})
             </Text>
           </TouchableOpacity>
+
+          {/* Inline error */}
+          {!!errorMsg && (
+            <View style={[s.errorBox, { backgroundColor: colors.destructive + "12", borderColor: colors.destructive + "40", borderRadius: colors.radius }]}>
+              <Feather name="alert-circle" size={14} color={colors.destructive} />
+              <Text style={{ color: colors.destructive, fontSize: 13, flex: 1, marginLeft: 6 }}>{errorMsg}</Text>
+            </View>
+          )}
 
           <Text style={[s.fieldLabel, { color: colors.mutedForeground }]}>Note (optional)</Text>
           <TextInput
@@ -322,9 +350,10 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
           />
         </ScrollView>
 
-        <View style={s.actions}>
+        {/* Sticky action buttons */}
+        <View style={[s.actions, { borderTopColor: colors.border }]}>
           <TouchableOpacity
-            onPress={() => setSelected(null)}
+            onPress={() => { setSelected(null); setErrorMsg(""); }}
             disabled={saving}
             style={[s.backBtn, { borderColor: colors.border, borderRadius: colors.radius, opacity: saving ? 0.4 : 1 }]}
           >
@@ -346,18 +375,58 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
             </Text>
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     );
   };
+
+  const renderSuccess = () => {
+    if (!successInfo) return null;
+    return (
+      <View style={s.successBox}>
+        <View style={[s.successIcon, { backgroundColor: colors.success + "20" }]}>
+          <Feather name="check-circle" size={44} color={colors.success} />
+        </View>
+        <Text style={[s.successTitle, { color: colors.foreground }]}>Payment Recorded</Text>
+        <Text style={[s.successAmt, { color: colors.success }]}>{formatCurrency(successInfo.amount)}</Text>
+        <Text style={[s.successSub, { color: colors.mutedForeground }]}>
+          Collected from <Text style={{ fontWeight: "700", color: colors.foreground }}>{successInfo.name}</Text>
+        </Text>
+        <Text style={[s.successSub, { color: colors.mutedForeground }]}>
+          via <Text style={{ fontWeight: "700", color: colors.foreground }}>{successInfo.method}</Text>
+        </Text>
+
+        <View style={s.successBtns}>
+          <TouchableOpacity
+            onPress={() => setSuccessInfo(null)}
+            style={[s.anotherBtn, { borderColor: colors.border, borderRadius: colors.radius, backgroundColor: colors.secondary }]}
+          >
+            <Feather name="plus" size={15} color={colors.primary} />
+            <Text style={{ color: colors.primary, fontWeight: "600", marginLeft: 6 }}>Collect Another</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={onClose}
+            style={[s.doneBtn, { backgroundColor: colors.success, borderRadius: colors.radius }]}
+          >
+            <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  const showingSuccess = !!successInfo;
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={s.overlay}>
-        <View style={[s.sheet, { backgroundColor: colors.card, borderRadius: 20 }]}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={[s.sheet, { backgroundColor: colors.card, borderRadius: 20 }]}
+        >
           {/* Header */}
           <View style={[s.header, { borderBottomColor: colors.border }]}>
-            {selected ? (
-              <TouchableOpacity onPress={() => setSelected(null)} style={s.headerBack}>
+            {selected && !showingSuccess ? (
+              <TouchableOpacity onPress={() => { setSelected(null); setErrorMsg(""); }} style={s.headerBack}>
                 <Feather name="arrow-left" size={20} color={colors.foreground} />
               </TouchableOpacity>
             ) : (
@@ -367,9 +436,9 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
             )}
             <View style={{ flex: 1 }}>
               <Text style={[s.headerTitle, { color: colors.foreground }]}>
-                {selected ? `Collect from ${selected.customer.name}` : "Collect Credit Payment"}
+                {showingSuccess ? "Payment Confirmed" : selected ? `Collect from ${selected.customer.name}` : "Collect Credit Payment"}
               </Text>
-              {!selected && (
+              {!selected && !showingSuccess && (
                 <Text style={[s.headerSub, { color: colors.mutedForeground }]}>
                   {creditCustomers.length} customer{creditCustomers.length !== 1 ? "s" : ""} with outstanding balance
                 </Text>
@@ -380,8 +449,8 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
             </TouchableOpacity>
           </View>
 
-          {/* Search bar — only on list view */}
-          {!selected && (
+          {/* Search bar — list view only */}
+          {!selected && !showingSuccess && (
             <View style={[s.searchWrap, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius }]}>
               <Feather name="search" size={16} color={colors.mutedForeground} />
               <TextInput
@@ -402,9 +471,14 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
           )}
 
           <View style={{ flex: 1 }}>
-            {selected ? renderPaymentForm() : renderSearchResults()}
+            {showingSuccess
+              ? renderSuccess()
+              : selected
+                ? renderPaymentForm()
+                : renderSearchResults()
+            }
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
@@ -412,13 +486,13 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
 
 const s = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" },
-  sheet: { height: "92%", paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24 },
+  sheet: { maxHeight: "92%", minHeight: 400, paddingHorizontal: 16, paddingTop: 16, paddingBottom: Platform.OS === "ios" ? 0 : 16 },
   header: { flexDirection: "row", alignItems: "center", gap: 10, paddingBottom: 14, borderBottomWidth: 1, marginBottom: 12 },
   headerIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   headerBack: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
   headerTitle: { fontSize: 17, fontWeight: "700" },
   headerSub: { fontSize: 12, marginTop: 1 },
-  closeBtn: { padding: 4 },
+  closeBtn: { padding: 6 },
   searchWrap: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, marginBottom: 12 },
   searchInput: { flex: 1, fontSize: 14 },
   centerBox: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingVertical: 40 },
@@ -431,23 +505,32 @@ const s = StyleSheet.create({
   balanceCol: { alignItems: "flex-end", marginRight: 6 },
   balanceLabel: { fontSize: 10, fontWeight: "600" },
   balanceAmt: { fontSize: 15, fontWeight: "700" },
-  custCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, marginBottom: 14 },
-  invoiceBox: { padding: 14, marginBottom: 14 },
+  custCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, marginBottom: 10 },
+  invoiceBox: { padding: 14, marginBottom: 10 },
   sectionLabel: { fontSize: 13, fontWeight: "700", marginBottom: 8 },
   invoiceRow: { flexDirection: "row", alignItems: "center", paddingVertical: 8, borderTopWidth: 1 },
   invNum: { fontSize: 14, fontWeight: "600" },
   invDate: { fontSize: 12, marginTop: 2 },
   invAmt: { fontSize: 14, fontWeight: "700" },
   fieldLabel: { fontSize: 12, fontWeight: "600", marginBottom: 6, marginTop: 8 },
-  methodRow: { flexDirection: "row", gap: 8, marginBottom: 14 },
+  methodRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
   methodBtn: { flex: 1, alignItems: "center", paddingVertical: 10, borderWidth: 1, gap: 2 },
-  amtRow: { flexDirection: "row", alignItems: "center", borderWidth: 1, marginBottom: 6, overflow: "hidden" },
-  aedBadge: { paddingHorizontal: 12, paddingVertical: 14, alignItems: "center", justifyContent: "center" },
+  amtRow: { flexDirection: "row", alignItems: "center", borderWidth: 1, marginBottom: 4, overflow: "hidden" },
+  aedBadge: { paddingHorizontal: 12, paddingVertical: 16, alignItems: "center", justifyContent: "center" },
   aedText: { color: "#fff", fontWeight: "800", fontSize: 13, letterSpacing: 0.5 },
-  amtInput: { paddingVertical: 14, paddingHorizontal: 16, fontSize: 28, fontWeight: "700", textAlign: "center", marginBottom: 0 },
-  fullPayBtn: { alignItems: "center", marginBottom: 6 },
-  noteInput: { borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, marginBottom: 16 },
-  actions: { flexDirection: "row", gap: 10, marginTop: 8, paddingTop: 8 },
+  amtInput: { paddingVertical: 14, paddingHorizontal: 16, fontSize: 28, fontWeight: "700", textAlign: "center" },
+  fullPayBtn: { alignItems: "center", marginBottom: 4 },
+  errorBox: { flexDirection: "row", alignItems: "flex-start", padding: 10, borderWidth: 1, marginBottom: 4 },
+  noteInput: { borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, marginBottom: 8 },
+  actions: { flexDirection: "row", gap: 10, paddingTop: 10, borderTopWidth: 1, marginTop: 4 },
   backBtn: { flex: 1, flexDirection: "row", borderWidth: 1, paddingVertical: 14, alignItems: "center", justifyContent: "center" },
   payBtn: { flex: 2, flexDirection: "row", paddingVertical: 14, alignItems: "center", justifyContent: "center" },
+  successBox: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 24, paddingHorizontal: 16, gap: 6 },
+  successIcon: { width: 84, height: 84, borderRadius: 42, alignItems: "center", justifyContent: "center", marginBottom: 8 },
+  successTitle: { fontSize: 20, fontWeight: "700" },
+  successAmt: { fontSize: 32, fontWeight: "800", marginVertical: 4 },
+  successSub: { fontSize: 14, textAlign: "center" },
+  successBtns: { flexDirection: "row", gap: 10, marginTop: 20, width: "100%" },
+  anotherBtn: { flex: 1, flexDirection: "row", borderWidth: 1, paddingVertical: 13, alignItems: "center", justifyContent: "center" },
+  doneBtn: { flex: 1, paddingVertical: 13, alignItems: "center", justifyContent: "center" },
 });
