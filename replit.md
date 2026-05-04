@@ -33,7 +33,7 @@ The POS application is built with Expo (SDK 54) and React Native, optimized for 
 - **Tablet Layout**: Utilizes a split-panel layout for screens ≥768px wide.
 - **Dark UI Theme**: Background `#0F1117`, with specific color palettes for cards, primary actions, success, destructive actions, and warnings.
 - **UAE Standards**: Currency (AED), VAT rate (5%), and specific tax invoice formats are integrated.
-- **Receipts**: HTML-based templates for UAE Simplified Tax Invoices, bill previews, and kitchen tickets, with customization options.
+- **Receipts**: HTML-based templates for UAE Simplified Tax Invoices, bill previews, and kitchen tickets, with customization options. Invoice number printed as Code128 barcode on receipt. WhatsApp QR code linking to business phone number on receipt.
 
 ### Technical Implementations & Features
 
@@ -45,7 +45,7 @@ The POS application is built with Expo (SDK 54) and React Native, optimized for 
 - **Payment Processing**: Multiple payment methods (Card, Cash, Credit, Split), integrated loyalty points system, and refund functionality.
 - **Reporting**: Daily sales reports and Z-Reports (end-of-day summaries).
 - **Staff Management**: PIN-based login with role (admin/cashier) authentication.
-- **Barcode Scanning**: Integrated EAN-13/8, UPC-A/E, QR, Code128/39 scanning using `expo-camera`.
+- **Barcode Scanning**: Integrated EAN-13/8, UPC-A/E, QR, Code128/39 scanning using `expo-camera`. Scanning a receipt barcode (INV-*) on Register screen looks up the credit sale and opens a credit payment collection modal.
 - **Modals**: Centralized modal components for receipt preview, business settings, barcode scanning, and customer selection.
 
 ### POS App Tabs

@@ -34,6 +34,7 @@ export interface DatabaseContextValue {
   saveSale: (items: CartItem[], options: SaleOptions) => Promise<Sale>;
   loadSales: () => Promise<Sale[]>;
   loadSaleWithItems: (saleId: string) => Promise<Sale | null>;
+  loadSaleByInvoiceNumber: (invoiceNumber: string) => Promise<Sale | null>;
   loadSalesWithItemsByDateRange: (startMs: number, endMs: number) => Promise<{ sales: Sale[]; items: SaleItem[] }>;
   processRefund: (originalSaleId: string, staffId?: string, staffName?: string) => Promise<Sale>;
 

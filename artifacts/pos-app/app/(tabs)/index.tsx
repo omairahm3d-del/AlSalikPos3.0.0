@@ -49,7 +49,7 @@ export default function POSScreen() {
   const insets = useSafeAreaInsets();
   const isTablet = width >= 768;
 
-  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders } = useDatabase();
+  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment } = useDatabase();
   const { currentStaff } = useStaff();
   const {
     items: cartItems,
@@ -90,6 +90,10 @@ export default function POSScreen() {
   const [orderType, setOrderType] = useState<OrderType>("dine-in");
   const [selectedRider, setSelectedRider] = useState<Rider | null>(null);
   const [showHoldTablePicker, setShowHoldTablePicker] = useState(false);
+  const [creditPaySale, setCreditPaySale] = useState<Sale | null>(null);
+  const [creditPayCustomer, setCreditPayCustomer] = useState<Customer | null>(null);
+  const [creditPayAmount, setCreditPayAmount] = useState("");
+  const [creditPayNote, setCreditPayNote] = useState("");
 
   const [orderDiscountType, setOrderDiscountType] = useState<"percentage" | "fixed">("percentage");
   const [orderDiscountValue, setOrderDiscountValue] = useState("");
@@ -381,10 +385,34 @@ export default function POSScreen() {
     setShowScanner(false);
   }, [handleAddItem]);
 
-  const handleScanNotFound = useCallback((barcode: string) => {
+  const handleScanNotFound = useCallback(async (barcode: string) => {
     setShowScanner(false);
-    Alert.alert("Product not found", `No product linked to barcode: ${barcode}`);
-  }, []);
+    if (barcode.startsWith("INV-")) {
+      try {
+        const sale = await loadSaleByInvoiceNumber(barcode);
+        if (sale && sale.paymentMethod === "Credit" && sale.customerId) {
+          const customers = await loadCustomers();
+          const customer = customers.find((c) => c.id === sale.customerId);
+          if (customer && customer.creditBalance > 0) {
+            setCreditPaySale(sale);
+            setCreditPayCustomer(customer);
+            setCreditPayAmount(String(Math.min(sale.total, customer.creditBalance).toFixed(2)));
+            setCreditPayNote(`Payment for ${barcode}`);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            return;
+          } else if (customer && customer.creditBalance <= 0) {
+            Alert.alert("No Balance", `${customer.name} has no outstanding credit balance.`);
+            return;
+          }
+        }
+        if (sale) {
+          Alert.alert("Not a Credit Sale", `Invoice ${barcode} was paid by ${sale.paymentMethod}, not Credit.`);
+          return;
+        }
+      } catch {}
+    }
+    Alert.alert("Not Found", `No product or invoice matched: ${barcode}`);
+  }, [loadSaleByInvoiceNumber, loadCustomers]);
 
   const openPayment = useCallback(() => {
     setPaymentMethod("Card");
@@ -403,6 +431,24 @@ export default function POSScreen() {
   const closeReceipt = useCallback(() => setReceiptSale(null), []);
   const clearSearch = useCallback(() => setSearchQuery(""), []);
   const toggleDiscount = useCallback(() => setShowDiscountInput((p) => !p), []);
+
+  const handleCreditPayFromScan = useCallback(async () => {
+    if (!creditPayCustomer || !creditPaySale) return;
+    const amt = parseFloat(creditPayAmount);
+    if (isNaN(amt) || amt <= 0) { Alert.alert("Invalid", "Enter a valid payment amount."); return; }
+    if (amt > creditPayCustomer.creditBalance) { Alert.alert("Exceeds Balance", `Payment cannot exceed ${formatCurrency(creditPayCustomer.creditBalance)}.`); return; }
+    try {
+      await recordCreditPayment(creditPayCustomer.id, amt, creditPayNote.trim());
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("Payment Recorded", `${formatCurrency(amt)} collected from ${creditPayCustomer.name}.`);
+      setCreditPaySale(null);
+      setCreditPayCustomer(null);
+      setCreditPayAmount("");
+      setCreditPayNote("");
+    } catch (e: any) {
+      Alert.alert("Error", "Failed to record payment.");
+    }
+  }, [creditPayCustomer, creditPaySale, creditPayAmount, creditPayNote, recordCreditPayment]);
 
   const renderProductItem = useCallback(({ item }: { item: Product }) => (
     <ProductCard product={item} onAdd={handleAddById} quantity={quantityMap[item.id] ?? 0} />
@@ -1012,6 +1058,53 @@ export default function POSScreen() {
         onNotFound={handleScanNotFound}
         onClose={() => setShowScanner(false)}
       />
+
+      <Modal visible={!!creditPaySale} animationType="fade" transparent>
+        <View style={styles.paymentOverlay}>
+          <View style={[styles.itemDiscSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2, maxWidth: 400 }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
+              <Feather name="credit-card" size={20} color={colors.primary} />
+              <Text style={[styles.paymentTitle, { color: colors.foreground, fontSize: 18, marginLeft: 8, marginBottom: 0 }]}>Collect Credit Payment</Text>
+            </View>
+            <View style={[styles.riderCard, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius, marginBottom: 12, padding: 12 }]}>
+              <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 15 }}>{creditPayCustomer?.name}</Text>
+              <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 2 }}>Invoice: {creditPaySale?.invoiceNumber}</Text>
+              <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 2 }}>Sale Total: {formatCurrency(creditPaySale?.total ?? 0)}</Text>
+              <Text style={{ color: "#E74C3C", fontSize: 13, fontWeight: "600", marginTop: 4 }}>Outstanding: {formatCurrency(creditPayCustomer?.creditBalance ?? 0)}</Text>
+            </View>
+            <Text style={{ color: colors.mutedForeground, fontSize: 12, fontWeight: "600", marginBottom: 4 }}>Payment Amount</Text>
+            <TextInput
+              value={creditPayAmount}
+              onChangeText={setCreditPayAmount}
+              placeholder="0.00"
+              placeholderTextColor={colors.mutedForeground}
+              keyboardType="decimal-pad"
+              style={[styles.searchInput, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius, fontSize: 20, fontWeight: "700", textAlign: "center", marginBottom: 8 }]}
+            />
+            <Text style={{ color: colors.mutedForeground, fontSize: 12, fontWeight: "600", marginBottom: 4 }}>Note</Text>
+            <TextInput
+              value={creditPayNote}
+              onChangeText={setCreditPayNote}
+              placeholder="e.g. Cash payment"
+              placeholderTextColor={colors.mutedForeground}
+              style={[styles.searchInput, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius, marginBottom: 12 }]}
+            />
+            <TouchableOpacity
+              onPress={handleCreditPayFromScan}
+              style={[styles.chargeBtn, { backgroundColor: colors.success, borderRadius: colors.radius }]}
+            >
+              <Feather name="check" size={16} color="#fff" />
+              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15, marginLeft: 6 }}>Collect Payment</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => { setCreditPaySale(null); setCreditPayCustomer(null); setCreditPayAmount(""); setCreditPayNote(""); }}
+              style={[styles.cancelBtn, { borderColor: colors.border, borderRadius: colors.radius, marginTop: 8 }]}
+            >
+              <Text style={{ color: colors.mutedForeground, fontWeight: "600" }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

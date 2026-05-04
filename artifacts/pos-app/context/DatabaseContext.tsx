@@ -185,6 +185,13 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     return { ...mapSaleRow(sale), items: itemRows.map(mapItemRow) };
   }, [db]);
 
+  const loadSaleByInvoiceNumber = useCallback(async (invoiceNumber: string): Promise<Sale | null> => {
+    const sale = await db.getFirstAsync<any>("SELECT * FROM sales WHERE invoice_number=?", [invoiceNumber]);
+    if (!sale) return null;
+    const itemRows = await db.getAllAsync<any>("SELECT * FROM sale_items WHERE sale_id=?", [sale.id]);
+    return { ...mapSaleRow(sale), items: itemRows.map(mapItemRow) };
+  }, [db]);
+
   const loadSalesWithItemsByDateRange = useCallback(async (startMs: number, endMs: number): Promise<{ sales: Sale[]; items: SaleItem[] }> => {
     const saleRows = await db.getAllAsync<any>("SELECT * FROM sales WHERE created_at>=? AND created_at<? ORDER BY created_at DESC", [startMs, endMs]);
     const sales = saleRows.map(mapSaleRow);
@@ -642,7 +649,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
   return (
     <DatabaseContext.Provider value={{
       loadProducts, createProduct, updateProduct, deleteProduct, updateStock,
-      saveSale, loadSales, loadSaleWithItems, loadSalesWithItemsByDateRange, processRefund,
+      saveSale, loadSales, loadSaleWithItems, loadSaleByInvoiceNumber, loadSalesWithItemsByDateRange, processRefund,
       loadBusinessSettings, saveBusinessSettings,
       loadCustomers, createCustomer, updateCustomer, deleteCustomer,
       recordCreditPayment, loadCreditPayments, updateLoyaltyPoints,

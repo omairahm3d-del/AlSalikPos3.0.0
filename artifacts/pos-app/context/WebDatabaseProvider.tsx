@@ -192,6 +192,14 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     return { ...sale, items: allItems.filter((i) => i.saleId === saleId) };
   }, []);
 
+  const loadSaleByInvoiceNumber = useCallback(async (invoiceNumber: string): Promise<Sale | null> => {
+    const sales = await getJson<Sale[]>(K.sales, []);
+    const sale = sales.find((s) => s.invoiceNumber === invoiceNumber);
+    if (!sale) return null;
+    const allItems = await getJson<SaleItem[]>(K.saleItems, []);
+    return { ...sale, items: allItems.filter((i) => i.saleId === sale.id) };
+  }, []);
+
   const loadSalesWithItemsByDateRange = useCallback(async (startMs: number, endMs: number): Promise<{ sales: Sale[]; items: SaleItem[] }> => {
     const allSales = await getJson<Sale[]>(K.sales, []);
     const sales = allSales.filter((s) => s.createdAt >= startMs && s.createdAt < endMs);
@@ -556,7 +564,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
   return (
     <DatabaseContext.Provider value={{
       loadProducts, createProduct, updateProduct, deleteProduct, updateStock,
-      saveSale, loadSales, loadSaleWithItems, loadSalesWithItemsByDateRange, processRefund,
+      saveSale, loadSales, loadSaleWithItems, loadSaleByInvoiceNumber, loadSalesWithItemsByDateRange, processRefund,
       loadBusinessSettings, saveBusinessSettings,
       loadCustomers, createCustomer, updateCustomer, deleteCustomer,
       recordCreditPayment, loadCreditPayments, updateLoyaltyPoints,

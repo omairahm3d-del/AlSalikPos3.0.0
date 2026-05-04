@@ -1,5 +1,6 @@
 import type { BusinessSettings, ReceiptDesignSettings, Sale, SaleItem } from "@/types";
 import { CURRENCY, DEFAULT_RECEIPT_DESIGN } from "@/types";
+import { generateBarcodeSVG, generateWhatsAppQRSVG } from "./barcodeSvg";
 
 function fmt(amount: number): string {
   return `${CURRENCY} ${Math.abs(amount).toFixed(2)}`;
@@ -143,6 +144,13 @@ export function generateReceiptHTML(
   </table>
 
   <div class="divider"></div>
+
+  ${sale.invoiceNumber ? `<div class="center" style="margin-top:8px;">${generateBarcodeSVG(sale.invoiceNumber, { width: rd.paperWidth === "58mm" ? 160 : 220, height: 36 })}</div>` : ""}
+
+  ${business.phone ? `<div class="center" style="margin-top:10px;">
+    <div style="font-size:${fs.body - 2}px;margin-bottom:4px;">Chat with us on WhatsApp</div>
+    ${generateWhatsAppQRSVG(business.phone, rd.paperWidth === "58mm" ? 80 : 100)}
+  </div>` : ""}
 
   <div class="footer">
     ${isRefund ? "This is a refund receipt<br/>" : ""}
