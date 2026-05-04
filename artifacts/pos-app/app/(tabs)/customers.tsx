@@ -130,6 +130,43 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
   const formatDate = (ts: number) =>
     new Date(ts).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
+  const KNOWN_METHODS = ["Cash", "Card", "Bank Transfer", "Cheque"];
+
+  const parsePaymentNote = (note: string): { method: string; ref: string } => {
+    const sep = note.indexOf(" \u2014 ");
+    if (sep !== -1) {
+      const method = note.slice(0, sep);
+      if (KNOWN_METHODS.includes(method)) return { method, ref: note.slice(sep + 3) };
+    }
+    if (KNOWN_METHODS.includes(note.trim())) return { method: note.trim(), ref: "" };
+    return { method: "Cash", ref: note };
+  };
+
+  const METHOD_COLORS: Record<string, string> = {
+    Cash: "#16a34a",
+    Card: "#2563eb",
+    "Bank Transfer": "#d97706",
+    Cheque: "#7c3aed",
+  };
+
+  type TxEntry =
+    | { kind: "sale"; id: string; date: number; amount: number; invNum: string; loyaltyPts?: number }
+    | { kind: "payment"; id: string; date: number; amount: number; method: string; ref: string };
+
+  const buildTimeline = (): { entry: TxEntry; balance: number }[] => {
+    const entries: TxEntry[] = [
+      ...creditSales.map((s) => ({ kind: "sale" as const, id: s.id, date: s.createdAt, amount: s.total, invNum: s.invoiceNumber, loyaltyPts: s.loyaltyPointsEarned })),
+      ...creditHistory.map((p) => { const { method, ref } = parsePaymentNote(p.note || ""); return { kind: "payment" as const, id: p.id, date: p.createdAt, amount: p.amount, method, ref }; }),
+    ].sort((a, b) => a.date - b.date);
+
+    let running = 0;
+    const result = entries.map((entry) => {
+      running = entry.kind === "sale" ? running + entry.amount : running - entry.amount;
+      return { entry, balance: Math.round(running * 100) / 100 };
+    });
+    return result.reverse();
+  };
+
   const renderCustomer = ({ item }: { item: Customer }) => (
     <TouchableOpacity
       onPress={() => openCustomerDetail(item)}
@@ -261,40 +298,66 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
                 {selectedCustomer.email ? <View style={styles.detailRow}><Feather name="mail" size={14} color={colors.mutedForeground} /><Text style={[styles.detailText, { color: colors.foreground }]}>{selectedCustomer.email}</Text></View> : null}
               </View>
 
-              {creditSales.length > 0 && (
-                <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-                  <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Credit Sales</Text>
-                  {creditSales.map((sale) => (
-                    <View key={sale.id} style={[styles.historyRow, { borderBottomColor: colors.border }]}>
-                      <View>
-                        <Text style={[styles.historyAmount, { color: colors.destructive }]}>+{formatCurrency(sale.total)}</Text>
-                        <Text style={[styles.historyDate, { color: colors.mutedForeground }]}>{formatDate(sale.createdAt)}</Text>
-                      </View>
-                      <View style={{ alignItems: "flex-end" }}>
-                        <Text style={[styles.historyNote, { color: colors.mutedForeground }]}>{sale.invoiceNumber}</Text>
-                        {(sale.loyaltyPointsEarned ?? 0) > 0 && (
-                          <View style={{ flexDirection: "row", alignItems: "center", gap: 3, marginTop: 2 }}>
-                            <Feather name="star" size={9} color="#F39C12" />
-                            <Text style={{ color: "#F39C12", fontSize: 10 }}>+{sale.loyaltyPointsEarned} pts</Text>
-                          </View>
-                        )}
-                      </View>
+              {(creditSales.length > 0 || creditHistory.length > 0) && (() => {
+                const timeline = buildTimeline();
+                return (
+                  <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                      <Text style={[styles.sectionTitle, { color: colors.foreground, marginBottom: 0 }]}>Transaction History</Text>
+                      <Text style={[{ fontSize: 11, color: colors.mutedForeground }]}>{timeline.length} entries</Text>
                     </View>
-                  ))}
-                </View>
-              )}
 
-              {creditHistory.length > 0 && (
-                <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-                  <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Payments Received</Text>
-                  {creditHistory.map((p) => (
-                    <View key={p.id} style={[styles.historyRow, { borderBottomColor: colors.border }]}>
-                      <View><Text style={[styles.historyAmount, { color: colors.success }]}>-{formatCurrency(p.amount)}</Text><Text style={[styles.historyDate, { color: colors.mutedForeground }]}>{formatDate(p.createdAt)}</Text></View>
-                      {p.note ? <Text style={[styles.historyNote, { color: colors.mutedForeground }]}>{p.note}</Text> : null}
-                    </View>
-                  ))}
-                </View>
-              )}
+                    {timeline.map(({ entry, balance }, idx) => {
+                      const isSale = entry.kind === "sale";
+                      const isLast = idx === timeline.length - 1;
+                      const methodColor = !isSale ? (METHOD_COLORS[entry.method] ?? "#6b7280") : "";
+                      return (
+                        <View key={entry.id} style={[styles.txRow, { borderBottomColor: isLast ? "transparent" : colors.border }]}>
+                          <View style={[styles.txIcon, { backgroundColor: isSale ? colors.destructive + "18" : colors.success + "18" }]}>
+                            <Feather name={isSale ? "file-text" : "arrow-down-circle"} size={15} color={isSale ? colors.destructive : colors.success} />
+                          </View>
+
+                          <View style={styles.txMiddle}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                              <Text style={[styles.txType, { color: colors.foreground }]}>
+                                {isSale ? "Credit Sale" : "Payment"}
+                              </Text>
+                              {isSale ? (
+                                <View style={[styles.txBadge, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+                                  <Text style={[styles.txBadgeText, { color: colors.mutedForeground }]}>{entry.invNum}</Text>
+                                </View>
+                              ) : (
+                                <View style={[styles.txBadge, { backgroundColor: methodColor + "18", borderColor: methodColor + "40" }]}>
+                                  <Text style={[styles.txBadgeText, { color: methodColor }]}>{entry.method}</Text>
+                                </View>
+                              )}
+                              {!isSale && entry.ref ? (
+                                <Text style={[styles.txRef, { color: colors.mutedForeground }]} numberOfLines={1}>{entry.ref}</Text>
+                              ) : null}
+                              {isSale && (entry.loyaltyPts ?? 0) > 0 ? (
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                                  <Feather name="star" size={9} color="#F39C12" />
+                                  <Text style={{ color: "#F39C12", fontSize: 10 }}>+{entry.loyaltyPts} pts</Text>
+                                </View>
+                              ) : null}
+                            </View>
+                            <Text style={[styles.txDate, { color: colors.mutedForeground }]}>{formatDate(entry.date)}</Text>
+                          </View>
+
+                          <View style={styles.txRight}>
+                            <Text style={[styles.txAmount, { color: isSale ? colors.destructive : colors.success }]}>
+                              {isSale ? "+" : "-"}{formatCurrency(entry.amount)}
+                            </Text>
+                            <Text style={[styles.txBalance, { color: balance > 0 ? colors.mutedForeground : colors.success }]}>
+                              {balance > 0 ? `Bal: ${formatCurrency(balance)}` : "Settled"}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              })()}
             </ScrollView>
           )}
         </View>
@@ -369,6 +432,17 @@ const styles = StyleSheet.create({
   historyAmount: { fontSize: 15, fontWeight: "700", fontFamily: "Inter_700Bold" },
   historyDate: { fontSize: 11, marginTop: 2 },
   historyNote: { fontSize: 12, maxWidth: 150, textAlign: "right" },
+  txRow: { flexDirection: "row", alignItems: "flex-start", paddingVertical: 12, borderBottomWidth: 1, gap: 10 },
+  txIcon: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", marginTop: 1 },
+  txMiddle: { flex: 1, minWidth: 0, gap: 3 },
+  txType: { fontSize: 13, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
+  txBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1 },
+  txBadgeText: { fontSize: 10, fontWeight: "700" },
+  txRef: { fontSize: 11, flex: 1 },
+  txDate: { fontSize: 11 },
+  txRight: { alignItems: "flex-end", gap: 3 },
+  txAmount: { fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  txBalance: { fontSize: 10, fontWeight: "600" },
   payOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "center", alignItems: "center", padding: 24 },
   paySheet: { width: "100%", maxWidth: 440, padding: 24 },
   payTitle: { fontSize: 20, fontWeight: "700", fontFamily: "Inter_700Bold", marginBottom: 4 },
