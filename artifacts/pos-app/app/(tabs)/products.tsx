@@ -25,7 +25,7 @@ import { useColors } from "@/hooks/useColors";
 import type { Category, Ingredient, PrinterConfig, Product, TaxGroup } from "@/types";
 import { CURRENCY, PRODUCT_COLORS, formatCurrency } from "@/types";
 
-export default function ProductsScreen() {
+export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -202,7 +202,7 @@ export default function ProductsScreen() {
   };
 
   const numColumns = width >= 1200 ? 5 : width >= 900 ? 4 : width >= 600 ? 3 : 2;
-  const topPadding = Platform.OS === "web" ? insets.top + 8 : 0;
+  const topPadding = embedded ? 0 : (Platform.OS === "web" ? insets.top + 8 : 0);
 
   const getPrinterName = (id?: string) => {
     if (!id) return undefined;
@@ -545,3 +545,5 @@ const styles = StyleSheet.create({
   recipeItemRow: { flexDirection: "row", alignItems: "center", paddingVertical: 8, borderBottomWidth: 0.5, gap: 8 },
   addIngBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingHorizontal: 16, gap: 4 },
 });
+
+export default ProductsScreen;

@@ -53,10 +53,13 @@ The POS application is built with Expo (SDK 54) and React Native, optimized for 
 1.  **Register**: Core POS interface with product grid, search, cart, payment, discounts, customer/table/staff selection, KOT, order types, and held orders.
 2.  **Tables**: Management of POS tables, status tracking, and restoration of held orders.
 3.  **History**: Sales transaction list, refunds, and receipt printing.
-4.  **Customers**: Customer management, credit balances, and loyalty points.
-5.  **Reports**: Daily sales reports and Z-Report functionalities.
-6.  **Products**: Product CRUD, stock tracking, tax group assignment, barcode assignment.
-7.  **Back Office**: Centralized settings for categories, delivery riders, ingredients, recipes, receipt design, printer, KOT, customer display, staff, tax groups, and business settings.
+4.  **Back Office**: Centralized management hub containing:
+    - **Products**: Product CRUD, stock tracking, tax group assignment, barcode assignment.
+    - **Customers**: Customer management, credit balances, and loyalty points.
+    - **Reports**: Daily sales reports and Z-Report functionalities.
+    - **Categories**, **Delivery Riders**, **Ingredients**, **Recipes**, **Receipt Designer**, **Printer Settings**, **KOT Settings**, **Customer Display**, **Staff Management**, **Tax Groups**, **Business Settings**.
+
+Products, Customers, and Reports are rendered as embedded sub-sections within Back Office using named exports with an `embedded` prop (controls padding). The route files remain in `app/(tabs)/` for Expo Router compatibility but are hidden from the tab bar via `href: null` (ClassicTabs) and trigger omission (NativeTabs).
 
 ## Desktop App (`desktop-app/`)
 

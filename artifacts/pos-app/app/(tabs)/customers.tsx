@@ -21,7 +21,7 @@ import { useColors } from "@/hooks/useColors";
 import type { CreditPayment, Customer, Sale } from "@/types";
 import { formatCurrency } from "@/types";
 
-export default function CustomersScreen() {
+export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const {
@@ -48,7 +48,7 @@ export default function CustomersScreen() {
   const [paymentNote, setPaymentNote] = useState("");
   const [loyaltyRate, setLoyaltyRate] = useState(0.01);
 
-  const topPadding = Platform.OS === "web" ? insets.top + 8 : 0;
+  const topPadding = embedded ? 0 : (Platform.OS === "web" ? insets.top + 8 : 0);
 
   const fetchCustomers = useCallback(async () => {
     const [data, biz] = await Promise.all([loadCustomers(), loadBusinessSettings()]);
@@ -376,3 +376,5 @@ const styles = StyleSheet.create({
   confirmPayBtn: { flex: 2, flexDirection: "row", paddingVertical: 14, alignItems: "center", justifyContent: "center", gap: 8 },
   confirmPayText: { color: "#fff", fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" },
 });
+
+export default CustomersScreen;

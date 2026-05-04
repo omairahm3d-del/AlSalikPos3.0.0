@@ -30,7 +30,7 @@ function formatDateLabel(date: Date): string {
   return date.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
 }
 
-export default function ReportsScreen() {
+export function ReportsScreen({ embedded = false }: { embedded?: boolean }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { loadSalesWithItemsByDateRange, loadProducts, saveZReport } = useDatabase();
@@ -44,7 +44,7 @@ export default function ReportsScreen() {
   const [showZReport, setShowZReport] = useState(false);
   const [closingCash, setClosingCash] = useState("");
 
-  const topPadding = Platform.OS === "web" ? insets.top + 8 : 0;
+  const topPadding = embedded ? 0 : (Platform.OS === "web" ? insets.top + 8 : 0);
   const isToday = selectedDate.toDateString() === new Date().toDateString();
 
   const fetchReport = useCallback(async () => {
@@ -379,3 +379,5 @@ const styles = StyleSheet.create({
   cancelBtn: { flex: 1, paddingVertical: 14, alignItems: "center", borderWidth: 1 },
   confirmBtn: { flex: 2, flexDirection: "row", paddingVertical: 14, alignItems: "center", justifyContent: "center", gap: 8 },
 });
+
+export default ReportsScreen;

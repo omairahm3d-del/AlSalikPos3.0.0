@@ -19,6 +19,9 @@ import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BusinessSettingsModal } from "@/components/BusinessSettingsModal";
+import { ProductsScreen } from "./products";
+import { CustomersScreen } from "./customers";
+import { ReportsScreen } from "./reports";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useStaff } from "@/context/StaffContext";
 import { useColors } from "@/hooks/useColors";
@@ -979,6 +982,9 @@ export default function BackOfficeScreen() {
   const renderContent = () => {
     switch (section) {
       case "menu": return renderMenu();
+      case "products": return <View style={s.sectionContent}>{renderHeader("Products")}<ProductsScreen embedded /></View>;
+      case "customers": return <View style={s.sectionContent}>{renderHeader("Customers")}<CustomersScreen embedded /></View>;
+      case "reports": return <View style={s.sectionContent}>{renderHeader("Reports")}<ReportsScreen embedded /></View>;
       case "categories": return renderCategories();
       case "receipt": return renderReceiptDesigner();
       case "printer": return renderPrinterSettings();
