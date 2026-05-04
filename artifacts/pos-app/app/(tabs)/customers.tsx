@@ -18,10 +18,12 @@ import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
+import { usePermissions } from "@/hooks/usePermissions";
 import type { CreditPayment, Customer, Sale } from "@/types";
 import { formatCurrency } from "@/types";
 
 export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
+  const permissions = usePermissions();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const {
@@ -131,7 +133,7 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
   const renderCustomer = ({ item }: { item: Customer }) => (
     <TouchableOpacity
       onPress={() => openCustomerDetail(item)}
-      onLongPress={() => handleDelete(item)}
+      onLongPress={permissions.deleteCustomers ? () => handleDelete(item) : undefined}
       activeOpacity={0.8}
       style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
     >

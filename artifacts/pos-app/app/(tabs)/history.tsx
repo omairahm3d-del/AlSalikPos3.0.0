@@ -8,6 +8,7 @@ import { SaleCard } from "@/components/SaleCard";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useStaff } from "@/context/StaffContext";
 import { useColors } from "@/hooks/useColors";
+import { usePermissions } from "@/hooks/usePermissions";
 import type { Sale, SaleItem } from "@/types";
 import { formatCurrency } from "@/types";
 
@@ -16,6 +17,7 @@ export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const { loadSales, loadSaleWithItems, processRefund } = useDatabase();
   const { currentStaff } = useStaff();
+  const permissions = usePermissions();
 
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
@@ -122,7 +124,7 @@ export default function HistoryScreen() {
               items={expandedItems[item.id]}
               onPress={() => handleExpand(item.id)}
               onPrintReceipt={() => setReceiptSale(item)}
-              onRefund={() => handleRefund(item)}
+              onRefund={permissions.canRefund ? () => handleRefund(item) : undefined}
               isRefunded={sales.some((s) => s.originalSaleId === item.id && s.isRefund)}
             />
           )}

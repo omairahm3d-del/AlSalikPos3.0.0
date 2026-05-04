@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
+import { usePermissions } from "@/hooks/usePermissions";
 import type { HeldOrder, PosTable, Product } from "@/types";
 import { VAT_RATE } from "@/types";
 
@@ -36,6 +37,7 @@ export default function TablesScreen() {
   const router = useRouter();
   const { loadTables, createTable, updateTable, deleteTable, setTableStatus, loadHeldOrderByTable, loadProducts, loadTaxGroups } = useDatabase();
   const { restoreCart } = useCart();
+  const permissions = usePermissions();
 
   const [tables, setTables] = useState<PosTable[]>([]);
   const [loading, setLoading] = useState(true);
@@ -158,7 +160,7 @@ export default function TablesScreen() {
     return (
       <TouchableOpacity
         onPress={() => handleTableTap(item)}
-        onLongPress={() => openEdit(item)}
+        onLongPress={permissions.canManageTables ? () => openEdit(item) : undefined}
         activeOpacity={0.8}
         style={[styles.tableCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
       >
@@ -175,11 +177,13 @@ export default function TablesScreen() {
         <View style={[styles.statusBadge, { backgroundColor: sc.bg + "20" }]}>
           <Text style={[styles.statusText, { color: sc.bg }]}>{sc.label}</Text>
         </View>
-        <View style={styles.tableActions}>
-          <TouchableOpacity onPress={() => handleDelete(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Feather name="trash-2" size={14} color={colors.mutedForeground} />
-          </TouchableOpacity>
-        </View>
+        {permissions.deleteTables && (
+          <View style={styles.tableActions}>
+            <TouchableOpacity onPress={() => handleDelete(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Feather name="trash-2" size={14} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -223,12 +227,14 @@ export default function TablesScreen() {
         />
       )}
 
-      <TouchableOpacity
-        onPress={openAdd}
-        style={[styles.fab, { backgroundColor: colors.primary, borderRadius: 28, bottom: insets.bottom + 20 }]}
-      >
-        <Feather name="plus" size={24} color="#fff" />
-      </TouchableOpacity>
+      {permissions.canManageTables && (
+        <TouchableOpacity
+          onPress={openAdd}
+          style={[styles.fab, { backgroundColor: colors.primary, borderRadius: 28, bottom: insets.bottom + 20 }]}
+        >
+          <Feather name="plus" size={24} color="#fff" />
+        </TouchableOpacity>
+      )}
 
       <Modal visible={showEditor} animationType="slide" presentationStyle="pageSheet">
         <KeyboardAvoidingView

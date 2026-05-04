@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -39,9 +39,12 @@ import type {
   ReceiptDesignSettings,
   Rider,
   Staff,
+  StaffPermissions,
   TaxGroup,
 } from "@/types";
 import {
+  ADMIN_PERMISSIONS,
+  DEFAULT_CASHIER_PERMISSIONS,
   DEFAULT_CUSTOMER_DISPLAY,
   DEFAULT_KOT_SETTINGS,
   DEFAULT_PRINTER_SETTINGS,
@@ -65,7 +68,8 @@ type Section =
   | "business"
   | "riders"
   | "ingredients"
-  | "recipes";
+  | "recipes"
+  | "permissions";
 
 interface SectionCard {
   id: Section;
@@ -73,23 +77,26 @@ interface SectionCard {
   title: string;
   subtitle: string;
   color: string;
+  permKey?: keyof StaffPermissions;
+  adminOnly?: boolean;
 }
 
 const SECTIONS: SectionCard[] = [
-  { id: "products", icon: "package", title: "Products", subtitle: "Manage items, pricing & stock", color: "#4F8EF7" },
-  { id: "customers", icon: "users", title: "Customers", subtitle: "Manage customer profiles", color: "#1ABC9C" },
-  { id: "reports", icon: "bar-chart-2", title: "Reports", subtitle: "View sales summaries", color: "#F39C12" },
-  { id: "categories", icon: "layers", title: "Categories", subtitle: "Manage product categories", color: "#4F8EF7" },
-  { id: "riders", icon: "truck", title: "Delivery Riders", subtitle: "Manage delivery riders", color: "#3498DB" },
-  { id: "ingredients", icon: "package", title: "Ingredients", subtitle: "Inventory & stock levels", color: "#16A085" },
-  { id: "recipes", icon: "book-open", title: "Recipes", subtitle: "Link products to ingredients", color: "#8E44AD" },
-  { id: "receipt", icon: "file-text", title: "Receipt Designer", subtitle: "Customize receipt layout", color: "#2ECC71" },
-  { id: "printer", icon: "printer", title: "Printer Settings", subtitle: "Paper size & auto-print", color: "#9B59B6" },
-  { id: "kot", icon: "clipboard", title: "KOT Settings", subtitle: "Kitchen ticket routing", color: "#E67E22" },
-  { id: "display", icon: "monitor", title: "Customer Display", subtitle: "Customer-facing screen", color: "#1ABC9C" },
-  { id: "staff", icon: "user-check", title: "Staff Management", subtitle: "Manage cashiers & admins", color: "#E74C3C" },
-  { id: "tax", icon: "percent", title: "Tax Groups", subtitle: "VAT rates & tax groups", color: "#F39C12" },
-  { id: "business", icon: "briefcase", title: "Business Settings", subtitle: "Company info & loyalty", color: "#6C63FF" },
+  { id: "products", icon: "package", title: "Products", subtitle: "Manage items, pricing & stock", color: "#4F8EF7", permKey: "boProducts" },
+  { id: "customers", icon: "users", title: "Customers", subtitle: "Manage customer profiles", color: "#1ABC9C", permKey: "boCustomers" },
+  { id: "reports", icon: "bar-chart-2", title: "Reports", subtitle: "View sales summaries", color: "#F39C12", permKey: "boReports" },
+  { id: "categories", icon: "layers", title: "Categories", subtitle: "Manage product categories", color: "#4F8EF7", permKey: "boCategories" },
+  { id: "riders", icon: "truck", title: "Delivery Riders", subtitle: "Manage delivery riders", color: "#3498DB", permKey: "boRiders" },
+  { id: "ingredients", icon: "package", title: "Ingredients", subtitle: "Inventory & stock levels", color: "#16A085", permKey: "boIngredients" },
+  { id: "recipes", icon: "book-open", title: "Recipes", subtitle: "Link products to ingredients", color: "#8E44AD", permKey: "boRecipes" },
+  { id: "receipt", icon: "file-text", title: "Receipt Designer", subtitle: "Customize receipt layout", color: "#2ECC71", permKey: "boReceipt" },
+  { id: "printer", icon: "printer", title: "Printer Settings", subtitle: "Paper size & auto-print", color: "#9B59B6", permKey: "boPrinter" },
+  { id: "kot", icon: "clipboard", title: "KOT Settings", subtitle: "Kitchen ticket routing", color: "#E67E22", permKey: "boKOT" },
+  { id: "display", icon: "monitor", title: "Customer Display", subtitle: "Customer-facing screen", color: "#1ABC9C", permKey: "boDisplay" },
+  { id: "staff", icon: "user-check", title: "Staff Management", subtitle: "Manage cashiers & admins", color: "#E74C3C", permKey: "boStaff" },
+  { id: "tax", icon: "percent", title: "Tax Groups", subtitle: "VAT rates & tax groups", color: "#F39C12", permKey: "boTax" },
+  { id: "business", icon: "briefcase", title: "Business Settings", subtitle: "Company info & loyalty", color: "#6C63FF", permKey: "boBusiness" },
+  { id: "permissions", icon: "shield", title: "Permissions", subtitle: "Configure staff access rights", color: "#E74C3C", adminOnly: true },
 ];
 
 export default function BackOfficeScreen() {
@@ -150,7 +157,15 @@ export default function BackOfficeScreen() {
   const [recipeIngId, setRecipeIngId] = useState("");
   const [recipeIngQty, setRecipeIngQty] = useState("");
 
+  const [cashierPerms, setCashierPerms] = useState<StaffPermissions>({ ...DEFAULT_CASHIER_PERMISSIONS });
+
   const topPadding = Platform.OS === "web" ? insets.top + 8 : 0;
+
+  const permissions = useMemo<StaffPermissions>(() => {
+    if (!currentStaff || currentStaff.role === "admin") return ADMIN_PERMISSIONS;
+    const saved = bizSettings?.rolePermissions?.cashier;
+    return saved ? { ...DEFAULT_CASHIER_PERMISSIONS, ...saved } : DEFAULT_CASHIER_PERMISSIONS;
+  }, [currentStaff, bizSettings]);
 
   const loadAllSettings = useCallback(async () => {
     const biz = await db.loadBusinessSettings();
@@ -159,7 +174,17 @@ export default function BackOfficeScreen() {
     setPrinterSettings(biz.printerSettings ?? { ...DEFAULT_PRINTER_SETTINGS });
     setKotSettings(biz.kotSettings ?? { ...DEFAULT_KOT_SETTINGS });
     setCustomerDisplay(biz.customerDisplay ?? { ...DEFAULT_CUSTOMER_DISPLAY });
+    setCashierPerms(biz.rolePermissions?.cashier ? { ...DEFAULT_CASHIER_PERMISSIONS, ...biz.rolePermissions.cashier } : { ...DEFAULT_CASHIER_PERMISSIONS });
   }, [db]);
+
+  const savePermissions = useCallback(async () => {
+    const biz = bizSettings ?? await db.loadBusinessSettings();
+    const updated: BusinessSettings = { ...biz, rolePermissions: { cashier: cashierPerms } };
+    await db.saveBusinessSettings(updated);
+    setBizSettings(updated);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Alert.alert("Saved", "Permissions updated successfully.");
+  }, [bizSettings, cashierPerms, db]);
 
   const loadCats = useCallback(async () => {
     const cats = await db.loadCategories();
@@ -449,36 +474,60 @@ export default function BackOfficeScreen() {
     </View>
   );
 
-  const renderMenu = () => (
-    <ScrollView style={s.menuScroll} contentContainerStyle={s.menuContent} showsVerticalScrollIndicator={false}>
-      <Text style={[s.menuTitle, { color: colors.foreground }]}>Back Office</Text>
-      <Text style={[s.menuSub, { color: colors.mutedForeground }]}>Manage your POS settings</Text>
-
-      <View style={s.cardsGrid}>
-        {SECTIONS.map((sec) => (
-          <TouchableOpacity
-            key={sec.id}
-            onPress={() => openSection(sec.id)}
-            style={[s.sectionCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
-          >
-            <View style={[s.cardIconWrap, { backgroundColor: sec.color + "18" }]}>
-              <Feather name={sec.icon as any} size={22} color={sec.color} />
-            </View>
-            <Text style={[s.cardTitle, { color: colors.foreground }]}>{sec.title}</Text>
-            <Text style={[s.cardSub, { color: colors.mutedForeground }]}>{sec.subtitle}</Text>
+  const renderMenu = () => {
+    if (currentStaff && currentStaff.role !== "admin" && !permissions.canAccessBackOffice) {
+      return (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 32 }}>
+          <Feather name="lock" size={48} color={colors.mutedForeground} style={{ opacity: 0.5 }} />
+          <Text style={{ color: colors.foreground, fontSize: 20, fontWeight: "700", marginTop: 20 }}>Access Restricted</Text>
+          <Text style={{ color: colors.mutedForeground, fontSize: 14, textAlign: "center", marginTop: 8, lineHeight: 20 }}>
+            Your account doesn't have Back Office access. Contact your administrator.
+          </Text>
+          <TouchableOpacity onPress={logout} style={[s.logoutBtn, { borderColor: colors.border, borderRadius: colors.radius, marginTop: 32 }]}>
+            <Feather name="log-out" size={16} color={colors.mutedForeground} />
+            <Text style={{ color: colors.mutedForeground, marginLeft: 8, fontWeight: "600" }}>Switch Staff</Text>
           </TouchableOpacity>
-        ))}
-      </View>
+        </View>
+      );
+    }
 
-      {currentStaff && (
-        <TouchableOpacity onPress={logout} style={[s.logoutBtn, { borderColor: colors.border, borderRadius: colors.radius }]}>
-          <Feather name="log-out" size={16} color={colors.mutedForeground} />
-          <Text style={{ color: colors.mutedForeground, marginLeft: 8, fontWeight: "600" }}>Lock / Switch Staff</Text>
-        </TouchableOpacity>
-      )}
-      <View style={{ height: 40 }} />
-    </ScrollView>
-  );
+    const visibleSections = SECTIONS.filter((sec) => {
+      if (sec.adminOnly) return !currentStaff || currentStaff.role === "admin";
+      if (!sec.permKey) return true;
+      return permissions[sec.permKey] as boolean;
+    });
+
+    return (
+      <ScrollView style={s.menuScroll} contentContainerStyle={s.menuContent} showsVerticalScrollIndicator={false}>
+        <Text style={[s.menuTitle, { color: colors.foreground }]}>Back Office</Text>
+        <Text style={[s.menuSub, { color: colors.mutedForeground }]}>Manage your POS settings</Text>
+
+        <View style={s.cardsGrid}>
+          {visibleSections.map((sec) => (
+            <TouchableOpacity
+              key={sec.id}
+              onPress={() => openSection(sec.id)}
+              style={[s.sectionCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
+            >
+              <View style={[s.cardIconWrap, { backgroundColor: sec.color + "18" }]}>
+                <Feather name={sec.icon as any} size={22} color={sec.color} />
+              </View>
+              <Text style={[s.cardTitle, { color: colors.foreground }]}>{sec.title}</Text>
+              <Text style={[s.cardSub, { color: colors.mutedForeground }]}>{sec.subtitle}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {currentStaff && (
+          <TouchableOpacity onPress={logout} style={[s.logoutBtn, { borderColor: colors.border, borderRadius: colors.radius }]}>
+            <Feather name="log-out" size={16} color={colors.mutedForeground} />
+            <Text style={{ color: colors.mutedForeground, marginLeft: 8, fontWeight: "600" }}>Lock / Switch Staff</Text>
+          </TouchableOpacity>
+        )}
+        <View style={{ height: 40 }} />
+      </ScrollView>
+    );
+  };
 
   const renderCategories = () => (
     <View style={s.sectionContent}>
@@ -499,9 +548,11 @@ export default function BackOfficeScreen() {
               <Text style={[s.listItemTitle, { color: colors.foreground }]}>{item.name}</Text>
               <Text style={[s.listItemSub, { color: colors.mutedForeground }]}>Order: {item.sortOrder}</Text>
             </View>
-            <TouchableOpacity onPress={() => handleDeleteCat(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Feather name="trash-2" size={16} color={colors.destructive} />
-            </TouchableOpacity>
+            {permissions.deleteCategories && (
+              <TouchableOpacity onPress={() => handleDeleteCat(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Feather name="trash-2" size={16} color={colors.destructive} />
+              </TouchableOpacity>
+            )}
           </TouchableOpacity>
         )}
       />
@@ -828,9 +879,11 @@ export default function BackOfficeScreen() {
               <Text style={[s.listItemTitle, { color: colors.foreground }]}>{item.name}</Text>
               <Text style={[s.listItemSub, { color: colors.mutedForeground }]}>{item.role} {!item.active ? "(inactive)" : ""}</Text>
             </View>
-            <TouchableOpacity onPress={() => handleDeleteStaff(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Feather name="trash-2" size={16} color={colors.destructive} />
-            </TouchableOpacity>
+            {permissions.deleteStaff && (
+              <TouchableOpacity onPress={() => handleDeleteStaff(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Feather name="trash-2" size={16} color={colors.destructive} />
+              </TouchableOpacity>
+            )}
           </TouchableOpacity>
         )}
       />
@@ -859,9 +912,11 @@ export default function BackOfficeScreen() {
               <Text style={[s.listItemTitle, { color: colors.foreground }]}>{item.name}</Text>
               <Text style={[s.listItemSub, { color: colors.mutedForeground }]}>{(item.rate * 100).toFixed(1)}%</Text>
             </View>
-            <TouchableOpacity onPress={() => handleDeleteTax(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Feather name="trash-2" size={16} color={colors.destructive} />
-            </TouchableOpacity>
+            {permissions.deleteTax && (
+              <TouchableOpacity onPress={() => handleDeleteTax(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Feather name="trash-2" size={16} color={colors.destructive} />
+              </TouchableOpacity>
+            )}
           </TouchableOpacity>
         )}
       />
@@ -890,9 +945,11 @@ export default function BackOfficeScreen() {
               <Text style={[s.listItemTitle, { color: colors.foreground }]}>{item.name}</Text>
               <Text style={[s.listItemSub, { color: colors.mutedForeground }]}>{item.phone || "No phone"} · {item.active ? "Active" : "Inactive"}</Text>
             </View>
-            <TouchableOpacity onPress={() => handleDeleteRider(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Feather name="trash-2" size={16} color={colors.destructive} />
-            </TouchableOpacity>
+            {permissions.deleteRiders && (
+              <TouchableOpacity onPress={() => handleDeleteRider(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Feather name="trash-2" size={16} color={colors.destructive} />
+              </TouchableOpacity>
+            )}
           </TouchableOpacity>
         )}
       />
@@ -939,9 +996,11 @@ export default function BackOfficeScreen() {
                     Stock: {item.stockQuantity} {item.unit} · Cost: {formatCurrency(item.costPerUnit)}/{item.unit}
                   </Text>
                 </View>
-                <TouchableOpacity onPress={() => handleDeleteIngredient(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Feather name="trash-2" size={16} color={colors.destructive} />
-                </TouchableOpacity>
+                {permissions.deleteIngredients && (
+                  <TouchableOpacity onPress={() => handleDeleteIngredient(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                    <Feather name="trash-2" size={16} color={colors.destructive} />
+                  </TouchableOpacity>
+                )}
               </TouchableOpacity>
             );
           }}
@@ -979,6 +1038,86 @@ export default function BackOfficeScreen() {
     </View>
   );
 
+  const renderPermissions = () => {
+    if (currentStaff && currentStaff.role !== "admin") {
+      return (
+        <View style={s.sectionContent}>
+          {renderHeader("Permissions")}
+          <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 40 }}>
+            <Feather name="lock" size={40} color={colors.mutedForeground} style={{ opacity: 0.5 }} />
+            <Text style={{ color: colors.foreground, fontSize: 17, fontWeight: "700", marginTop: 16 }}>Admin Only</Text>
+            <Text style={{ color: colors.mutedForeground, fontSize: 13, textAlign: "center", marginTop: 8 }}>Only administrators can configure staff permissions.</Text>
+          </View>
+        </View>
+      );
+    }
+
+    const toggle = (key: keyof StaffPermissions, val: boolean) =>
+      setCashierPerms((p) => ({ ...p, [key]: val }));
+
+    const SectionHead = ({ title }: { title: string }) => (
+      <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 24, marginBottom: 2 }]}>{title}</Text>
+    );
+
+    return (
+      <View style={s.sectionContent}>
+        {renderHeader("Permissions")}
+        <ScrollView contentContainerStyle={s.formContent} showsVerticalScrollIndicator={false}>
+          <Text style={{ color: colors.mutedForeground, fontSize: 13, marginBottom: 8, lineHeight: 18 }}>
+            Admins always have full access. Configure what Cashier staff can do.
+          </Text>
+
+          <SectionHead title="Back Office Access" />
+          {renderSwitch("Can Access Back Office", cashierPerms.canAccessBackOffice, (v) => toggle("canAccessBackOffice", v))}
+
+          {cashierPerms.canAccessBackOffice && (
+            <>
+              <SectionHead title="Back Office Sections" />
+              {renderSwitch("Products", cashierPerms.boProducts, (v) => toggle("boProducts", v))}
+              {renderSwitch("Customers", cashierPerms.boCustomers, (v) => toggle("boCustomers", v))}
+              {renderSwitch("Reports", cashierPerms.boReports, (v) => toggle("boReports", v))}
+              {renderSwitch("Categories", cashierPerms.boCategories, (v) => toggle("boCategories", v))}
+              {renderSwitch("Delivery Riders", cashierPerms.boRiders, (v) => toggle("boRiders", v))}
+              {renderSwitch("Ingredients", cashierPerms.boIngredients, (v) => toggle("boIngredients", v))}
+              {renderSwitch("Recipes", cashierPerms.boRecipes, (v) => toggle("boRecipes", v))}
+              {renderSwitch("Receipt Designer", cashierPerms.boReceipt, (v) => toggle("boReceipt", v))}
+              {renderSwitch("Printer Settings", cashierPerms.boPrinter, (v) => toggle("boPrinter", v))}
+              {renderSwitch("KOT Settings", cashierPerms.boKOT, (v) => toggle("boKOT", v))}
+              {renderSwitch("Customer Display", cashierPerms.boDisplay, (v) => toggle("boDisplay", v))}
+              {renderSwitch("Staff Management", cashierPerms.boStaff, (v) => toggle("boStaff", v))}
+              {renderSwitch("Tax Groups", cashierPerms.boTax, (v) => toggle("boTax", v))}
+              {renderSwitch("Business Settings", cashierPerms.boBusiness, (v) => toggle("boBusiness", v))}
+            </>
+          )}
+
+          <SectionHead title="Delete Rights" />
+          {renderSwitch("Delete Products", cashierPerms.deleteProducts, (v) => toggle("deleteProducts", v))}
+          {renderSwitch("Delete Customers", cashierPerms.deleteCustomers, (v) => toggle("deleteCustomers", v))}
+          {renderSwitch("Delete Categories", cashierPerms.deleteCategories, (v) => toggle("deleteCategories", v))}
+          {renderSwitch("Delete Delivery Riders", cashierPerms.deleteRiders, (v) => toggle("deleteRiders", v))}
+          {renderSwitch("Delete Ingredients", cashierPerms.deleteIngredients, (v) => toggle("deleteIngredients", v))}
+          {renderSwitch("Delete Staff", cashierPerms.deleteStaff, (v) => toggle("deleteStaff", v))}
+          {renderSwitch("Delete Tax Groups", cashierPerms.deleteTax, (v) => toggle("deleteTax", v))}
+          {renderSwitch("Delete Tables", cashierPerms.deleteTables, (v) => toggle("deleteTables", v))}
+
+          <SectionHead title="Register & Operations" />
+          {renderSwitch("Process Refunds", cashierPerms.canRefund, (v) => toggle("canRefund", v))}
+          {renderSwitch("Apply Discounts", cashierPerms.canApplyDiscount, (v) => toggle("canApplyDiscount", v))}
+          {renderSwitch("Manage Tables (Add / Edit)", cashierPerms.canManageTables, (v) => toggle("canManageTables", v))}
+
+          <TouchableOpacity
+            onPress={savePermissions}
+            style={[s.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius, marginTop: 32, flexDirection: "row", gap: 8 }]}
+          >
+            <Feather name="save" size={16} color="#fff" />
+            <Text style={s.saveBtnText}>Save Permissions</Text>
+          </TouchableOpacity>
+          <View style={{ height: 60 }} />
+        </ScrollView>
+      </View>
+    );
+  };
+
   const renderContent = () => {
     switch (section) {
       case "menu": return renderMenu();
@@ -995,6 +1134,7 @@ export default function BackOfficeScreen() {
       case "riders": return renderRiders();
       case "ingredients": return renderIngredients();
       case "recipes": return renderRecipes();
+      case "permissions": return renderPermissions();
       case "business": {
         setSection("menu");
         setShowBizSettings(true);

@@ -169,6 +169,35 @@ export interface Staff {
   createdAt: number;
 }
 
+export interface StaffPermissions {
+  canAccessBackOffice: boolean;
+  boProducts: boolean;
+  boCustomers: boolean;
+  boReports: boolean;
+  boCategories: boolean;
+  boRiders: boolean;
+  boIngredients: boolean;
+  boRecipes: boolean;
+  boReceipt: boolean;
+  boPrinter: boolean;
+  boKOT: boolean;
+  boDisplay: boolean;
+  boStaff: boolean;
+  boTax: boolean;
+  boBusiness: boolean;
+  deleteProducts: boolean;
+  deleteCustomers: boolean;
+  deleteCategories: boolean;
+  deleteRiders: boolean;
+  deleteIngredients: boolean;
+  deleteStaff: boolean;
+  deleteTax: boolean;
+  deleteTables: boolean;
+  canRefund: boolean;
+  canApplyDiscount: boolean;
+  canManageTables: boolean;
+}
+
 export interface PosTable {
   id: string;
   name: string;
@@ -233,6 +262,7 @@ export interface BusinessSettings {
   printerSettings?: PrinterSettings;
   kotSettings?: KOTSettings;
   customerDisplay?: CustomerDisplaySettings;
+  rolePermissions?: { cashier: StaffPermissions };
 }
 
 export interface ZReport {
@@ -350,4 +380,28 @@ export const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
   printerSettings: DEFAULT_PRINTER_SETTINGS,
   kotSettings: DEFAULT_KOT_SETTINGS,
   customerDisplay: DEFAULT_CUSTOMER_DISPLAY,
+};
+
+export const ADMIN_PERMISSIONS: StaffPermissions = {
+  canAccessBackOffice: true,
+  boProducts: true, boCustomers: true, boReports: true, boCategories: true,
+  boRiders: true, boIngredients: true, boRecipes: true, boReceipt: true,
+  boPrinter: true, boKOT: true, boDisplay: true, boStaff: true,
+  boTax: true, boBusiness: true,
+  deleteProducts: true, deleteCustomers: true, deleteCategories: true,
+  deleteRiders: true, deleteIngredients: true, deleteStaff: true,
+  deleteTax: true, deleteTables: true,
+  canRefund: true, canApplyDiscount: true, canManageTables: true,
+};
+
+export const DEFAULT_CASHIER_PERMISSIONS: StaffPermissions = {
+  canAccessBackOffice: false,
+  boProducts: false, boCustomers: false, boReports: false, boCategories: false,
+  boRiders: false, boIngredients: false, boRecipes: false, boReceipt: false,
+  boPrinter: false, boKOT: false, boDisplay: false, boStaff: false,
+  boTax: false, boBusiness: false,
+  deleteProducts: false, deleteCustomers: false, deleteCategories: false,
+  deleteRiders: false, deleteIngredients: false, deleteStaff: false,
+  deleteTax: false, deleteTables: false,
+  canRefund: false, canApplyDiscount: true, canManageTables: true,
 };

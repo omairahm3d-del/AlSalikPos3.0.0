@@ -22,12 +22,14 @@ import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
 import { EmptyState } from "@/components/EmptyState";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
+import { usePermissions } from "@/hooks/usePermissions";
 import type { Category, Ingredient, PrinterConfig, Product, TaxGroup } from "@/types";
 import { CURRENCY, PRODUCT_COLORS, formatCurrency } from "@/types";
 
 export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const permissions = usePermissions();
   const { width } = useWindowDimensions();
   const {
     loadProducts, createProduct, updateProduct, deleteProduct,
@@ -216,7 +218,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     return (
       <TouchableOpacity
         onPress={() => openEdit(item)}
-        onLongPress={() => handleDelete(item)}
+        onLongPress={permissions.deleteProducts ? () => handleDelete(item) : undefined}
         activeOpacity={0.8}
         style={[styles.productCard, { backgroundColor: colors.card, borderRadius: colors.radius, borderColor: isOut ? colors.destructive + "60" : isLow ? "#F39C12" + "60" : colors.border }]}
       >
