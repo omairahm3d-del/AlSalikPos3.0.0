@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Modal,
   Platform,
@@ -13,6 +14,7 @@ import {
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
 import { CartItemRow } from "@/components/CartItemRow";
 import { CategoryFilter } from "@/components/CategoryFilter";
 import { EmptyState } from "@/components/EmptyState";
@@ -47,6 +49,7 @@ export default function POSScreen() {
   const [loading, setLoading] = useState(true);
   const [showCart, setShowCart] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Card");
 
   const fetchProducts = useCallback(async () => {
@@ -75,6 +78,31 @@ export default function POSScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
+  const handleScanFound = (product: Product) => {
+    addItem(product);
+    setShowScanner(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const handleScanNotFound = (barcode: string) => {
+    setShowScanner(false);
+    Alert.alert(
+      "Product not found",
+      `No product is linked to barcode:\n${barcode}\n\nGo to Products to assign barcodes.`,
+      [{ text: "OK" }]
+    );
+  };
+
+  const ScanButton = (
+    <TouchableOpacity
+      onPress={() => setShowScanner(true)}
+      style={[styles.scanBtn, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+    >
+      <Feather name="maximize" size={18} color={colors.primary} />
+    </TouchableOpacity>
+  );
+
   const CartContent = (
     <View style={styles.cartInner}>
       <View style={[styles.cartHeader, { borderBottomColor: colors.border }]}>
@@ -90,7 +118,7 @@ export default function POSScreen() {
         <EmptyState
           icon="shopping-cart"
           title="Cart is empty"
-          subtitle="Tap products to add them to the order"
+          subtitle="Tap products or scan a barcode to add items"
         />
       ) : (
         <FlatList
@@ -151,11 +179,14 @@ export default function POSScreen() {
       {isTablet ? (
         <View style={styles.splitRow}>
           <View style={styles.catalogPane}>
-            <CategoryFilter
-              categories={CATEGORIES}
-              selected={selectedCategory}
-              onSelect={setSelectedCategory}
-            />
+            <View style={[styles.catalogHeader, { borderBottomColor: colors.border }]}>
+              <CategoryFilter
+                categories={CATEGORIES}
+                selected={selectedCategory}
+                onSelect={setSelectedCategory}
+              />
+              {ScanButton}
+            </View>
             {loading ? (
               <ActivityIndicator style={styles.loader} color={colors.primary} />
             ) : (
@@ -180,11 +211,14 @@ export default function POSScreen() {
       ) : (
         <>
           <View style={styles.mobileContent}>
-            <CategoryFilter
-              categories={CATEGORIES}
-              selected={selectedCategory}
-              onSelect={setSelectedCategory}
-            />
+            <View style={[styles.catalogHeader, { borderBottomColor: colors.border }]}>
+              <CategoryFilter
+                categories={CATEGORIES}
+                selected={selectedCategory}
+                onSelect={setSelectedCategory}
+              />
+              {ScanButton}
+            </View>
             {loading ? (
               <ActivityIndicator style={styles.loader} color={colors.primary} />
             ) : (
@@ -329,6 +363,14 @@ export default function POSScreen() {
           </View>
         </View>
       </Modal>
+
+      <BarcodeScannerModal
+        visible={showScanner}
+        products={products}
+        onFound={handleScanFound}
+        onNotFound={handleScanNotFound}
+        onClose={() => setShowScanner(false)}
+      />
     </View>
   );
 }
@@ -337,10 +379,20 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   splitRow: { flex: 1, flexDirection: "row" },
   catalogPane: { flex: 3 },
+  catalogHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: 1,
+    paddingRight: 12,
+  },
   cartPane: { width: 350, borderLeftWidth: 1 },
   mobileContent: { flex: 1 },
   grid: { padding: 10, paddingTop: 4 },
   loader: { flex: 1 },
+  scanBtn: {
+    padding: 10,
+    marginLeft: 4,
+  },
   cartInner: { flex: 1 },
   cartHeader: {
     flexDirection: "row",

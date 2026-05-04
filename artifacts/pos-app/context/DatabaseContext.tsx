@@ -16,6 +16,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       price: number;
       description: string;
       color_hex: string;
+      barcode: string | null;
     }>("SELECT * FROM products ORDER BY category, name");
     return rows.map((r) => ({
       id: r.id,
@@ -24,6 +25,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       price: r.price,
       description: r.description ?? "",
       colorHex: r.color_hex ?? "#4F8EF7",
+      barcode: r.barcode ?? undefined,
     }));
   }, [db]);
 
@@ -31,8 +33,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     async (product: Omit<Product, "id">): Promise<Product> => {
       const id = generateId();
       await db.runAsync(
-        "INSERT INTO products (id, name, category, price, description, color_hex) VALUES (?, ?, ?, ?, ?, ?)",
-        [id, product.name, product.category, product.price, product.description, product.colorHex]
+        "INSERT INTO products (id, name, category, price, description, color_hex, barcode) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [id, product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null]
       );
       return { ...product, id };
     },
@@ -42,8 +44,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
   const updateProduct = useCallback(
     async (product: Product): Promise<void> => {
       await db.runAsync(
-        "UPDATE products SET name = ?, category = ?, price = ?, description = ?, color_hex = ? WHERE id = ?",
-        [product.name, product.category, product.price, product.description, product.colorHex, product.id]
+        "UPDATE products SET name = ?, category = ?, price = ?, description = ?, color_hex = ?, barcode = ? WHERE id = ?",
+        [product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.id]
       );
     },
     [db]

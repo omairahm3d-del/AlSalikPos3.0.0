@@ -16,6 +16,7 @@ import {
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
 import { EmptyState } from "@/components/EmptyState";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
@@ -34,12 +35,14 @@ export default function ProductsScreen() {
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [showScanner, setShowScanner] = useState(false);
 
   const [name, setName] = useState("");
   const [category, setCategory] = useState(CATEGORY_OPTIONS[0]);
   const [price, setPrice] = useState("");
   const [description, setDescription] = useState("");
   const [selectedColor, setSelectedColor] = useState(PRODUCT_COLORS[0]);
+  const [barcode, setBarcode] = useState("");
 
   const fetchProducts = useCallback(async () => {
     const data = await loadProducts();
@@ -58,6 +61,7 @@ export default function ProductsScreen() {
     setPrice("");
     setDescription("");
     setSelectedColor(PRODUCT_COLORS[0]);
+    setBarcode("");
     setModalVisible(true);
   };
 
@@ -68,6 +72,7 @@ export default function ProductsScreen() {
     setPrice(product.price.toFixed(2));
     setDescription(product.description);
     setSelectedColor(product.colorHex);
+    setBarcode(product.barcode ?? "");
     setModalVisible(true);
   };
 
@@ -77,6 +82,7 @@ export default function ProductsScreen() {
       Alert.alert("Invalid input", "Please enter a valid name and price.");
       return;
     }
+    const barcodeVal = barcode.trim() || undefined;
     if (editingProduct) {
       await updateProduct({
         ...editingProduct,
@@ -85,6 +91,7 @@ export default function ProductsScreen() {
         price: priceNum,
         description: description.trim(),
         colorHex: selectedColor,
+        barcode: barcodeVal,
       });
     } else {
       await createProduct({
@@ -93,6 +100,7 @@ export default function ProductsScreen() {
         price: priceNum,
         description: description.trim(),
         colorHex: selectedColor,
+        barcode: barcodeVal,
       });
     }
     setModalVisible(false);
@@ -115,7 +123,6 @@ export default function ProductsScreen() {
   };
 
   const numColumns = width >= 1200 ? 5 : width >= 900 ? 4 : width >= 600 ? 3 : 2;
-
   const topPadding = Platform.OS === "web" ? insets.top + 8 : 0;
 
   const renderProduct = ({ item }: { item: Product }) => (
@@ -134,6 +141,11 @@ export default function ProductsScreen() {
     >
       <View style={[styles.productColorBand, { backgroundColor: item.colorHex }]}>
         <Text style={styles.productInitial}>{item.name.charAt(0).toUpperCase()}</Text>
+        {item.barcode && (
+          <View style={styles.barcodeTag}>
+            <Feather name="maximize" size={9} color="rgba(255,255,255,0.8)" />
+          </View>
+        )}
       </View>
       <View style={styles.productInfo}>
         <Text style={[styles.productName, { color: colors.foreground }]} numberOfLines={2}>
@@ -331,9 +343,66 @@ export default function ProductsScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Barcode</Text>
+            <View style={styles.barcodeRow}>
+              <TextInput
+                value={barcode}
+                onChangeText={setBarcode}
+                placeholder="Scan or enter barcode"
+                placeholderTextColor={colors.mutedForeground}
+                style={[
+                  styles.input,
+                  styles.barcodeInput,
+                  {
+                    backgroundColor: colors.secondary,
+                    borderColor: barcode ? colors.primary : colors.border,
+                    color: colors.foreground,
+                    borderRadius: colors.radius,
+                  },
+                ]}
+              />
+              <TouchableOpacity
+                onPress={() => setShowScanner(true)}
+                style={[
+                  styles.scanIconBtn,
+                  { backgroundColor: colors.primary, borderRadius: colors.radius },
+                ]}
+              >
+                <Feather name="maximize" size={18} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            {barcode ? (
+              <View style={styles.barcodePreview}>
+                <Feather name="check-circle" size={13} color={colors.success} />
+                <Text style={{ color: colors.success, fontSize: 12, marginLeft: 5 }}>
+                  Barcode linked: {barcode}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setBarcode("")}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={{ marginLeft: "auto" }}
+                >
+                  <Feather name="x" size={13} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              </View>
+            ) : null}
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
+
+      <BarcodeScannerModal
+        visible={showScanner}
+        products={products}
+        assignMode
+        onAssign={(code) => {
+          setBarcode(code);
+          setShowScanner(false);
+        }}
+        onFound={() => {}}
+        onNotFound={() => {}}
+        onClose={() => setShowScanner(false)}
+      />
     </View>
   );
 }
@@ -359,6 +428,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "rgba(255,255,255,0.9)",
     fontFamily: "Inter_700Bold",
+  },
+  barcodeTag: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    borderRadius: 4,
+    padding: 3,
   },
   productInfo: { padding: 10 },
   productName: {
@@ -440,5 +517,24 @@ const styles = StyleSheet.create({
   colorSwatchSelected: {
     borderWidth: 3,
     borderColor: "#fff",
+  },
+  barcodeRow: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "center",
+  },
+  barcodeInput: {
+    flex: 1,
+  },
+  scanIconBtn: {
+    width: 46,
+    height: 46,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  barcodePreview: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 8,
   },
 });

@@ -11,7 +11,8 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
       category TEXT NOT NULL,
       price REAL NOT NULL,
       description TEXT DEFAULT '',
-      color_hex TEXT DEFAULT '#4F8EF7'
+      color_hex TEXT DEFAULT '#4F8EF7',
+      barcode TEXT DEFAULT NULL
     );
 
     CREATE TABLE IF NOT EXISTS sales (
@@ -35,14 +36,21 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     );
   `);
 
+  // Add barcode column if missing (migration for existing DBs)
+  try {
+    await db.execAsync("ALTER TABLE products ADD COLUMN barcode TEXT DEFAULT NULL");
+  } catch {
+    // column already exists — safe to ignore
+  }
+
   const row = await db.getFirstAsync<{ count: number }>(
     "SELECT COUNT(*) as count FROM products"
   );
   if (!row || row.count === 0) {
     for (const p of SEED_PRODUCTS) {
       await db.runAsync(
-        "INSERT INTO products (id, name, category, price, description, color_hex) VALUES (?, ?, ?, ?, ?, ?)",
-        [p.id, p.name, p.category, p.price, p.description, p.colorHex]
+        "INSERT INTO products (id, name, category, price, description, color_hex, barcode) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [p.id, p.name, p.category, p.price, p.description, p.colorHex, p.barcode ?? null]
       );
     }
   }

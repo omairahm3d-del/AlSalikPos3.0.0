@@ -5,6 +5,7 @@ export interface Product {
   price: number;
   description: string;
   colorHex: string;
+  barcode?: string;
 }
 
 export interface CartItem {
