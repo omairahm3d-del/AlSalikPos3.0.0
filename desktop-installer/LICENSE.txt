@@ -1,0 +1,24 @@
+AL SALIK POS — SOFTWARE LICENSE AGREEMENT
+
+Copyright © 2025 Al Salik Computers. All rights reserved.
+
+This software ("Al Salik POS") is the proprietary product of Al Salik Computers
+and is licensed, not sold, to you under the terms of this agreement.
+
+GRANT OF LICENSE
+Al Salik Computers grants you a non-exclusive, non-transferable license to
+install and use this software solely for your internal business operations.
+
+RESTRICTIONS
+You may not:
+  - Copy, modify, or distribute this software
+  - Reverse-engineer or decompile this software
+  - Sub-license or resell this software
+
+DISCLAIMER
+THIS SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND. AL SALIK
+COMPUTERS SHALL NOT BE LIABLE FOR ANY DAMAGES ARISING FROM ITS USE.
+
+CONTACT
+Al Salik Computers
+Email: info@alsalikcomputers.com

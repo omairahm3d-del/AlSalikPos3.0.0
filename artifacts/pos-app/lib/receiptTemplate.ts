@@ -174,6 +174,7 @@ export function generateReceiptHTML(
     ${isRefund ? "This is a refund receipt<br/>" : ""}
     Prices are inclusive of ${vatPct}% VAT where applicable<br/>
     ${footerText}
+    <div style="margin-top:6px;border-top:1px dashed #ccc;padding-top:5px;font-size:${fs.body - 3}px;color:#888;">Powered by Al Salik Computers</div>
   </div>
 </body>
 </html>`;
@@ -302,7 +303,8 @@ export function generateZReportHTML(
   <div class="footer">
     End of Day Report<br/>
     Generated: ${fmtDateTime(Date.now())}<br/>
-    This is a system-generated Z-Report
+    This is a system-generated Z-Report<br/>
+    <span style="font-size:9px;color:#888;">Powered by Al Salik Computers</span>
   </div>
 </body>
 </html>`;
@@ -428,7 +430,8 @@ export function generateCreditPaymentReceiptHTML(
       : `Remaining: ${fmt(data.remainingBalance)}`
     }<br/>
     Thank you for your payment<br/>
-    شكراً على الدفع
+    شكراً على الدفع<br/>
+    <span style="font-size:9px;color:#888;border-top:1px dashed #ccc;display:inline-block;margin-top:4px;padding-top:4px;">Powered by Al Salik Computers</span>
   </div>
 </body>
 </html>`;

@@ -559,6 +559,21 @@ export default function BackOfficeScreen() {
             <Text style={{ color: colors.mutedForeground, marginLeft: 8, fontWeight: "600" }}>Lock / Switch Staff</Text>
           </TouchableOpacity>
         )}
+
+        <View style={[s.aboutCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+          <View style={[s.aboutIconWrap, { backgroundColor: "#6C63FF18" }]}>
+            <Feather name="monitor" size={20} color="#6C63FF" />
+          </View>
+          <View style={s.aboutInfo}>
+            <Text style={[s.aboutAppName, { color: colors.foreground }]}>Al Salik POS</Text>
+            <Text style={[s.aboutVersion, { color: colors.mutedForeground }]}>Version 1.0.0</Text>
+          </View>
+          <View style={s.aboutProvider}>
+            <Text style={[s.aboutProviderLabel, { color: colors.mutedForeground }]}>Software by</Text>
+            <Text style={[s.aboutProviderName, { color: "#6C63FF" }]}>Al Salik Computers</Text>
+          </View>
+        </View>
+
         <View style={{ height: 40 }} />
       </ScrollView>
     );
@@ -1620,6 +1635,14 @@ const s = StyleSheet.create({
   cardTitle: { fontSize: 15, fontWeight: "700", fontFamily: "Inter_700Bold", marginBottom: 4 },
   cardSub: { fontSize: 12, lineHeight: 16 },
   logoutBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 14, borderWidth: 1, marginTop: 24 },
+  aboutCard: { flexDirection: "row", alignItems: "center", padding: 14, borderWidth: 1, marginTop: 16, gap: 12 },
+  aboutIconWrap: { width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  aboutInfo: { flex: 1 },
+  aboutAppName: { fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  aboutVersion: { fontSize: 11, marginTop: 1 },
+  aboutProvider: { alignItems: "flex-end" },
+  aboutProviderLabel: { fontSize: 9, textTransform: "uppercase", letterSpacing: 0.5 },
+  aboutProviderName: { fontSize: 12, fontWeight: "700", fontFamily: "Inter_700Bold" },
   sectionContent: { flex: 1 },
   sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1 },
   sectionTitle: { fontSize: 18, fontWeight: "700", fontFamily: "Inter_700Bold" },
