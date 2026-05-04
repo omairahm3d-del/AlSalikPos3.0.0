@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import {
   ActivityIndicator,
   Alert,
@@ -109,6 +110,10 @@ export default function BackOfficeScreen() {
   const db = useDatabase();
   const { currentStaff, refreshStaffCheck, logout } = useStaff();
   const [section, setSection] = useState<Section>("menu");
+
+  useFocusEffect(useCallback(() => {
+    setSection("menu");
+  }, []));
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [catName, setCatName] = useState("");
@@ -236,6 +241,7 @@ export default function BackOfficeScreen() {
     await db.saveBusinessSettings(updated);
     setBizSettings(updated);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Alert.alert("Saved", "Settings have been saved successfully.");
   }, [bizSettings, receiptDesign, printerSettings, kotSettings, customerDisplay, db]);
 
   const openSection = useCallback((sec: Section) => {
@@ -295,6 +301,7 @@ export default function BackOfficeScreen() {
     setCatOrder("0");
     setCatImageUri(undefined);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Alert.alert("Saved", editingCat ? "Category updated successfully." : "Category created successfully.");
   };
 
   const handleDeleteCat = (cat: Category) => {
@@ -339,6 +346,7 @@ export default function BackOfficeScreen() {
     setShowStaffModal(false);
     await refreshStaffCheck();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Alert.alert("Saved", editingStaff ? "Staff member updated successfully." : "Staff member added successfully.");
   };
 
   const handleDeleteStaff = (staff: Staff) => {
@@ -368,6 +376,7 @@ export default function BackOfficeScreen() {
     setTaxRate("");
     setShowTaxModal(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Alert.alert("Saved", editingTax ? "Tax group updated successfully." : "Tax group created successfully.");
   };
 
   const handleDeleteTax = (tg: TaxGroup) => {
@@ -390,6 +399,7 @@ export default function BackOfficeScreen() {
       await loadRiderList();
       setEditingRider(null); setRiderName(""); setRiderPhone(""); setShowRiderModal(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("Saved", editingRider ? "Rider updated successfully." : "Rider added successfully.");
     } catch (e: any) {
       Alert.alert("Error", e.message || "Failed to save rider");
     }
@@ -418,6 +428,7 @@ export default function BackOfficeScreen() {
       await loadIngredientList();
       setEditingIngredient(null); setIngName(""); setIngUnit("g"); setIngStock("0"); setIngCost("0"); setIngLowStock("10"); setShowIngModal(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("Saved", editingIngredient ? "Ingredient updated successfully." : "Ingredient added successfully.");
     } catch (e: any) {
       Alert.alert("Error", e.message || "Failed to save ingredient");
     }
@@ -464,6 +475,7 @@ export default function BackOfficeScreen() {
       setRecipeProductId(null);
       setRecipeItems([]);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("Saved", "Recipe saved successfully.");
     } catch (e: any) {
       Alert.alert("Error", e.message || "Failed to save recipe");
     }

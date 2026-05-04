@@ -20,6 +20,7 @@ import * as Print from "expo-print";
 import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
 import { CartItemRow } from "@/components/CartItemRow";
 import { CategoryFilter } from "@/components/CategoryFilter";
+import { CloseRegisterModal } from "@/components/CloseRegisterModal";
 import { EmptyState } from "@/components/EmptyState";
 import { ProductCard } from "@/components/ProductCard";
 import { CustomerSelectModal } from "@/components/CustomerSelectModal";
@@ -82,6 +83,7 @@ export default function POSScreen() {
   const [showCart, setShowCart] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  const [showCloseRegister, setShowCloseRegister] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Card");
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
   const [showCustomerSelect, setShowCustomerSelect] = useState(false);
@@ -511,6 +513,16 @@ export default function POSScreen() {
     </TouchableOpacity>
   ), [colors, openScanner]);
 
+  const EndOfDayButton = useMemo(() => (
+    <TouchableOpacity
+      onPress={() => setShowCloseRegister(true)}
+      style={[styles.endOfDayBtn, { backgroundColor: colors.destructive + "18", borderColor: colors.destructive + "40", borderRadius: colors.radius }]}
+    >
+      <Feather name="moon" size={15} color={colors.destructive} />
+      <Text style={[styles.endOfDayText, { color: colors.destructive }]}>End of Day</Text>
+    </TouchableOpacity>
+  ), [colors]);
+
   const CartContent = (
     <View style={styles.cartInner}>
       <View style={[styles.cartHeader, { borderBottomColor: colors.border }]}>
@@ -633,6 +645,7 @@ export default function POSScreen() {
           <View style={styles.catalogPane}>
             <View style={[styles.catalogHeader, { borderBottomColor: colors.border }]}>
               <CategoryFilter categories={dynamicCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
+              {EndOfDayButton}
               {ScanButton}
             </View>
             {SearchBar}
@@ -666,6 +679,7 @@ export default function POSScreen() {
           <View style={styles.mobileContent}>
             <View style={[styles.catalogHeader, { borderBottomColor: colors.border }]}>
               <CategoryFilter categories={dynamicCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
+              {EndOfDayButton}
               {ScanButton}
             </View>
             {SearchBar}
@@ -1046,6 +1060,10 @@ export default function POSScreen() {
       </Modal>
 
       <ReceiptModal visible={!!receiptSale} sale={receiptSale} onClose={closeReceipt} />
+      <CloseRegisterModal
+        visible={showCloseRegister}
+        onClose={() => setShowCloseRegister(false)}
+      />
       <CustomerSelectModal
         visible={showCustomerSelect}
         onSelect={(customer) => { setSelectedCustomer(customer); setShowCustomerSelect(false); }}
@@ -1121,6 +1139,8 @@ const styles = StyleSheet.create({
   searchWrap: { flexDirection: "row", alignItems: "center", marginHorizontal: 12, marginTop: 8, marginBottom: 4, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, gap: 8 },
   searchInput: { flex: 1, fontSize: 14, paddingVertical: 2 },
   scanBtn: { padding: 10, marginLeft: 4 },
+  endOfDayBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, marginLeft: 4, gap: 5 },
+  endOfDayText: { fontSize: 12, fontWeight: "700" },
   cartInner: { flex: 1 },
   cartHeader: { paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1 },
   cartHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
