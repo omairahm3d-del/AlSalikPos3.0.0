@@ -1,0 +1,460 @@
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Modal,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from "react-native";
+import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { CartItemRow } from "@/components/CartItemRow";
+import { CategoryFilter } from "@/components/CategoryFilter";
+import { EmptyState } from "@/components/EmptyState";
+import { ProductCard } from "@/components/ProductCard";
+import { useCart } from "@/context/CartContext";
+import { useDatabase } from "@/context/DatabaseCore";
+import { useColors } from "@/hooks/useColors";
+import type { Product } from "@/types";
+import { CATEGORIES, VAT_RATE } from "@/types";
+
+type PaymentMethod = "Card" | "Cash";
+
+export default function POSScreen() {
+  const colors = useColors();
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const isTablet = width >= 768;
+
+  const { loadProducts, saveSale } = useDatabase();
+  const {
+    items: cartItems,
+    itemCount,
+    subtotal,
+    vatAmount,
+    total,
+    addItem,
+    clearCart,
+  } = useCart();
+
+  const [products, setProducts] = useState<Product[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [loading, setLoading] = useState(true);
+  const [showCart, setShowCart] = useState(false);
+  const [showPayment, setShowPayment] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Card");
+
+  const fetchProducts = useCallback(async () => {
+    const data = await loadProducts();
+    setProducts(data);
+    setLoading(false);
+  }, [loadProducts]);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
+
+  const filteredProducts = useMemo(() => {
+    if (selectedCategory === "All") return products;
+    return products.filter((p) => p.category === selectedCategory);
+  }, [products, selectedCategory]);
+
+  const numColumns = width >= 1200 ? 5 : width >= 960 ? 4 : width >= 768 ? 3 : 2;
+
+  const handleChargeSale = async () => {
+    if (cartItems.length === 0) return;
+    await saveSale(cartItems, paymentMethod);
+    clearCart();
+    setShowPayment(false);
+    setShowCart(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const CartContent = (
+    <View style={styles.cartInner}>
+      <View style={[styles.cartHeader, { borderBottomColor: colors.border }]}>
+        <Text style={[styles.cartTitle, { color: colors.foreground }]}>Order</Text>
+        {cartItems.length > 0 && (
+          <TouchableOpacity onPress={clearCart} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ color: colors.destructive, fontSize: 13 }}>Clear all</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {cartItems.length === 0 ? (
+        <EmptyState
+          icon="shopping-cart"
+          title="Cart is empty"
+          subtitle="Tap products to add them to the order"
+        />
+      ) : (
+        <FlatList
+          data={cartItems}
+          renderItem={({ item }) => <CartItemRow item={item} />}
+          keyExtractor={(item) => item.product.id}
+          style={styles.cartList}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+
+      {cartItems.length > 0 && (
+        <View style={[styles.cartFooter, { borderTopColor: colors.border }]}>
+          <View style={styles.totalsRow}>
+            <Text style={[styles.totalLabel, { color: colors.mutedForeground }]}>Subtotal</Text>
+            <Text style={[styles.totalValue, { color: colors.foreground }]}>
+              €{subtotal.toFixed(2)}
+            </Text>
+          </View>
+          <View style={styles.totalsRow}>
+            <Text style={[styles.totalLabel, { color: colors.mutedForeground }]}>
+              VAT ({Math.round(VAT_RATE * 100)}%)
+            </Text>
+            <Text style={[styles.totalValue, { color: colors.foreground }]}>
+              €{vatAmount.toFixed(2)}
+            </Text>
+          </View>
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <View style={[styles.totalsRow, styles.grandTotal]}>
+            <Text style={[styles.grandTotalLabel, { color: colors.foreground }]}>Total</Text>
+            <Text style={[styles.grandTotalValue, { color: colors.foreground }]}>
+              €{total.toFixed(2)}
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => setShowPayment(true)}
+            style={[styles.chargeBtn, { backgroundColor: colors.success, borderRadius: colors.radius }]}
+          >
+            <Feather name="credit-card" size={18} color="#fff" />
+            <Text style={styles.chargeBtnText}>Charge €{total.toFixed(2)}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+
+  return (
+    <View
+      style={[
+        styles.root,
+        {
+          backgroundColor: colors.background,
+          paddingTop: Platform.OS === "web" ? insets.top + 8 : 0,
+          paddingBottom: Platform.OS === "web" ? 34 : 0,
+        },
+      ]}
+    >
+      {isTablet ? (
+        <View style={styles.splitRow}>
+          <View style={styles.catalogPane}>
+            <CategoryFilter
+              categories={CATEGORIES}
+              selected={selectedCategory}
+              onSelect={setSelectedCategory}
+            />
+            {loading ? (
+              <ActivityIndicator style={styles.loader} color={colors.primary} />
+            ) : (
+              <FlatList
+                data={filteredProducts}
+                renderItem={({ item }) => (
+                  <ProductCard product={item} onPress={() => addItem(item)} />
+                )}
+                keyExtractor={(item) => item.id}
+                numColumns={numColumns}
+                key={String(numColumns)}
+                contentContainerStyle={styles.grid}
+                showsVerticalScrollIndicator={false}
+              />
+            )}
+          </View>
+
+          <View style={[styles.cartPane, { borderLeftColor: colors.border }]}>
+            {CartContent}
+          </View>
+        </View>
+      ) : (
+        <>
+          <View style={styles.mobileContent}>
+            <CategoryFilter
+              categories={CATEGORIES}
+              selected={selectedCategory}
+              onSelect={setSelectedCategory}
+            />
+            {loading ? (
+              <ActivityIndicator style={styles.loader} color={colors.primary} />
+            ) : (
+              <FlatList
+                data={filteredProducts}
+                renderItem={({ item }) => (
+                  <ProductCard product={item} onPress={() => addItem(item)} />
+                )}
+                keyExtractor={(item) => item.id}
+                numColumns={2}
+                key="2"
+                contentContainerStyle={styles.grid}
+                showsVerticalScrollIndicator={false}
+              />
+            )}
+          </View>
+
+          {itemCount > 0 && (
+            <TouchableOpacity
+              onPress={() => setShowCart(true)}
+              style={[
+                styles.cartBar,
+                {
+                  backgroundColor: colors.success,
+                  paddingBottom: insets.bottom + 14,
+                },
+              ]}
+            >
+              <View style={styles.cartBarLeft}>
+                <View style={styles.cartBarBadge}>
+                  <Text style={styles.cartBarBadgeText}>{itemCount}</Text>
+                </View>
+                <Text style={styles.cartBarText}>View Order</Text>
+              </View>
+              <Text style={styles.cartBarTotal}>€{total.toFixed(2)}</Text>
+            </TouchableOpacity>
+          )}
+
+          <Modal visible={showCart} animationType="slide" presentationStyle="pageSheet">
+            <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
+              <View style={[styles.modalTopBar, { paddingTop: insets.top + 12, borderBottomColor: colors.border }]}>
+                <Text style={[styles.modalTitle, { color: colors.foreground }]}>Cart</Text>
+                <TouchableOpacity onPress={() => setShowCart(false)}>
+                  <Feather name="x" size={22} color={colors.foreground} />
+                </TouchableOpacity>
+              </View>
+              {CartContent}
+            </View>
+          </Modal>
+        </>
+      )}
+
+      <Modal visible={showPayment} animationType="fade" transparent>
+        <View style={styles.paymentOverlay}>
+          <View
+            style={[
+              styles.paymentSheet,
+              { backgroundColor: colors.card, borderRadius: colors.radius * 2 },
+            ]}
+          >
+            <Text style={[styles.paymentTitle, { color: colors.foreground }]}>
+              Payment
+            </Text>
+
+            <Text style={[styles.paymentLabel, { color: colors.mutedForeground }]}>
+              Payment method
+            </Text>
+            <View style={styles.paymentMethods}>
+              {(["Card", "Cash"] as PaymentMethod[]).map((m) => (
+                <TouchableOpacity
+                  key={m}
+                  onPress={() => setPaymentMethod(m)}
+                  style={[
+                    styles.methodBtn,
+                    {
+                      borderColor: paymentMethod === m ? colors.primary : colors.border,
+                      backgroundColor: paymentMethod === m ? colors.primary + "18" : "transparent",
+                      borderRadius: colors.radius,
+                    },
+                  ]}
+                >
+                  <Feather
+                    name={m === "Card" ? "credit-card" : "dollar-sign"}
+                    size={18}
+                    color={paymentMethod === m ? colors.primary : colors.mutedForeground}
+                  />
+                  <Text
+                    style={{
+                      color: paymentMethod === m ? colors.primary : colors.mutedForeground,
+                      fontWeight: "600",
+                      fontFamily: "Inter_600SemiBold",
+                      marginLeft: 8,
+                    }}
+                  >
+                    {m}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={[styles.summaryBox, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}>
+              <View style={styles.summaryRow}>
+                <Text style={{ color: colors.mutedForeground }}>Subtotal</Text>
+                <Text style={{ color: colors.foreground }}>€{subtotal.toFixed(2)}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={{ color: colors.mutedForeground }}>
+                  VAT ({Math.round(VAT_RATE * 100)}%)
+                </Text>
+                <Text style={{ color: colors.foreground }}>€{vatAmount.toFixed(2)}</Text>
+              </View>
+              <View style={[styles.divider, { backgroundColor: colors.border, marginVertical: 10 }]} />
+              <View style={styles.summaryRow}>
+                <Text style={[styles.grandTotalLabel, { color: colors.foreground }]}>Total</Text>
+                <Text style={[styles.grandTotalValue, { color: colors.foreground }]}>
+                  €{total.toFixed(2)}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.paymentActions}>
+              <TouchableOpacity
+                onPress={() => setShowPayment(false)}
+                style={[
+                  styles.cancelBtn,
+                  { borderColor: colors.border, borderRadius: colors.radius },
+                ]}
+              >
+                <Text style={{ color: colors.mutedForeground, fontWeight: "600" }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleChargeSale}
+                style={[
+                  styles.confirmBtn,
+                  { backgroundColor: colors.success, borderRadius: colors.radius },
+                ]}
+              >
+                <Feather name="check" size={16} color="#fff" />
+                <Text style={styles.confirmBtnText}>Confirm Sale</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+  splitRow: { flex: 1, flexDirection: "row" },
+  catalogPane: { flex: 3 },
+  cartPane: { width: 350, borderLeftWidth: 1 },
+  mobileContent: { flex: 1 },
+  grid: { padding: 10, paddingTop: 4 },
+  loader: { flex: 1 },
+  cartInner: { flex: 1 },
+  cartHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  cartTitle: { fontSize: 17, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  cartList: { flex: 1 },
+  cartFooter: { padding: 16, borderTopWidth: 1 },
+  totalsRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
+  totalLabel: { fontSize: 13 },
+  totalValue: { fontSize: 13, fontWeight: "600" },
+  divider: { height: 1, marginVertical: 8 },
+  grandTotal: { marginBottom: 14 },
+  grandTotalLabel: { fontSize: 17, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  grandTotalValue: { fontSize: 17, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  chargeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 15,
+  },
+  chargeBtnText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+    fontFamily: "Inter_700Bold",
+  },
+  cartBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: 14,
+  },
+  cartBarLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
+  cartBarBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cartBarBadgeText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  cartBarText: { color: "#fff", fontWeight: "700", fontSize: 15, fontFamily: "Inter_700Bold" },
+  cartBarTotal: { color: "#fff", fontWeight: "700", fontSize: 15, fontFamily: "Inter_700Bold" },
+  modalRoot: { flex: 1 },
+  modalTopBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+  },
+  modalTitle: { fontSize: 20, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  paymentOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  paymentSheet: {
+    width: "100%",
+    maxWidth: 440,
+    padding: 24,
+  },
+  paymentTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    fontFamily: "Inter_700Bold",
+    marginBottom: 20,
+  },
+  paymentLabel: { fontSize: 13, marginBottom: 10 },
+  paymentMethods: { flexDirection: "row", gap: 10, marginBottom: 20 },
+  methodBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    borderWidth: 2,
+  },
+  summaryBox: { padding: 16, marginBottom: 20 },
+  summaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  paymentActions: { flexDirection: "row", gap: 12 },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    alignItems: "center",
+    borderWidth: 1,
+  },
+  confirmBtn: {
+    flex: 2,
+    flexDirection: "row",
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  confirmBtnText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+    fontFamily: "Inter_700Bold",
+  },
+});

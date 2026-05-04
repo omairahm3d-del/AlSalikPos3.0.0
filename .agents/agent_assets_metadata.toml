@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "nZYdLoPZEvN9UJ75hnPcP"
+uri = "file://artifacts/pos-app/assets/images/icon.png"
+type = "image"
+title = "pos app icon"
