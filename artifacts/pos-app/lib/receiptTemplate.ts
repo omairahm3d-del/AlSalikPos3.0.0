@@ -64,6 +64,11 @@ export function generateReceiptHTML(
     ? (business.trn ? `<div>TRN: ${business.trn}</div>` : '<div style="color:#999;">TRN: Not configured</div>')
     : "";
 
+  const logoMaxW = rd.paperWidth === "58mm" ? 100 : 140;
+  const logoSection = rd.showLogo && business.logoBase64
+    ? `<div class="center" style="margin-bottom:6px;"><img src="${business.logoBase64}" alt="Logo" style="max-width:${logoMaxW}px;max-height:60px;object-fit:contain;" /></div>`
+    : "";
+
   return `<!DOCTYPE html>
 <html dir="ltr" lang="en">
 <head>
@@ -89,6 +94,8 @@ export function generateReceiptHTML(
 </head>
 <body>
   ${isRefund ? '<div class="refund-banner">*** REFUND ***</div>' : ""}
+
+  ${logoSection}
 
   ${headerText}
 

@@ -226,6 +226,7 @@ export interface BusinessSettings {
   address: string;
   phone: string;
   email: string;
+  logoBase64?: string;
   loyaltyPointsPerAed: number;
   loyaltyRedemptionRate: number;
   receiptDesign?: ReceiptDesignSettings;

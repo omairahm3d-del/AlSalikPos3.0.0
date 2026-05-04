@@ -264,6 +264,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     const base: BusinessSettings = {
       businessName: map.businessName ?? "", trn: map.trn ?? "",
       address: map.address ?? "", phone: map.phone ?? "", email: map.email ?? "",
+      logoBase64: map.logoBase64 ?? undefined,
       loyaltyPointsPerAed: parseFloat(map.loyaltyPointsPerAed || "1"),
       loyaltyRedemptionRate: parseFloat(map.loyaltyRedemptionRate || "0.01"),
     };
@@ -291,6 +292,11 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       ["loyaltyPointsPerAed", String(settings.loyaltyPointsPerAed)],
       ["loyaltyRedemptionRate", String(settings.loyaltyRedemptionRate)],
     ];
+    if (settings.logoBase64) {
+      entries.push(["logoBase64", settings.logoBase64]);
+    } else {
+      await db.runAsync("DELETE FROM settings WHERE key=?", ["logoBase64"]);
+    }
     if (settings.receiptDesign) {
       entries.push(["receiptDesign", JSON.stringify(settings.receiptDesign)]);
     }

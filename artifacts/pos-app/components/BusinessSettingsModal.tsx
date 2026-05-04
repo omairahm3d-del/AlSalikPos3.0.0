@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -13,6 +14,7 @@ import {
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
@@ -33,16 +35,20 @@ export function BusinessSettingsModal({ visible, onClose }: Props) {
   const [address, setAddress] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined);
   const [loyaltyPointsPerAed, setLoyaltyPointsPerAed] = useState("1");
   const [loyaltyRedemptionRate, setLoyaltyRedemptionRate] = useState("0.01");
+  const [existingSettings, setExistingSettings] = useState<BusinessSettings | null>(null);
 
   const load = useCallback(async () => {
     const s = await loadBusinessSettings();
+    setExistingSettings(s);
     setBusinessName(s.businessName);
     setTrn(s.trn);
     setAddress(s.address);
     setPhone(s.phone);
     setEmail(s.email);
+    setLogoBase64(s.logoBase64);
     setLoyaltyPointsPerAed(String(s.loyaltyPointsPerAed ?? 1));
     setLoyaltyRedemptionRate(String(s.loyaltyRedemptionRate ?? 0.01));
   }, [loadBusinessSettings]);
@@ -56,17 +62,56 @@ export function BusinessSettingsModal({ visible, onClose }: Props) {
       return;
     }
     const settings: BusinessSettings = {
+      ...existingSettings,
       businessName: businessName.trim(),
       trn: trimmedTrn,
       address: address.trim(),
       phone: phone.trim(),
       email: email.trim(),
+      logoBase64,
       loyaltyPointsPerAed: parseFloat(loyaltyPointsPerAed) || 1,
       loyaltyRedemptionRate: parseFloat(loyaltyRedemptionRate) || 0.01,
     };
     await saveBusinessSettings(settings);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onClose();
+  };
+
+  const pickLogo = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Required", "Please allow photo library access to upload a logo.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.6,
+        base64: true,
+      });
+      if (!result.canceled) {
+        const asset = result.assets?.[0];
+        if (asset?.base64) {
+          const mime = asset.mimeType && /^image\/(png|jpeg|jpg|webp|gif)$/i.test(asset.mimeType)
+            ? asset.mimeType
+            : "image/jpeg";
+          setLogoBase64(`data:${mime};base64,${asset.base64}`);
+        } else {
+          Alert.alert("Logo Error", "Could not read the selected image. Please try a different file.");
+        }
+      }
+    } catch {
+      Alert.alert("Error", "Failed to pick image.");
+    }
+  };
+
+  const removeLogo = () => {
+    Alert.alert("Remove Logo", "Are you sure you want to remove the business logo?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Remove", style: "destructive", onPress: () => setLogoBase64(undefined) },
+    ]);
   };
 
   const renderField = (
@@ -96,6 +141,31 @@ export function BusinessSettingsModal({ visible, onClose }: Props) {
           <View style={[styles.notice, { backgroundColor: colors.primary + "15", borderRadius: colors.radius }]}>
             <Feather name="info" size={14} color={colors.primary} />
             <Text style={[styles.noticeText, { color: colors.primary }]}>Configure your business details for UAE VAT-compliant tax invoices and receipts.</Text>
+          </View>
+
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Business Logo</Text>
+          <Text style={[styles.hint, { color: colors.mutedForeground }]}>Appears on receipts when "Show Logo" is enabled in Receipt Designer</Text>
+          <View style={styles.logoRow}>
+            {logoBase64 ? (
+              <View style={styles.logoPreviewWrap}>
+                <Image source={{ uri: logoBase64 }} style={[styles.logoPreview, { borderColor: colors.border, borderRadius: colors.radius }]} />
+                <View style={styles.logoBtnRow}>
+                  <TouchableOpacity onPress={pickLogo} style={[styles.logoBtn, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius }]}>
+                    <Feather name="edit-2" size={14} color={colors.primary} />
+                    <Text style={[styles.logoBtnText, { color: colors.primary }]}>Change</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={removeLogo} style={[styles.logoBtn, { backgroundColor: "#E74C3C15", borderColor: "#E74C3C40", borderRadius: colors.radius }]}>
+                    <Feather name="trash-2" size={14} color="#E74C3C" />
+                    <Text style={[styles.logoBtnText, { color: "#E74C3C" }]}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <TouchableOpacity onPress={pickLogo} style={[styles.logoPlaceholder, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius }]}>
+                <Feather name="image" size={28} color={colors.mutedForeground} />
+                <Text style={[styles.logoPlaceholderText, { color: colors.mutedForeground }]}>Tap to upload logo</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {renderField("Business Name", businessName, setBusinessName, "e.g. Al Baraka Cafe LLC")}
@@ -130,4 +200,12 @@ const styles = StyleSheet.create({
   hint: { fontSize: 11, marginBottom: 6, marginTop: -4 },
   input: { paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, borderWidth: 1 },
   sectionDivider: { borderBottomWidth: 1, marginVertical: 20 },
+  logoRow: { marginTop: 4 },
+  logoPreviewWrap: { alignItems: "center", gap: 10 },
+  logoPreview: { width: 80, height: 80, borderWidth: 1, resizeMode: "contain" },
+  logoBtnRow: { flexDirection: "row", gap: 10 },
+  logoBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1 },
+  logoBtnText: { fontSize: 13, fontWeight: "600" },
+  logoPlaceholder: { alignItems: "center", justifyContent: "center", paddingVertical: 24, borderWidth: 1, borderStyle: "dashed", gap: 6 },
+  logoPlaceholderText: { fontSize: 13 },
 });

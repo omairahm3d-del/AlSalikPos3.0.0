@@ -513,6 +513,9 @@ export default function BackOfficeScreen() {
           {renderField("Footer Text", receiptDesign.footerText, (v) => setReceiptDesign({ ...receiptDesign, footerText: v }), "Thank you message")}
           {renderSwitch("Show TRN on Receipt", receiptDesign.showTrn, (v) => setReceiptDesign({ ...receiptDesign, showTrn: v }))}
           {renderSwitch("Show Logo", receiptDesign.showLogo, (v) => setReceiptDesign({ ...receiptDesign, showLogo: v }))}
+          {receiptDesign.showLogo && !bizSettings?.logoBase64 && (
+            <Text style={{ color: "#E67E22", fontSize: 11, marginTop: 2, marginBottom: 4 }}>Upload a logo in Business Settings to display it on receipts.</Text>
+          )}
 
           <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 16 }]}>Font Size</Text>
           <View style={s.chipRow}>

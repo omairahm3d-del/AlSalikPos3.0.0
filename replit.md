@@ -33,7 +33,7 @@ The POS application is built with Expo (SDK 54) and React Native, optimized for 
 - **Tablet Layout**: Utilizes a split-panel layout for screens ≥768px wide.
 - **Dark UI Theme**: Background `#0F1117`, with specific color palettes for cards, primary actions, success, destructive actions, and warnings.
 - **UAE Standards**: Currency (AED), VAT rate (5%), and specific tax invoice formats are integrated.
-- **Receipts**: HTML-based templates for UAE Simplified Tax Invoices, bill previews, and kitchen tickets, with customization options. Invoice number printed as Code128 barcode on receipt. WhatsApp QR code linking to business phone number on receipt.
+- **Receipts**: HTML-based templates for UAE Simplified Tax Invoices, bill previews, and kitchen tickets, with customization options. Invoice number printed as Code128 barcode on receipt. WhatsApp QR code linking to business phone number on receipt. Business logo support (base64-encoded, uploaded via Business Settings, rendered on receipt when "Show Logo" is enabled in Receipt Designer).
 
 ### Technical Implementations & Features
 
