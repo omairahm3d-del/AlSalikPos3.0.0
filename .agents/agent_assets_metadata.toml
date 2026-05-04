@@ -11,3 +11,9 @@ id = "ac2cruQ1vTpPmBUTFt5gd"
 uri = "file://Al-Salik-POS-Windows-Installer.zip"
 type = "unspecified"
 title = "Al Salik POS — Windows Installer Project"
+
+[[outputs]]
+id = "1lXg75xOQ7UjoTx--zuZG"
+uri = "file://Al-Salik-POS-Setup-1.0.0.zip"
+type = "unspecified"
+title = "Al Salik POS Setup 1.0.0 — Windows Installer (Extract & Run .exe)"

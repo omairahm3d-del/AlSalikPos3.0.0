@@ -12,35 +12,39 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "build:win": "electron-builder --win --x64",
-    "build:win32": "electron-builder --win --ia32",
-    "build:all": "electron-builder --win --x64 --ia32"
+    "build:win": "CSC_IDENTITY_AUTO_DISCOVERY=false WIN_CSC_LINK= electron-builder --win --x64"
   },
-  "dependencies": {},
   "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^25.1.8"
+    "electron": "^33.4.1",
+    "electron-builder": "^24.13.3"
   },
   "build": {
     "appId": "com.alsalikcomputers.pos",
     "productName": "Al Salik POS",
     "copyright": "© 2025 Al Salik Computers. All rights reserved.",
+    "asar": false,
     "directories": {
       "output": "dist"
     },
     "files": [
       "main.js",
       "assets/**/*",
-      "node_modules/**/*",
+      "www/**/*",
       "package.json"
     ],
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "assets/icon.ico",
       "publisherName": "Al Salik Computers",
       "verifyUpdateCodeSignature": false,
+      "signAndEditExecutable": false,
       "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
@@ -49,18 +53,11 @@
       "allowElevation": true,
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
-      "installerHeaderIcon": "assets/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Al Salik POS",
       "menuCategory": "Al Salik Computers",
-      "installerSidebar": "assets/installer-sidebar.bmp",
-      "license": "LICENSE.txt",
-      "language": "1033",
-      "include": "installer.nsh"
-    },
-    "extraMetadata": {
-      "version": "1.0.0"
+      "language": "1033"
     }
   }
 }
