@@ -305,12 +305,15 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     const customers = await getJson<Customer[]>(K.customers, []);
     const t = customers.find((c) => c.id === customerId);
     if (!t) throw new Error("Customer not found");
-    if (amount > t.creditBalance) throw new Error("Payment exceeds outstanding balance");
-    const payment: CreditPayment = { id: generateId(), customerId, amount, note, createdAt: Date.now() };
+    const roundedAmount = Math.round(amount * 100) / 100;
+    const roundedBalance = Math.round(t.creditBalance * 100) / 100;
+    if (roundedAmount > roundedBalance) throw new Error("Payment exceeds outstanding balance");
+    const newBalance = Math.round((roundedBalance - roundedAmount) * 100) / 100;
+    const payment: CreditPayment = { id: generateId(), customerId, amount: roundedAmount, note, createdAt: Date.now() };
     const existing = await getJson<CreditPayment[]>(K.creditPayments, []);
     await setJson(K.creditPayments, [payment, ...existing]);
     await setJson(K.customers, customers.map((c) =>
-      c.id === customerId ? { ...c, creditBalance: c.creditBalance - amount } : c
+      c.id === customerId ? { ...c, creditBalance: newBalance } : c
     ));
     return payment;
   }, []);
