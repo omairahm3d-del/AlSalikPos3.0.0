@@ -64,16 +64,28 @@ The POS application is built with Expo (SDK 54) and React Native, optimized for 
 
 Products, Customers, and Reports are rendered as embedded sub-sections within Back Office using named exports with an `embedded` prop (controls padding). The route files remain in `app/(tabs)/` for Expo Router compatibility but are hidden from the tab bar via `href: null` (ClassicTabs) and trigger omission (NativeTabs).
 
-## Desktop App (`desktop-app/`)
+## Desktop Installer (`desktop-installer/`)
 
-A standalone Electron 22.x wrapper designed for Windows 8.1+ desktop deployment. It loads the static Expo web export from the `web-build/` directory, making it fully offline.
+A standalone Electron wrapper that bundles the Expo web export and ships as a Windows NSIS installer (`Al Salik POS Setup 1.0.0.exe`).
 
 ### Architecture
 
--   **Electron 22.3.27**: Utilized for its compatibility with Windows 8.1.
--   **electron-builder 24.13.3**: Used to create NSIS installers (.exe) for Windows x64 and ia32.
--   **Offline Operation**: Data stored in `localStorage` (via AsyncStorage web implementation). No server required.
--   **Asset Path Fixes**: Automatically adjusts absolute asset paths for `file://` protocol compatibility.
+-   **Electron 33.x** wrapper (`main.js`): starts an internal `http.createServer` on a random localhost port that serves files from `www/` (the Expo web export), then loads it in a `BrowserWindow`. Avoids `file://` issues with Service Workers and absolute URLs.
+-   **NSIS installer**: built directly with the cached `makensis` binary at `.cache/electron-builder/nsis/nsis-3.0.4.1/linux/makensis` (electron-builder NSIS step is skipped because it requires Wine in this environment). Script: `desktop-installer/installer.nsi`. Output: `desktop-installer/dist/Al Salik POS Setup 1.0.0.exe`.
+-   **Re-exporting the web bundle** (must be redone whenever pos-app code changes that should reach the Windows build):
+    1. `cd artifacts/pos-app && pnpm exec expo export --platform web --output-dir ../../desktop-installer/www-new --clear`
+    2. Replace `desktop-installer/www/` with `www-new/`
+    3. Sync into the Electron staging dir: `cp -r desktop-installer/www desktop-installer/dist/win-unpacked/resources/app/www`
+    4. Rebuild installer: `.cache/electron-builder/nsis/nsis-3.0.4.1/linux/makensis desktop-installer/installer.nsi`
+-   **Download endpoint**: `GET /api/download/info` returns metadata; `GET /api/download/installer` streams the `.exe` (see `artifacts/api-server/src/routes/download.ts`). The size in `info` is computed from the file on disk so it always reflects the latest rebuild.
+
+### Web/Native print + email behavior (important for the desktop installer)
+
+The desktop installer runs the Expo **web** export, so any code path gated to native (`Platform.OS !== "web"`) does not execute inside the Windows app. Rules:
+- Printing on web (used for receipts, Z-Reports, credit-payment receipts): open a popup with the receipt HTML and call `window.print()`. Native uses `expo-print`.
+- Sharing/PDF on web: just re-trigger print (no `expo-sharing` on web). `expo-sharing` is only imported inside `Platform.OS !== "web"` branches.
+- Email Z-Report: try SMTP via `/api/email/send` first if SMTP is configured; if SMTP returns failure or is not configured, web falls back to `mailto:` (`window.open`); native falls back to `expo-mail-composer` with a generated PDF attachment.
+- Files implementing this: `app/(tabs)/reports.tsx`, `components/ReceiptModal.tsx`, `components/CloseRegisterModal.tsx`, `components/CreditCollectionModal.tsx`.
 
 # External Dependencies
 
