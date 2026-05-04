@@ -2,6 +2,17 @@ import type { BusinessSettings, ReceiptDesignSettings, Sale, SaleItem, ZReport }
 import { CURRENCY, DEFAULT_RECEIPT_DESIGN } from "@/types";
 import { generateBarcodeSVG, generateWhatsAppQRSVG } from "./barcodeSvg";
 
+export interface CreditPaymentReceiptData {
+  customerName: string;
+  customerPhone?: string;
+  paymentMethod: string;
+  amountPaid: number;
+  remainingBalance: number;
+  note?: string;
+  paidAt: number;
+  invoices: { invoiceNumber: string; total: number; createdAt: number }[];
+}
+
 function fmt(amount: number): string {
   return `${CURRENCY} ${Math.abs(amount).toFixed(2)}`;
 }
@@ -292,6 +303,132 @@ export function generateZReportHTML(
     End of Day Report<br/>
     Generated: ${fmtDateTime(Date.now())}<br/>
     This is a system-generated Z-Report
+  </div>
+</body>
+</html>`;
+}
+
+export function generateCreditPaymentReceiptHTML(
+  data: CreditPaymentReceiptData,
+  business: BusinessSettings
+): string {
+  const rd = business.receiptDesign ?? DEFAULT_RECEIPT_DESIGN;
+  const fs = getFontSize(rd.fontSize);
+  const pw = getPaperWidth(rd.paperWidth);
+  const pageSize = rd.paperWidth === "58mm" ? "58mm" : "80mm";
+
+  const trnLine = rd.showTrn && business.trn
+    ? `<div>TRN: ${business.trn}</div>` : "";
+
+  const logoMaxW = rd.paperWidth === "58mm" ? 100 : 140;
+  const logoSection = rd.showLogo && business.logoBase64
+    ? `<div class="center" style="margin-bottom:6px;"><img src="${business.logoBase64}" alt="Logo" style="max-width:${logoMaxW}px;max-height:60px;object-fit:contain;" /></div>`
+    : "";
+
+  const invoiceRows = data.invoices.length > 0
+    ? data.invoices.map((inv) => `
+        <tr>
+          <td style="padding:3px 0;text-align:left;">${inv.invoiceNumber}</td>
+          <td style="padding:3px 0;text-align:right;font-size:${fs.body - 1}px;color:#666;">${new Date(inv.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" })}</td>
+          <td style="padding:3px 0;text-align:right;">${fmt(inv.total)}</td>
+        </tr>`).join("")
+    : `<tr><td colspan="3" style="text-align:center;color:#999;">No invoice reference</td></tr>`;
+
+  const noteRow = data.note
+    ? `<tr><td style="text-align:left;color:#555;">Ref / Note</td><td style="text-align:right;">${data.note}</td></tr>`
+    : "";
+
+  return `<!DOCTYPE html>
+<html dir="ltr" lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    @page { margin: 4mm; size: ${pageSize} auto; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: 'Courier New', Courier, monospace; font-size: ${fs.body}px; color: #000; width: ${pw}; margin: 0 auto; padding: 4mm 0; }
+    .center { text-align: center; }
+    .bold { font-weight: bold; }
+    .divider { border-top: 1px dashed #000; margin: 6px 0; }
+    .header-title { font-size: ${fs.header}px; font-weight: bold; margin-bottom: 2px; }
+    .header-ar { font-size: ${fs.title}px; font-weight: bold; margin-bottom: 4px; }
+    .info-line { font-size: ${fs.body - 1}px; line-height: 1.6; }
+    table { width: 100%; border-collapse: collapse; }
+    th { font-size: ${fs.body - 1}px; font-weight: bold; padding: 4px 0; border-bottom: 1px solid #000; }
+    .total-section td { padding: 2px 0; }
+    .grand-total td { font-size: ${fs.header + 2}px; font-weight: bold; padding: 6px 0; }
+    .paid-banner { background: #27AE60; color: #fff; padding: 4px 0; font-size: ${fs.header}px; font-weight: bold; text-align: center; margin-bottom: 4px; letter-spacing: 1px; }
+    .footer { font-size: ${fs.body - 2}px; text-align: center; margin-top: 8px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+
+  <div class="paid-banner">✓ PAYMENT RECEIVED</div>
+
+  ${logoSection}
+
+  <div class="center info-line" style="margin-bottom:4px;">
+    ${business.businessName ? `<div class="bold" style="font-size:${fs.title}px;">${business.businessName}</div>` : ""}
+    ${trnLine}
+    ${business.address ? `<div>${business.address}</div>` : ""}
+    ${business.phone ? `<div>Tel: ${business.phone}</div>` : ""}
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="center">
+    <div class="header-ar">إيصال سداد دين</div>
+    <div class="header-title">CREDIT PAYMENT RECEIPT</div>
+  </div>
+
+  <div class="divider"></div>
+
+  <table class="info-line">
+    <tr><td><strong>Date:</strong></td><td style="text-align:right;">${formatDateTime(data.paidAt)}</td></tr>
+    <tr><td><strong>Customer:</strong></td><td style="text-align:right;">${data.customerName}</td></tr>
+    ${data.customerPhone ? `<tr><td><strong>Phone:</strong></td><td style="text-align:right;">${data.customerPhone}</td></tr>` : ""}
+    <tr><td><strong>Paid Via:</strong></td><td style="text-align:right;font-weight:bold;">${data.paymentMethod}</td></tr>
+    ${noteRow}
+  </table>
+
+  <div class="divider"></div>
+
+  ${data.invoices.length > 0 ? `
+  <div style="font-size:${fs.body - 1}px;font-weight:bold;margin-bottom:4px;">Credit Invoices</div>
+  <table>
+    <thead><tr>
+      <th style="text-align:left;">Invoice #</th>
+      <th style="text-align:right;">Date</th>
+      <th style="text-align:right;">Amount</th>
+    </tr></thead>
+    <tbody>${invoiceRows}</tbody>
+  </table>
+  <div class="divider"></div>
+  ` : ""}
+
+  <table class="total-section">
+    <tr><td style="text-align:left;">Amount Paid</td><td style="text-align:right;">${fmt(data.amountPaid)}</td></tr>
+    <tr><td style="text-align:left;">Remaining Balance</td><td style="text-align:right;">${fmt(data.remainingBalance)}</td></tr>
+  </table>
+
+  <div class="divider"></div>
+
+  <table>
+    <tr class="grand-total">
+      <td style="text-align:left;">AMOUNT PAID</td>
+      <td style="text-align:right;">${fmt(data.amountPaid)}</td>
+    </tr>
+  </table>
+
+  <div class="divider"></div>
+
+  <div class="footer">
+    ${data.remainingBalance <= 0
+      ? "✓ Account fully settled / تم تسوية الحساب بالكامل"
+      : `Remaining: ${fmt(data.remainingBalance)}`
+    }<br/>
+    Thank you for your payment<br/>
+    شكراً على الدفع
   </div>
 </body>
 </html>`;

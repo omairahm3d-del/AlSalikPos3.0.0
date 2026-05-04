@@ -15,6 +15,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
+import { generateCreditPaymentReceiptHTML } from "@/lib/receiptTemplate";
 import type { Customer, Sale } from "@/types";
 import { formatCurrency } from "@/types";
 
@@ -39,7 +40,7 @@ const PAYMENT_METHODS: { key: PayMethod; icon: "dollar-sign" | "credit-card" | "
 
 export function CreditCollectionModal({ visible, onClose }: Props) {
   const colors = useColors();
-  const { loadCustomers, loadSales, recordCreditPayment } = useDatabase();
+  const { loadCustomers, loadSales, recordCreditPayment, loadBusinessSettings } = useDatabase();
 
   const [query, setQuery] = useState("");
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
@@ -52,7 +53,16 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
   const [payMethod, setPayMethod] = useState<PayMethod>("Cash");
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-  const [successInfo, setSuccessInfo] = useState<{ name: string; amount: number; method: PayMethod } | null>(null);
+  const [successInfo, setSuccessInfo] = useState<{
+    name: string;
+    phone?: string;
+    amount: number;
+    method: PayMethod;
+    remainingBalance: number;
+    note: string;
+    paidAt: number;
+    invoices: { invoiceNumber: string; total: number; createdAt: number }[];
+  } | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -144,15 +154,31 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
     }
 
     const custName = selected.customer.name;
+    const custPhone = selected.customer.phone;
     const custId = selected.customer.id;
     const method = payMethod;
+    const currentInvoices = selected.sales.map((s) => ({
+      invoiceNumber: s.invoiceNumber ?? "",
+      total: s.total,
+      createdAt: s.createdAt,
+    }));
+    const noteText = [method, payNote.trim()].filter(Boolean).join(" — ");
+    const remaining = Math.max(0, Math.round((balance - amt) * 100) / 100);
 
     setSaving(true);
     try {
-      const noteText = [method, payNote.trim()].filter(Boolean).join(" — ");
       await recordCreditPayment(custId, amt, noteText || "Credit payment collected");
       try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch { /* ignore on web */ }
-      setSuccessInfo({ name: custName, amount: amt, method });
+      setSuccessInfo({
+        name: custName,
+        phone: custPhone,
+        amount: amt,
+        method,
+        remainingBalance: remaining,
+        note: payNote.trim(),
+        paidAt: Date.now(),
+        invoices: currentInvoices,
+      });
       await fetchData();
       setSelected(null);
       setPayAmount("");
@@ -379,6 +405,30 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
     );
   };
 
+  const handlePrintReceipt = async () => {
+    if (!successInfo) return;
+    try {
+      const business = await loadBusinessSettings();
+      const html = generateCreditPaymentReceiptHTML({
+        customerName: successInfo.name,
+        customerPhone: successInfo.phone,
+        paymentMethod: successInfo.method,
+        amountPaid: successInfo.amount,
+        remainingBalance: successInfo.remainingBalance,
+        note: successInfo.note || undefined,
+        paidAt: successInfo.paidAt,
+        invoices: successInfo.invoices,
+      }, business);
+      if (Platform.OS === "web") {
+        const w = window.open("", "_blank", "width=420,height=700");
+        if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 350); }
+      } else {
+        const Print = await import("expo-print");
+        await Print.printAsync({ html });
+      }
+    } catch { /* ignore */ }
+  };
+
   const renderSuccess = () => {
     if (!successInfo) return null;
     return (
@@ -394,6 +444,29 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
         <Text style={[s.successSub, { color: colors.mutedForeground }]}>
           via <Text style={{ fontWeight: "700", color: colors.foreground }}>{successInfo.method}</Text>
         </Text>
+        {successInfo.remainingBalance > 0 ? (
+          <View style={[s.balancePill, { backgroundColor: colors.destructive + "15", borderColor: colors.destructive + "40" }]}>
+            <Feather name="alert-circle" size={12} color={colors.destructive} />
+            <Text style={{ color: colors.destructive, fontSize: 12, fontWeight: "600", marginLeft: 4 }}>
+              Remaining: {formatCurrency(successInfo.remainingBalance)}
+            </Text>
+          </View>
+        ) : (
+          <View style={[s.balancePill, { backgroundColor: colors.success + "15", borderColor: colors.success + "40" }]}>
+            <Feather name="check" size={12} color={colors.success} />
+            <Text style={{ color: colors.success, fontSize: 12, fontWeight: "600", marginLeft: 4 }}>
+              Account fully settled
+            </Text>
+          </View>
+        )}
+
+        <TouchableOpacity
+          onPress={handlePrintReceipt}
+          style={[s.printBtn, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius }]}
+        >
+          <Feather name="printer" size={16} color={colors.primary} />
+          <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 14, marginLeft: 6 }}>Print Receipt</Text>
+        </TouchableOpacity>
 
         <View style={s.successBtns}>
           <TouchableOpacity
@@ -530,7 +603,9 @@ const s = StyleSheet.create({
   successTitle: { fontSize: 20, fontWeight: "700" },
   successAmt: { fontSize: 32, fontWeight: "800", marginVertical: 4 },
   successSub: { fontSize: 14, textAlign: "center" },
-  successBtns: { flexDirection: "row", gap: 10, marginTop: 20, width: "100%" },
+  balancePill: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, marginTop: 4 },
+  printBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingHorizontal: 24, paddingVertical: 12, borderWidth: 1, marginTop: 12, width: "100%" },
+  successBtns: { flexDirection: "row", gap: 10, marginTop: 12, width: "100%" },
   anotherBtn: { flex: 1, flexDirection: "row", borderWidth: 1, paddingVertical: 13, alignItems: "center", justifyContent: "center" },
   doneBtn: { flex: 1, paddingVertical: 13, alignItems: "center", justifyContent: "center" },
 });
