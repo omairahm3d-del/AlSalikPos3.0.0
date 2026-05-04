@@ -249,6 +249,16 @@ export interface CustomerDisplaySettings {
   displayMode: "mirror" | "summary" | "custom";
 }
 
+export interface SmtpConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  pass: string;
+  fromEmail: string;
+  fromName: string;
+}
+
 export interface BusinessSettings {
   businessName: string;
   trn: string;
@@ -264,6 +274,7 @@ export interface BusinessSettings {
   customerDisplay?: CustomerDisplaySettings;
   rolePermissions?: { cashier: StaffPermissions };
   zReportEmail?: string;
+  smtpConfig?: SmtpConfig;
 }
 
 export interface ZReport {

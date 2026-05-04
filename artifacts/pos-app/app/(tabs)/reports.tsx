@@ -158,6 +158,29 @@ export function ReportsScreen({ embedded = false }: { embedded?: boolean }) {
     const recipientEmail = business.zReportEmail?.trim();
     if (!recipientEmail) return false;
 
+    const smtp = business.smtpConfig;
+    const hasSmtp = smtp?.host && smtp?.user && smtp?.pass;
+
+    if (hasSmtp) {
+      try {
+        const baseUrl = Platform.OS === "web" ? "" : `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
+        const response = await fetch(`${baseUrl}/api/email/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: recipientEmail,
+            subject: `Z-Report - ${business.businessName || "POS"} - ${dateLabel}`,
+            html,
+            config: smtp,
+          }),
+        });
+        const result = await response.json() as { success: boolean };
+        return result.success;
+      } catch {
+        return false;
+      }
+    }
+
     const subject = `Z-Report - ${business.businessName || "POS"} - ${dateLabel}`;
     const bodyText = [
       `Z-Report for ${dateLabel}`,
@@ -425,6 +448,31 @@ export function ReportsScreen({ embedded = false }: { embedded?: boolean }) {
             <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Actual Cash in Drawer</Text>
             <TextInput value={closingCash} onChangeText={setClosingCash} placeholder="0.00" placeholderTextColor={colors.mutedForeground} keyboardType="decimal-pad" style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius, textAlign: "center", fontSize: 18, fontWeight: "700" }]} />
 
+            {(() => {
+              const cashExpected = stats.paymentBreakdown.find(p => p.method === "Cash")?.amount ?? 0;
+              const cashEntered = parseFloat(closingCash) || 0;
+              const variance = cashEntered - cashExpected;
+              const hasInput = closingCash.trim() !== "";
+              return (
+                <View style={[styles.varianceBox, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}>
+                  <View style={styles.zRow}>
+                    <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>Cash Sales (Expected)</Text>
+                    <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 13 }}>{formatCurrency(cashExpected)}</Text>
+                  </View>
+                  {hasInput && (
+                    <View style={styles.zRow}>
+                      <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>
+                        Variance {variance > 0 ? "(Over)" : variance < 0 ? "(Short)" : "(Exact)"}
+                      </Text>
+                      <Text style={{ color: variance === 0 ? colors.success : variance > 0 ? colors.success : colors.destructive, fontWeight: "700", fontSize: 13 }}>
+                        {variance >= 0 ? "+" : ""}{formatCurrency(variance)}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
+
             <View style={styles.actions}>
               <TouchableOpacity onPress={() => setShowZReport(false)} disabled={isClosingRegister} style={[styles.cancelBtn, { borderColor: colors.border, borderRadius: colors.radius, opacity: isClosingRegister ? 0.5 : 1 }]}>
                 <Text style={{ color: colors.mutedForeground, fontWeight: "600" }}>Cancel</Text>
@@ -496,6 +544,7 @@ const styles = StyleSheet.create({
   sheetSub: { fontSize: 13, marginBottom: 16 },
   zSummary: { padding: 16, marginBottom: 16 },
   zRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6 },
+  varianceBox: { padding: 12, marginTop: 10, gap: 4 },
   fieldLabel: { fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8, marginTop: 12 },
   input: { paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, borderWidth: 1 },
   actions: { flexDirection: "row", gap: 12, marginTop: 20 },

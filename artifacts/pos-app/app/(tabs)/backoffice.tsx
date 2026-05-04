@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Image,
@@ -21,7 +22,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BusinessSettingsModal } from "@/components/BusinessSettingsModal";
 import { ProductsScreen } from "./products";
 import { CustomersScreen } from "./customers";
-import { ReportsScreen } from "./reports";
+import { ReportsHub } from "@/components/ReportsHub";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useStaff } from "@/context/StaffContext";
 import { useColors } from "@/hooks/useColors";
@@ -38,6 +39,7 @@ import type {
   RecipeIngredient,
   ReceiptDesignSettings,
   Rider,
+  SmtpConfig,
   Staff,
   StaffPermissions,
   TaxGroup,
@@ -162,6 +164,14 @@ export default function BackOfficeScreen() {
   const [cashierPerms, setCashierPerms] = useState<StaffPermissions>({ ...DEFAULT_CASHIER_PERMISSIONS });
 
   const [zReportEmail, setZReportEmail] = useState("");
+  const [smtpHost, setSmtpHost] = useState("");
+  const [smtpPort, setSmtpPort] = useState("587");
+  const [smtpSecure, setSmtpSecure] = useState(false);
+  const [smtpUser, setSmtpUser] = useState("");
+  const [smtpPass, setSmtpPass] = useState("");
+  const [smtpFromEmail, setSmtpFromEmail] = useState("");
+  const [smtpFromName, setSmtpFromName] = useState("");
+  const [isSendingTest, setIsSendingTest] = useState(false);
 
   const topPadding = Platform.OS === "web" ? insets.top + 8 : 0;
 
@@ -180,6 +190,14 @@ export default function BackOfficeScreen() {
     setCustomerDisplay(biz.customerDisplay ?? { ...DEFAULT_CUSTOMER_DISPLAY });
     setCashierPerms(biz.rolePermissions?.cashier ? { ...DEFAULT_CASHIER_PERMISSIONS, ...biz.rolePermissions.cashier } : { ...DEFAULT_CASHIER_PERMISSIONS });
     setZReportEmail(biz.zReportEmail ?? "");
+    const sc = biz.smtpConfig;
+    setSmtpHost(sc?.host ?? "");
+    setSmtpPort(sc?.port?.toString() ?? "587");
+    setSmtpSecure(sc?.secure ?? false);
+    setSmtpUser(sc?.user ?? "");
+    setSmtpPass(sc?.pass ?? "");
+    setSmtpFromEmail(sc?.fromEmail ?? "");
+    setSmtpFromName(sc?.fromName ?? "");
   }, [db]);
 
   const savePermissions = useCallback(async () => {
@@ -1046,35 +1064,157 @@ export default function BackOfficeScreen() {
   const saveEmailSettings = useCallback(async () => {
     const emailTrimmed = zReportEmail.trim();
     if (emailTrimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) {
-      Alert.alert("Invalid Email", "Please enter a valid email address.");
+      Alert.alert("Invalid Email", "Please enter a valid recipient email address.");
+      return;
+    }
+    const portNum = parseInt(smtpPort, 10);
+    if (smtpHost.trim() && (isNaN(portNum) || portNum <= 0 || portNum > 65535)) {
+      Alert.alert("Invalid Port", "Please enter a valid SMTP port (1–65535).");
       return;
     }
     try {
       const biz = bizSettings ?? await db.loadBusinessSettings();
-      const updated: BusinessSettings = { ...biz, zReportEmail: emailTrimmed || undefined };
+      const smtpConfig: SmtpConfig | undefined = smtpHost.trim() ? {
+        host: smtpHost.trim(),
+        port: portNum || 587,
+        secure: smtpSecure,
+        user: smtpUser.trim(),
+        pass: smtpPass,
+        fromEmail: smtpFromEmail.trim() || smtpUser.trim(),
+        fromName: smtpFromName.trim(),
+      } : undefined;
+      const updated: BusinessSettings = { ...biz, zReportEmail: emailTrimmed || undefined, smtpConfig };
       await db.saveBusinessSettings(updated);
       setBizSettings(updated);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert("Saved", "Email settings updated successfully.");
+      Alert.alert("Saved", "Email settings saved. Z-Reports will be sent automatically via SMTP when closing the register.");
     } catch {
       Alert.alert("Error", "Failed to save email settings. Please try again.");
     }
-  }, [bizSettings, zReportEmail, db]);
+  }, [bizSettings, zReportEmail, smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass, smtpFromEmail, smtpFromName, db]);
+
+  const testSmtpConnection = useCallback(async () => {
+    const recipientEmail = zReportEmail.trim();
+    if (!recipientEmail) {
+      Alert.alert("No Recipient", "Enter a recipient email address before testing.");
+      return;
+    }
+    if (!smtpHost.trim() || !smtpUser.trim() || !smtpPass) {
+      Alert.alert("Incomplete Config", "Please fill in SMTP host, username and password.");
+      return;
+    }
+    setIsSendingTest(true);
+    try {
+      const baseUrl = Platform.OS === "web" ? "" : `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
+      const response = await fetch(`${baseUrl}/api/email/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: recipientEmail,
+          config: {
+            host: smtpHost.trim(),
+            port: parseInt(smtpPort, 10) || 587,
+            secure: smtpSecure,
+            user: smtpUser.trim(),
+            pass: smtpPass,
+            fromEmail: smtpFromEmail.trim() || smtpUser.trim(),
+            fromName: smtpFromName.trim(),
+          },
+        }),
+      });
+      const result = await response.json() as { success: boolean; message: string };
+      if (result.success) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert("Test Successful", `Test email sent to ${recipientEmail}. Check your inbox.`);
+      } else {
+        Alert.alert("Connection Failed", result.message || "Could not connect to SMTP server.");
+      }
+    } catch {
+      Alert.alert("Test Failed", "Could not reach the email server. Check your settings and ensure the API server is running.");
+    } finally {
+      setIsSendingTest(false);
+    }
+  }, [zReportEmail, smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass, smtpFromEmail, smtpFromName]);
 
   const renderEmailSettings = () => (
     <View style={s.sectionContent}>
       {renderHeader("Email Settings")}
       <ScrollView contentContainerStyle={s.formContent} showsVerticalScrollIndicator={false}>
-        <View style={[{ backgroundColor: colors.primary + "15", borderRadius: colors.radius, flexDirection: "row", alignItems: "flex-start", padding: 14, gap: 10, marginBottom: 16 }]}>
-          <Feather name="info" size={14} color={colors.primary} />
-          <Text style={{ color: colors.primary, fontSize: 13, lineHeight: 18, flex: 1 }}>
-            Configure the email address where Z-Reports will be sent automatically when you close the register.
+
+        {/* ── SMTP Server ── */}
+        <View style={[{ backgroundColor: colors.primary + "12", borderRadius: colors.radius, padding: 12, marginBottom: 18 }]}>
+          <Text style={{ color: colors.primary, fontSize: 13, fontWeight: "700", marginBottom: 4 }}>SMTP Configuration</Text>
+          <Text style={{ color: colors.primary, fontSize: 12, lineHeight: 17 }}>
+            Configure your outgoing mail server so Z-Reports are sent automatically when you close the register. Common providers: Gmail (smtp.gmail.com:587), Outlook (smtp.office365.com:587).
           </Text>
         </View>
 
+        {renderField("SMTP Host", smtpHost, setSmtpHost, "e.g. smtp.gmail.com")}
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.fieldLabel, { color: colors.mutedForeground }]}>Port</Text>
+            <TextInput
+              value={smtpPort}
+              onChangeText={setSmtpPort}
+              placeholder="587"
+              placeholderTextColor={colors.mutedForeground}
+              keyboardType="number-pad"
+              style={[s.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.fieldLabel, { color: colors.mutedForeground }]}>Security</Text>
+            <View style={[{ flexDirection: "row", alignItems: "center", gap: 8, height: 46, paddingHorizontal: 12, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius }]}>
+              <Switch
+                value={smtpSecure}
+                onValueChange={setSmtpSecure}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor="#fff"
+              />
+              <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: "600" }}>
+                {smtpSecure ? "SSL/TLS" : "STARTTLS"}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {renderField("SMTP Username", smtpUser, setSmtpUser, "e.g. your@email.com")}
+
+        <Text style={[s.fieldLabel, { color: colors.mutedForeground }]}>SMTP Password / App Password</Text>
+        <TextInput
+          value={smtpPass}
+          onChangeText={setSmtpPass}
+          placeholder="••••••••"
+          placeholderTextColor={colors.mutedForeground}
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={[s.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
+        />
+
+        <View style={[{ backgroundColor: colors.secondary, borderRadius: colors.radius, padding: 10, marginBottom: 4 }]}>
+          <Text style={{ color: colors.mutedForeground, fontSize: 11, lineHeight: 16 }}>
+            For Gmail: use an App Password (Google Account → Security → App passwords). For Outlook: use your normal password or App password if 2FA is enabled.
+          </Text>
+        </View>
+
+        {/* ── From Address ── */}
+        <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 18 }]}>From Name</Text>
+        <TextInput
+          value={smtpFromName}
+          onChangeText={setSmtpFromName}
+          placeholder="e.g. Al Baraka POS"
+          placeholderTextColor={colors.mutedForeground}
+          style={[s.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
+        />
+
+        {renderField("From Email (optional)", smtpFromEmail, setSmtpFromEmail, "Leave blank to use SMTP username")}
+
+        {/* ── Recipient ── */}
+        <View style={[{ borderTopWidth: 1, borderTopColor: colors.border, marginTop: 16, marginBottom: 16 }]} />
         <Text style={[s.fieldLabel, { color: colors.mutedForeground }]}>Z-Report Recipient Email</Text>
         <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 6 }}>
-          The Z-Report will be emailed to this address each time the register is closed.
+          Z-Reports will be sent to this address each time the register is closed.
         </Text>
         <TextInput
           value={zReportEmail}
@@ -1087,29 +1227,51 @@ export default function BackOfficeScreen() {
           style={[s.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
         />
 
-        {zReportEmail.trim() ? (
-          <View style={[{ backgroundColor: colors.success + "15", borderRadius: colors.radius, flexDirection: "row", alignItems: "center", padding: 12, gap: 8, marginTop: 16 }]}>
+        {zReportEmail.trim() && smtpHost.trim() ? (
+          <View style={[{ backgroundColor: colors.success + "15", borderRadius: colors.radius, flexDirection: "row", alignItems: "center", padding: 12, gap: 8, marginTop: 8 }]}>
             <Feather name="check-circle" size={14} color={colors.success} />
             <Text style={{ color: colors.success, fontSize: 13, flex: 1 }}>
-              Z-Reports will be sent to: {zReportEmail.trim()}
+              Z-Reports will be auto-emailed via SMTP to {zReportEmail.trim()}
+            </Text>
+          </View>
+        ) : zReportEmail.trim() && !smtpHost.trim() ? (
+          <View style={[{ backgroundColor: "#F39C12" + "15", borderRadius: colors.radius, flexDirection: "row", alignItems: "center", padding: 12, gap: 8, marginTop: 8 }]}>
+            <Feather name="alert-circle" size={14} color="#F39C12" />
+            <Text style={{ color: "#F39C12", fontSize: 13, flex: 1 }}>
+              Recipient set, but no SMTP server configured. Z-Reports will use device email client.
             </Text>
           </View>
         ) : (
-          <View style={[{ backgroundColor: "#F39C12" + "15", borderRadius: colors.radius, flexDirection: "row", alignItems: "center", padding: 12, gap: 8, marginTop: 16 }]}>
-            <Feather name="alert-circle" size={14} color="#F39C12" />
-            <Text style={{ color: "#F39C12", fontSize: 13, flex: 1 }}>
-              No email configured. Z-Reports will only be printed, not emailed.
+          <View style={[{ backgroundColor: colors.secondary, borderRadius: colors.radius, flexDirection: "row", alignItems: "center", padding: 12, gap: 8, marginTop: 8 }]}>
+            <Feather name="mail" size={14} color={colors.mutedForeground} />
+            <Text style={{ color: colors.mutedForeground, fontSize: 13, flex: 1 }}>
+              No email configured. Z-Reports will only be printed.
             </Text>
           </View>
         )}
 
-        <TouchableOpacity
-          onPress={saveEmailSettings}
-          style={[s.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius, marginTop: 32, flexDirection: "row", gap: 8 }]}
-        >
-          <Feather name="save" size={16} color="#fff" />
-          <Text style={s.saveBtnText}>Save Email Settings</Text>
-        </TouchableOpacity>
+        {/* ── Actions ── */}
+        <View style={{ flexDirection: "row", gap: 10, marginTop: 28 }}>
+          <TouchableOpacity
+            onPress={testSmtpConnection}
+            disabled={isSendingTest}
+            style={[s.saveBtn, { flex: 1, backgroundColor: colors.secondary, borderRadius: colors.radius, marginTop: 0, borderWidth: 1, borderColor: colors.border, opacity: isSendingTest ? 0.6 : 1, flexDirection: "row", gap: 6 }]}
+          >
+            {isSendingTest ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Feather name="send" size={15} color={colors.primary} />
+            )}
+            <Text style={[s.saveBtnText, { color: colors.primary }]}>{isSendingTest ? "Sending..." : "Send Test"}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={saveEmailSettings}
+            style={[s.saveBtn, { flex: 1, backgroundColor: colors.primary, borderRadius: colors.radius, marginTop: 0, flexDirection: "row", gap: 6 }]}
+          >
+            <Feather name="save" size={15} color="#fff" />
+            <Text style={s.saveBtnText}>Save</Text>
+          </TouchableOpacity>
+        </View>
         <View style={{ height: 60 }} />
       </ScrollView>
     </View>
@@ -1200,7 +1362,7 @@ export default function BackOfficeScreen() {
       case "menu": return renderMenu();
       case "products": return <View style={s.sectionContent}>{renderHeader("Products")}<ProductsScreen embedded /></View>;
       case "customers": return <View style={s.sectionContent}>{renderHeader("Customers")}<CustomersScreen embedded /></View>;
-      case "reports": return <View style={s.sectionContent}>{renderHeader("Reports")}<ReportsScreen embedded /></View>;
+      case "reports": return <ReportsHub onBack={() => setSection("menu")} />;
       case "categories": return renderCategories();
       case "receipt": return renderReceiptDesigner();
       case "printer": return renderPrinterSettings();

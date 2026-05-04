@@ -43,7 +43,7 @@ The POS application is built with Expo (SDK 54) and React Native, optimized for 
 - **Inventory Management**: Real-time stock tracking, low stock alerts, ingredient inventory with recipe-based deduction.
 - **Order Management**: Support for Dine-in, Takeaway, Delivery order types, held orders for tables, and kitchen order tickets (KOT).
 - **Payment Processing**: Multiple payment methods (Card, Cash, Credit, Split), integrated loyalty points system, and refund functionality.
-- **Reporting**: Daily sales reports and Z-Reports (end-of-day summaries). Closing register prints Z-Report and optionally emails it (as PDF attachment via expo-mail-composer) to a configurable recipient email.
+- **Reporting**: Daily sales reports, Z-Reports (end-of-day summaries), and a comprehensive Reports Hub with 6 sub-reports: Z-Report History, Payment Method, Staff Sales, Rider Delivery, Customer Transactions, Daily Item Detail. Closing register prints Z-Report and optionally emails it — uses SMTP (API server / nodemailer) when configured, falls back to expo-mail-composer otherwise. Z-report closing modal shows expected cash (from cash sales) and live variance as the user types.
 - **Staff Management**: PIN-based login with role (admin/cashier) authentication.
 - **Barcode Scanning**: Integrated EAN-13/8, UPC-A/E, QR, Code128/39 scanning using `expo-camera`. Scanning a receipt barcode (INV-*) on Register screen looks up the credit sale and opens a credit payment collection modal.
 - **Modals**: Centralized modal components for receipt preview, business settings, barcode scanning, and customer selection.
@@ -58,7 +58,8 @@ The POS application is built with Expo (SDK 54) and React Native, optimized for 
     - **Customers**: Customer management, credit balances, and loyalty points.
     - **Reports**: Daily sales reports and Z-Report functionalities.
     - **Categories**, **Delivery Riders**, **Ingredients**, **Recipes**, **Receipt Designer**, **Printer Settings**, **KOT Settings**, **Customer Display**, **Staff Management**, **Tax Groups**, **Business Settings**.
-    - **Email Settings**: Configure Z-Report recipient email address for automatic email delivery when closing the register.
+    - **Email Settings**: Full SMTP configuration (host, port, SSL/TLS toggle, username, password, from name/email) with a "Send Test" button that calls `/api/email/test`. Also configures Z-Report recipient email. When SMTP is set, Z-Reports are auto-sent via nodemailer on the API server; otherwise falls back to device mail client.
+    - **Reports Hub** (`components/ReportsHub.tsx`): 6 sub-reports — Z-Report History (expandable with cash variance), Payment Method breakdown with progress bars, Staff Sales ranking, Rider Delivery stats, Customer Transactions (searchable, drillable), Daily Item Detail (date navigator with per-sale item expansion).
     - **Permissions**: Granular staff permission controls (admin-only).
 
 Products, Customers, and Reports are rendered as embedded sub-sections within Back Office using named exports with an `embedded` prop (controls padding). The route files remain in `app/(tabs)/` for Expo Router compatibility but are hidden from the tab bar via `href: null` (ClassicTabs) and trigger omission (NativeTabs).
