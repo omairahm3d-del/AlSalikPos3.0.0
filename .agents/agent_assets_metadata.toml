@@ -1,8 +1,13 @@
 uploads = []
-outputs = []
 
 [[generated]]
 id = "nZYdLoPZEvN9UJ75hnPcP"
 uri = "file://artifacts/pos-app/assets/images/icon.png"
 type = "image"
 title = "pos app icon"
+
+[[outputs]]
+id = "ac2cruQ1vTpPmBUTFt5gd"
+uri = "file://Al-Salik-POS-Windows-Installer.zip"
+type = "unspecified"
+title = "Al Salik POS — Windows Installer Project"
