@@ -41,7 +41,15 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
   const [selected, setSelected] = useState<CreditEntry | null>(null);
   const [payAmount, setPayAmount] = useState("");
   const [payNote, setPayNote] = useState("");
+  const [payMethod, setPayMethod] = useState<"Cash" | "Card" | "Bank Transfer" | "Cheque">("Cash");
   const [saving, setSaving] = useState(false);
+
+  const PAYMENT_METHODS = [
+    { key: "Cash" as const, icon: "dollar-sign" as const },
+    { key: "Card" as const, icon: "credit-card" as const },
+    { key: "Bank Transfer" as const, icon: "repeat" as const },
+    { key: "Cheque" as const, icon: "file-text" as const },
+  ];
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -124,13 +132,15 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
     }
     setSaving(true);
     try {
-      await recordCreditPayment(selected.customer.id, amt, payNote.trim() || "Credit payment collected");
+      const noteText = [payMethod, payNote.trim()].filter(Boolean).join(" — ");
+      await recordCreditPayment(selected.customer.id, amt, noteText || "Credit payment collected");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       await fetchData();
       setSelected(null);
       setPayAmount("");
       setPayNote("");
-      Alert.alert("Payment Recorded", `${formatCurrency(amt)} collected from ${selected.customer.name}.`);
+      setPayMethod("Cash");
+      Alert.alert("Payment Recorded", `${formatCurrency(amt)} collected from ${selected.customer.name} via ${payMethod}.`);
     } catch (e: any) {
       Alert.alert("Error", e.message || "Failed to record payment.");
     } finally {
@@ -245,21 +255,49 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
             </View>
           )}
 
-          {/* Payment input */}
-          <Text style={[s.fieldLabel, { color: colors.mutedForeground }]}>Payment Amount (AED)</Text>
-          <TextInput
-            value={payAmount}
-            onChangeText={setPayAmount}
-            placeholder="0.00"
-            placeholderTextColor={colors.mutedForeground}
-            keyboardType="decimal-pad"
-            style={[s.amtInput, {
-              backgroundColor: colors.secondary,
-              borderColor: colors.border,
-              color: colors.foreground,
-              borderRadius: colors.radius,
-            }]}
-          />
+          {/* Payment method */}
+          <Text style={[s.fieldLabel, { color: colors.mutedForeground }]}>Payment Method</Text>
+          <View style={s.methodRow}>
+            {PAYMENT_METHODS.map((m) => {
+              const active = payMethod === m.key;
+              return (
+                <TouchableOpacity
+                  key={m.key}
+                  onPress={() => setPayMethod(m.key)}
+                  style={[s.methodBtn, {
+                    borderRadius: colors.radius,
+                    backgroundColor: active ? colors.primary : colors.secondary,
+                    borderColor: active ? colors.primary : colors.border,
+                  }]}
+                >
+                  <Feather name={m.icon} size={14} color={active ? "#fff" : colors.mutedForeground} />
+                  <Text style={{ color: active ? "#fff" : colors.mutedForeground, fontSize: 12, fontWeight: active ? "700" : "500", marginTop: 3 }}>
+                    {m.key}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Amount input */}
+          <Text style={[s.fieldLabel, { color: colors.mutedForeground }]}>Amount Received</Text>
+          <View style={[s.amtRow, {
+            backgroundColor: colors.secondary,
+            borderColor: colors.border,
+            borderRadius: colors.radius,
+          }]}>
+            <View style={[s.aedBadge, { backgroundColor: colors.primary }]}>
+              <Text style={s.aedText}>AED</Text>
+            </View>
+            <TextInput
+              value={payAmount}
+              onChangeText={setPayAmount}
+              placeholder="0.00"
+              placeholderTextColor={colors.mutedForeground}
+              keyboardType="decimal-pad"
+              style={[s.amtInput, { color: colors.foreground, flex: 1 }]}
+            />
+          </View>
           <TouchableOpacity
             onPress={() => setPayAmount(cust.creditBalance.toFixed(2))}
             style={s.fullPayBtn}
@@ -273,7 +311,7 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
           <TextInput
             value={payNote}
             onChangeText={setPayNote}
-            placeholder="e.g. Cash payment, bank transfer…"
+            placeholder="Reference number, remarks…"
             placeholderTextColor={colors.mutedForeground}
             style={[s.noteInput, {
               backgroundColor: colors.secondary,
@@ -400,9 +438,14 @@ const s = StyleSheet.create({
   invNum: { fontSize: 14, fontWeight: "600" },
   invDate: { fontSize: 12, marginTop: 2 },
   invAmt: { fontSize: 14, fontWeight: "700" },
-  fieldLabel: { fontSize: 12, fontWeight: "600", marginBottom: 6, marginTop: 4 },
-  amtInput: { borderWidth: 1, paddingVertical: 12, paddingHorizontal: 16, fontSize: 28, fontWeight: "700", textAlign: "center", marginBottom: 6 },
-  fullPayBtn: { alignItems: "center", marginBottom: 14 },
+  fieldLabel: { fontSize: 12, fontWeight: "600", marginBottom: 6, marginTop: 8 },
+  methodRow: { flexDirection: "row", gap: 8, marginBottom: 14 },
+  methodBtn: { flex: 1, alignItems: "center", paddingVertical: 10, borderWidth: 1, gap: 2 },
+  amtRow: { flexDirection: "row", alignItems: "center", borderWidth: 1, marginBottom: 6, overflow: "hidden" },
+  aedBadge: { paddingHorizontal: 12, paddingVertical: 14, alignItems: "center", justifyContent: "center" },
+  aedText: { color: "#fff", fontWeight: "800", fontSize: 13, letterSpacing: 0.5 },
+  amtInput: { paddingVertical: 14, paddingHorizontal: 16, fontSize: 28, fontWeight: "700", textAlign: "center", marginBottom: 0 },
+  fullPayBtn: { alignItems: "center", marginBottom: 6 },
   noteInput: { borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, marginBottom: 16 },
   actions: { flexDirection: "row", gap: 10, marginTop: 8, paddingTop: 8 },
   backBtn: { flex: 1, flexDirection: "row", borderWidth: 1, paddingVertical: 14, alignItems: "center", justifyContent: "center" },
