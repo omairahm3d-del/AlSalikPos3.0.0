@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Modal,
@@ -18,7 +19,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { EmptyState } from "@/components/EmptyState";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
-import type { Sale, SaleItem } from "@/types";
+import { generateZReportHTML } from "@/lib/receiptTemplate";
+import type { BusinessSettings, Sale, SaleItem } from "@/types";
 import { formatCurrency } from "@/types";
 
 function getStartOfDay(date: Date): number { const d = new Date(date); d.setHours(0, 0, 0, 0); return d.getTime(); }
@@ -33,7 +35,7 @@ function formatDateLabel(date: Date): string {
 export function ReportsScreen({ embedded = false }: { embedded?: boolean }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { loadSalesWithItemsByDateRange, loadProducts, saveZReport } = useDatabase();
+  const { loadSalesWithItemsByDateRange, loadProducts, saveZReport, loadBusinessSettings } = useDatabase();
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [sales, setSales] = useState<Sale[]>([]);
@@ -43,6 +45,7 @@ export function ReportsScreen({ embedded = false }: { embedded?: boolean }) {
 
   const [showZReport, setShowZReport] = useState(false);
   const [closingCash, setClosingCash] = useState("");
+  const [isClosingRegister, setIsClosingRegister] = useState(false);
 
   const topPadding = embedded ? 0 : (Platform.OS === "web" ? insets.top + 8 : 0);
   const isToday = selectedDate.toDateString() === new Date().toDateString();
@@ -127,24 +130,140 @@ export function ReportsScreen({ embedded = false }: { embedded?: boolean }) {
     return hourlyData[maxIdx].value > 0 ? hourlyData[maxIdx] : null;
   }, [hourlyData, sales]);
 
+  const printZReport = async (html: string): Promise<boolean> => {
+    if (Platform.OS === "web") {
+      try {
+        const w = window.open("", "_blank", "width=400,height=700");
+        if (w) {
+          w.document.write(html);
+          w.document.close();
+          setTimeout(() => w.print(), 300);
+          return true;
+        }
+        return false;
+      } catch {
+        return false;
+      }
+    }
+    try {
+      const Print = await import("expo-print");
+      await Print.printAsync({ html });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const emailZReport = async (html: string, business: BusinessSettings, dateLabel: string): Promise<boolean> => {
+    const recipientEmail = business.zReportEmail?.trim();
+    if (!recipientEmail) return false;
+
+    const subject = `Z-Report - ${business.businessName || "POS"} - ${dateLabel}`;
+    const bodyText = [
+      `Z-Report for ${dateLabel}`,
+      `Business: ${business.businessName || "N/A"}`,
+      `Net Sales: ${formatCurrency(stats.revenue - stats.refunds)}`,
+      `Transactions: ${stats.transactionCount}`,
+      `VAT Collected: ${formatCurrency(stats.vatCollected)}`,
+    ].join("\n");
+
+    if (Platform.OS === "web") {
+      try {
+        const Print = await import("expo-print");
+        const { uri } = await Print.printToFileAsync({ html, base64: false });
+        const Sharing = await import("expo-sharing");
+        const isAvailable = await Sharing.isAvailableAsync();
+        if (isAvailable) {
+          await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: "Share Z-Report" });
+          return true;
+        }
+        const mailtoUrl = `mailto:${encodeURIComponent(recipientEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
+        window.open(mailtoUrl, "_blank");
+        return true;
+      } catch {
+        try {
+          const mailtoUrl = `mailto:${encodeURIComponent(recipientEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
+          window.open(mailtoUrl, "_blank");
+          return true;
+        } catch {
+          return false;
+        }
+      }
+    }
+
+    try {
+      const Print = await import("expo-print");
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      const MailComposer = await import("expo-mail-composer");
+      const isAvailable = await MailComposer.isAvailableAsync();
+      if (isAvailable) {
+        await MailComposer.composeAsync({
+          recipients: [recipientEmail],
+          subject,
+          body: bodyText,
+          attachments: [uri],
+        });
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
   const handleGenerateZReport = async () => {
-    const cashVal = parseFloat(closingCash) || 0;
-    const report = {
-      date: selectedDate.toISOString().split("T")[0],
-      openedAt: getStartOfDay(selectedDate), closedAt: Date.now(),
-      openingCash: 0, closingCash: cashVal,
-      totalSales: stats.revenue, totalRefunds: stats.refunds,
-      netSales: stats.revenue - stats.refunds, totalVat: stats.vatCollected,
-      totalDiscount: stats.discountTotal,
-      transactionCount: stats.transactionCount, refundCount: stats.refundCount,
-      paymentBreakdown: stats.paymentBreakdown.map((p) => ({ method: p.method, amount: p.amount })),
-      categorySales: categoryBreakdown.map((c) => ({ category: c.category, amount: c.revenue })),
-      staffSales: stats.staffSales,
-    };
-    await saveZReport(report);
-    setShowZReport(false); setClosingCash("");
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert("Z-Report Saved", `End-of-day report for ${formatDateLabel(selectedDate)} has been saved.`);
+    setIsClosingRegister(true);
+    try {
+      const cashVal = parseFloat(closingCash) || 0;
+      const report = {
+        date: selectedDate.toISOString().split("T")[0],
+        openedAt: getStartOfDay(selectedDate), closedAt: Date.now(),
+        openingCash: 0, closingCash: cashVal,
+        totalSales: stats.revenue, totalRefunds: stats.refunds,
+        netSales: stats.revenue - stats.refunds, totalVat: stats.vatCollected,
+        totalDiscount: stats.discountTotal,
+        transactionCount: stats.transactionCount, refundCount: stats.refundCount,
+        paymentBreakdown: stats.paymentBreakdown.map((p) => ({ method: p.method, amount: p.amount })),
+        categorySales: categoryBreakdown.map((c) => ({ category: c.category, amount: c.revenue })),
+        staffSales: stats.staffSales.map((s) => ({ staffName: s.name, amount: s.amount, count: s.count })),
+      };
+
+      await saveZReport(report);
+
+      const business = await loadBusinessSettings();
+      const html = generateZReportHTML(report, business);
+      const dateLabel = formatDateLabel(selectedDate);
+
+      const printed = await printZReport(html);
+
+      let emailOpened = false;
+      if (business.zReportEmail?.trim()) {
+        emailOpened = await emailZReport(html, business, dateLabel);
+      }
+
+      setShowZReport(false);
+      setClosingCash("");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      const parts = [`Z-Report for ${dateLabel} has been saved.`];
+      if (printed) {
+        parts.push("Print dialog opened.");
+      } else {
+        parts.push("Printing was not available.");
+      }
+      if (business.zReportEmail?.trim()) {
+        if (emailOpened) {
+          parts.push(`Email composer opened for ${business.zReportEmail}.`);
+        } else {
+          parts.push("Could not open email composer.");
+        }
+      }
+      Alert.alert("Register Closed", parts.join("\n"));
+    } catch {
+      Alert.alert("Error", "Failed to close register. Please try again.");
+    } finally {
+      setIsClosingRegister(false);
+    }
   };
 
   const paymentIcons: Record<string, string> = { Card: "credit-card", Cash: "dollar-sign", Credit: "users", Split: "columns" };
@@ -307,12 +426,16 @@ export function ReportsScreen({ embedded = false }: { embedded?: boolean }) {
             <TextInput value={closingCash} onChangeText={setClosingCash} placeholder="0.00" placeholderTextColor={colors.mutedForeground} keyboardType="decimal-pad" style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius, textAlign: "center", fontSize: 18, fontWeight: "700" }]} />
 
             <View style={styles.actions}>
-              <TouchableOpacity onPress={() => setShowZReport(false)} style={[styles.cancelBtn, { borderColor: colors.border, borderRadius: colors.radius }]}>
+              <TouchableOpacity onPress={() => setShowZReport(false)} disabled={isClosingRegister} style={[styles.cancelBtn, { borderColor: colors.border, borderRadius: colors.radius, opacity: isClosingRegister ? 0.5 : 1 }]}>
                 <Text style={{ color: colors.mutedForeground, fontWeight: "600" }}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleGenerateZReport} style={[styles.confirmBtn, { backgroundColor: colors.destructive, borderRadius: colors.radius }]}>
-                <Feather name="check" size={16} color="#fff" />
-                <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Save Z-Report</Text>
+              <TouchableOpacity onPress={handleGenerateZReport} disabled={isClosingRegister} style={[styles.confirmBtn, { backgroundColor: colors.destructive, borderRadius: colors.radius, opacity: isClosingRegister ? 0.7 : 1 }]}>
+                {isClosingRegister ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Feather name="check" size={16} color="#fff" />
+                )}
+                <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>{isClosingRegister ? "Closing..." : "Close & Print"}</Text>
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>

@@ -69,7 +69,8 @@ type Section =
   | "riders"
   | "ingredients"
   | "recipes"
-  | "permissions";
+  | "permissions"
+  | "emailSettings";
 
 interface SectionCard {
   id: Section;
@@ -96,6 +97,7 @@ const SECTIONS: SectionCard[] = [
   { id: "staff", icon: "user-check", title: "Staff Management", subtitle: "Manage cashiers & admins", color: "#E74C3C", permKey: "boStaff" },
   { id: "tax", icon: "percent", title: "Tax Groups", subtitle: "VAT rates & tax groups", color: "#F39C12", permKey: "boTax" },
   { id: "business", icon: "briefcase", title: "Business Settings", subtitle: "Company info & loyalty", color: "#6C63FF", permKey: "boBusiness" },
+  { id: "emailSettings", icon: "mail", title: "Email Settings", subtitle: "Z-Report email delivery", color: "#3498DB", permKey: "boBusiness" },
   { id: "permissions", icon: "shield", title: "Permissions", subtitle: "Configure staff access rights", color: "#E74C3C", adminOnly: true },
 ];
 
@@ -159,6 +161,8 @@ export default function BackOfficeScreen() {
 
   const [cashierPerms, setCashierPerms] = useState<StaffPermissions>({ ...DEFAULT_CASHIER_PERMISSIONS });
 
+  const [zReportEmail, setZReportEmail] = useState("");
+
   const topPadding = Platform.OS === "web" ? insets.top + 8 : 0;
 
   const permissions = useMemo<StaffPermissions>(() => {
@@ -175,6 +179,7 @@ export default function BackOfficeScreen() {
     setKotSettings(biz.kotSettings ?? { ...DEFAULT_KOT_SETTINGS });
     setCustomerDisplay(biz.customerDisplay ?? { ...DEFAULT_CUSTOMER_DISPLAY });
     setCashierPerms(biz.rolePermissions?.cashier ? { ...DEFAULT_CASHIER_PERMISSIONS, ...biz.rolePermissions.cashier } : { ...DEFAULT_CASHIER_PERMISSIONS });
+    setZReportEmail(biz.zReportEmail ?? "");
   }, [db]);
 
   const savePermissions = useCallback(async () => {
@@ -1038,6 +1043,78 @@ export default function BackOfficeScreen() {
     </View>
   );
 
+  const saveEmailSettings = useCallback(async () => {
+    const emailTrimmed = zReportEmail.trim();
+    if (emailTrimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) {
+      Alert.alert("Invalid Email", "Please enter a valid email address.");
+      return;
+    }
+    try {
+      const biz = bizSettings ?? await db.loadBusinessSettings();
+      const updated: BusinessSettings = { ...biz, zReportEmail: emailTrimmed || undefined };
+      await db.saveBusinessSettings(updated);
+      setBizSettings(updated);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("Saved", "Email settings updated successfully.");
+    } catch {
+      Alert.alert("Error", "Failed to save email settings. Please try again.");
+    }
+  }, [bizSettings, zReportEmail, db]);
+
+  const renderEmailSettings = () => (
+    <View style={s.sectionContent}>
+      {renderHeader("Email Settings")}
+      <ScrollView contentContainerStyle={s.formContent} showsVerticalScrollIndicator={false}>
+        <View style={[{ backgroundColor: colors.primary + "15", borderRadius: colors.radius, flexDirection: "row", alignItems: "flex-start", padding: 14, gap: 10, marginBottom: 16 }]}>
+          <Feather name="info" size={14} color={colors.primary} />
+          <Text style={{ color: colors.primary, fontSize: 13, lineHeight: 18, flex: 1 }}>
+            Configure the email address where Z-Reports will be sent automatically when you close the register.
+          </Text>
+        </View>
+
+        <Text style={[s.fieldLabel, { color: colors.mutedForeground }]}>Z-Report Recipient Email</Text>
+        <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 6 }}>
+          The Z-Report will be emailed to this address each time the register is closed.
+        </Text>
+        <TextInput
+          value={zReportEmail}
+          onChangeText={setZReportEmail}
+          placeholder="e.g. owner@albaraka.ae"
+          placeholderTextColor={colors.mutedForeground}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={[s.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
+        />
+
+        {zReportEmail.trim() ? (
+          <View style={[{ backgroundColor: colors.success + "15", borderRadius: colors.radius, flexDirection: "row", alignItems: "center", padding: 12, gap: 8, marginTop: 16 }]}>
+            <Feather name="check-circle" size={14} color={colors.success} />
+            <Text style={{ color: colors.success, fontSize: 13, flex: 1 }}>
+              Z-Reports will be sent to: {zReportEmail.trim()}
+            </Text>
+          </View>
+        ) : (
+          <View style={[{ backgroundColor: "#F39C12" + "15", borderRadius: colors.radius, flexDirection: "row", alignItems: "center", padding: 12, gap: 8, marginTop: 16 }]}>
+            <Feather name="alert-circle" size={14} color="#F39C12" />
+            <Text style={{ color: "#F39C12", fontSize: 13, flex: 1 }}>
+              No email configured. Z-Reports will only be printed, not emailed.
+            </Text>
+          </View>
+        )}
+
+        <TouchableOpacity
+          onPress={saveEmailSettings}
+          style={[s.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius, marginTop: 32, flexDirection: "row", gap: 8 }]}
+        >
+          <Feather name="save" size={16} color="#fff" />
+          <Text style={s.saveBtnText}>Save Email Settings</Text>
+        </TouchableOpacity>
+        <View style={{ height: 60 }} />
+      </ScrollView>
+    </View>
+  );
+
   const renderPermissions = () => {
     if (currentStaff && currentStaff.role !== "admin") {
       return (
@@ -1135,6 +1212,7 @@ export default function BackOfficeScreen() {
       case "ingredients": return renderIngredients();
       case "recipes": return renderRecipes();
       case "permissions": return renderPermissions();
+      case "emailSettings": return renderEmailSettings();
       case "business": {
         setSection("menu");
         setShowBizSettings(true);

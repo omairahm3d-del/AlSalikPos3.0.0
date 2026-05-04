@@ -1,4 +1,4 @@
-import type { BusinessSettings, ReceiptDesignSettings, Sale, SaleItem } from "@/types";
+import type { BusinessSettings, ReceiptDesignSettings, Sale, SaleItem, ZReport } from "@/types";
 import { CURRENCY, DEFAULT_RECEIPT_DESIGN } from "@/types";
 import { generateBarcodeSVG, generateWhatsAppQRSVG } from "./barcodeSvg";
 
@@ -163,6 +163,135 @@ export function generateReceiptHTML(
     ${isRefund ? "This is a refund receipt<br/>" : ""}
     Prices are inclusive of ${vatPct}% VAT where applicable<br/>
     ${footerText}
+  </div>
+</body>
+</html>`;
+}
+
+function fmtDateTime(ts: number): string {
+  const d = new Date(ts);
+  return d.toLocaleString("en-GB", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+}
+
+export function generateZReportHTML(
+  report: ZReport & { id?: string },
+  business: BusinessSettings
+): string {
+  const paymentRows = report.paymentBreakdown
+    .map((p) => `<tr><td style="padding:4px 0;">${p.method}</td><td style="padding:4px 0;text-align:right;font-weight:600;">${fmt(p.amount)}</td></tr>`)
+    .join("");
+
+  const categoryRows = report.categorySales
+    .map((c) => `<tr><td style="padding:4px 0;">${c.category}</td><td style="padding:4px 0;text-align:right;font-weight:600;">${fmt(c.amount)}</td></tr>`)
+    .join("");
+
+  const staffRows = report.staffSales
+    .map((s) => `<tr><td style="padding:4px 0;">${s.staffName || "Unknown"} <small>(${s.count})</small></td><td style="padding:4px 0;text-align:right;font-weight:600;">${fmt(s.amount)}</td></tr>`)
+    .join("");
+
+  const cashDiff = report.closingCash - (report.totalSales - report.totalRefunds);
+  const diffLabel = cashDiff >= 0 ? "Over" : "Short";
+  const diffColor = cashDiff >= 0 ? "#2ECC71" : "#E74C3C";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    @page { margin: 6mm; size: 80mm auto; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: 'Courier New', Courier, monospace; font-size: 12px; color: #000; width: 72mm; margin: 0 auto; padding: 4mm 0; }
+    .center { text-align: center; }
+    .bold { font-weight: bold; }
+    .divider { border-top: 1px dashed #000; margin: 8px 0; }
+    .title { font-size: 16px; font-weight: bold; text-align: center; margin-bottom: 2px; }
+    .subtitle { font-size: 13px; font-weight: bold; text-align: center; margin-bottom: 6px; }
+    table { width: 100%; border-collapse: collapse; }
+    .section-title { font-size: 12px; font-weight: bold; margin: 8px 0 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .summary-row td { padding: 3px 0; }
+    .total-row td { font-size: 14px; font-weight: bold; padding: 4px 0; }
+    .footer { font-size: 10px; text-align: center; margin-top: 10px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="center" style="margin-bottom: 2px;">
+    <div style="font-size:14px;font-weight:bold;letter-spacing:1px;">*** Z-REPORT ***</div>
+    <div style="font-size:12px;font-weight:bold;">تقرير إغلاق الصندوق</div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="center">
+    ${business.businessName ? `<div class="bold" style="font-size:14px;">${business.businessName}</div>` : ""}
+    ${business.trn ? `<div>TRN: ${business.trn}</div>` : ""}
+    ${business.address ? `<div>${business.address}</div>` : ""}
+    ${business.phone ? `<div>Tel: ${business.phone}</div>` : ""}
+  </div>
+
+  <div class="divider"></div>
+
+  <table>
+    <tr><td><strong>Date:</strong></td><td style="text-align:right;">${report.date}</td></tr>
+    <tr><td><strong>Opened:</strong></td><td style="text-align:right;">${fmtDateTime(report.openedAt)}</td></tr>
+    <tr><td><strong>Closed:</strong></td><td style="text-align:right;">${fmtDateTime(report.closedAt)}</td></tr>
+  </table>
+
+  <div class="divider"></div>
+
+  <div class="section-title">Sales Summary</div>
+  <table class="summary-row">
+    <tr><td>Total Sales</td><td style="text-align:right;font-weight:700;color:#2ECC71;">${fmt(report.totalSales)}</td></tr>
+    <tr><td>Total Refunds</td><td style="text-align:right;font-weight:700;color:#E74C3C;">-${fmt(report.totalRefunds)}</td></tr>
+    <tr><td>Total Discounts</td><td style="text-align:right;font-weight:700;color:#F39C12;">-${fmt(report.totalDiscount)}</td></tr>
+  </table>
+  <div class="divider"></div>
+  <table>
+    <tr class="total-row"><td>NET SALES</td><td style="text-align:right;">${fmt(report.netSales)}</td></tr>
+  </table>
+  <table class="summary-row">
+    <tr><td>VAT Collected (5%)</td><td style="text-align:right;font-weight:600;">${fmt(report.totalVat)}</td></tr>
+    <tr><td>Transactions</td><td style="text-align:right;font-weight:600;">${report.transactionCount}</td></tr>
+    <tr><td>Refund Count</td><td style="text-align:right;font-weight:600;">${report.refundCount}</td></tr>
+  </table>
+
+  <div class="divider"></div>
+
+  <div class="section-title">Cash Drawer</div>
+  <table class="summary-row">
+    <tr><td>Opening Cash</td><td style="text-align:right;font-weight:600;">${fmt(report.openingCash)}</td></tr>
+    <tr><td>Closing Cash</td><td style="text-align:right;font-weight:600;">${fmt(report.closingCash)}</td></tr>
+    <tr><td>Expected Cash</td><td style="text-align:right;font-weight:600;">${fmt(report.totalSales - report.totalRefunds)}</td></tr>
+    <tr><td>Difference (${diffLabel})</td><td style="text-align:right;font-weight:700;color:${diffColor};">${fmt(Math.abs(cashDiff))}</td></tr>
+  </table>
+
+  ${paymentRows ? `
+  <div class="divider"></div>
+  <div class="section-title">Payment Breakdown</div>
+  <table class="summary-row">${paymentRows}</table>
+  ` : ""}
+
+  ${categoryRows ? `
+  <div class="divider"></div>
+  <div class="section-title">Sales by Category</div>
+  <table class="summary-row">${categoryRows}</table>
+  ` : ""}
+
+  ${staffRows ? `
+  <div class="divider"></div>
+  <div class="section-title">Sales by Staff</div>
+  <table class="summary-row">${staffRows}</table>
+  ` : ""}
+
+  <div class="divider"></div>
+
+  <div class="footer">
+    End of Day Report<br/>
+    Generated: ${fmtDateTime(Date.now())}<br/>
+    This is a system-generated Z-Report
   </div>
 </body>
 </html>`;

@@ -43,7 +43,7 @@ The POS application is built with Expo (SDK 54) and React Native, optimized for 
 - **Inventory Management**: Real-time stock tracking, low stock alerts, ingredient inventory with recipe-based deduction.
 - **Order Management**: Support for Dine-in, Takeaway, Delivery order types, held orders for tables, and kitchen order tickets (KOT).
 - **Payment Processing**: Multiple payment methods (Card, Cash, Credit, Split), integrated loyalty points system, and refund functionality.
-- **Reporting**: Daily sales reports and Z-Reports (end-of-day summaries).
+- **Reporting**: Daily sales reports and Z-Reports (end-of-day summaries). Closing register prints Z-Report and optionally emails it (as PDF attachment via expo-mail-composer) to a configurable recipient email.
 - **Staff Management**: PIN-based login with role (admin/cashier) authentication.
 - **Barcode Scanning**: Integrated EAN-13/8, UPC-A/E, QR, Code128/39 scanning using `expo-camera`. Scanning a receipt barcode (INV-*) on Register screen looks up the credit sale and opens a credit payment collection modal.
 - **Modals**: Centralized modal components for receipt preview, business settings, barcode scanning, and customer selection.
@@ -58,6 +58,8 @@ The POS application is built with Expo (SDK 54) and React Native, optimized for 
     - **Customers**: Customer management, credit balances, and loyalty points.
     - **Reports**: Daily sales reports and Z-Report functionalities.
     - **Categories**, **Delivery Riders**, **Ingredients**, **Recipes**, **Receipt Designer**, **Printer Settings**, **KOT Settings**, **Customer Display**, **Staff Management**, **Tax Groups**, **Business Settings**.
+    - **Email Settings**: Configure Z-Report recipient email address for automatic email delivery when closing the register.
+    - **Permissions**: Granular staff permission controls (admin-only).
 
 Products, Customers, and Reports are rendered as embedded sub-sections within Back Office using named exports with an `embedded` prop (controls padding). The route files remain in `app/(tabs)/` for Expo Router compatibility but are hidden from the tab bar via `href: null` (ClassicTabs) and trigger omission (NativeTabs).
 
@@ -88,6 +90,7 @@ A standalone Electron 22.x wrapper designed for Windows 8.1+ desktop deployment.
 -   **AsyncStorage**: Web storage fallback.
 -   **expo-print**: Printing functionality for native.
 -   **expo-sharing**: PDF export functionality.
+-   **expo-mail-composer**: Native email composition with attachments (Z-Report PDF).
 -   **expo-camera**: Barcode scanning.
 -   **Electron**: Desktop application framework.
 -   **electron-builder**: Electron application packaging.

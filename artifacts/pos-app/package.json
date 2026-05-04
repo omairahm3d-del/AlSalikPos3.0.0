@@ -59,6 +59,7 @@
   },
   "dependencies": {
     "expo-camera": "^17.0.10",
+    "expo-mail-composer": "^15.0.8",
     "expo-print": "~15.0.8"
   }
 }

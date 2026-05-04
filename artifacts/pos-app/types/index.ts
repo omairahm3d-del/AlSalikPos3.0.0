@@ -263,6 +263,7 @@ export interface BusinessSettings {
   kotSettings?: KOTSettings;
   customerDisplay?: CustomerDisplaySettings;
   rolePermissions?: { cashier: StaffPermissions };
+  zReportEmail?: string;
 }
 
 export interface ZReport {
