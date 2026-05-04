@@ -2,7 +2,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback } from "react";
 import type {
   BusinessSettings, CartItem, Category, CreditPayment, Customer,
-  PosTable, Product, Sale, SaleItem, SplitPaymentEntry,
+  HeldOrder, HeldOrderItem, Ingredient, PosTable, Product,
+  RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
 } from "@/types";
 import { DEFAULT_BUSINESS_SETTINGS, SEED_CATEGORIES, SEED_PRODUCTS, VAT_RATE } from "@/types";
@@ -15,7 +16,9 @@ const K = {
   customers: "@pos_customers", creditPayments: "@pos_credit_payments",
   staff: "@pos_staff", tables: "@pos_tables", taxGroups: "@pos_tax_groups",
   splitPayments: "@pos_split_payments", zReports: "@pos_z_reports",
-  categories: "@pos_categories",
+  categories: "@pos_categories", riders: "@pos_riders",
+  heldOrders: "@pos_held_orders", ingredients: "@pos_ingredients",
+  recipeIngredients: "@pos_recipe_ingredients",
 };
 
 async function getJson<T>(key: string, fallback: T): Promise<T> {
@@ -70,7 +73,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const saveSale = useCallback(async (items: CartItem[], options: SaleOptions): Promise<Sale> => {
-    const { paymentMethod, customerId, customerName, staffId, staffName, tableId, tableName, discountType, discountValue, discountAmount: orderDiscount, loyaltyPointsRedeemed, splitPayments } = options;
+    const { paymentMethod, orderType, customerId, customerName, staffId, staffName, tableId, tableName, riderId, riderName, discountType, discountValue, discountAmount: orderDiscount, loyaltyPointsRedeemed, splitPayments } = options;
     if (paymentMethod === "Credit" && !customerId) throw new Error("Credit sales require a customer");
 
     let subtotal = 0;
@@ -101,7 +104,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     const effectiveVatRate = subtotal > 0 ? vatAmount / subtotal : VAT_RATE;
     const sale: Sale = {
       id: saleId, invoiceNumber, createdAt, subtotal, vatRate: effectiveVatRate, vatAmount, total, paymentMethod,
-      customerId, customerName, staffId, staffName, tableId, tableName,
+      orderType, customerId, customerName, staffId, staffName, tableId, tableName, riderId, riderName,
       discountType, discountValue, discountAmount: orderDiscount ?? 0,
       loyaltyPointsEarned: pointsEarned, loyaltyPointsRedeemed: loyaltyPointsRedeemed ?? 0,
       splitPayments,
@@ -156,6 +159,24 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       await setJson(K.tables, tables.map((t) =>
         t.id === tableId ? { ...t, status: "available" as const, currentOrderId: undefined } : t
       ));
+      const heldOrders = await getJson<HeldOrder[]>(K.heldOrders, []);
+      await setJson(K.heldOrders, heldOrders.filter((h) => h.tableId !== tableId));
+    }
+
+    const allRecipes = await getJson<RecipeIngredient[]>(K.recipeIngredients, []);
+    if (allRecipes.length > 0) {
+      const ingredients = await getJson<Ingredient[]>(K.ingredients, []);
+      const updated = [...ingredients];
+      for (const item of items) {
+        const itemRecipes = allRecipes.filter((r) => r.productId === item.product.id);
+        for (const ri of itemRecipes) {
+          const idx = updated.findIndex((ing) => ing.id === ri.ingredientId);
+          if (idx >= 0) {
+            updated[idx] = { ...updated[idx], stockQuantity: Math.max(0, updated[idx].stockQuantity - ri.quantity * item.quantity) };
+          }
+        }
+      }
+      await setJson(K.ingredients, updated);
     }
 
     return sale;
@@ -412,6 +433,126 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     return getJson<any[]>(K.zReports, []);
   }, []);
 
+  const loadRiders = useCallback(async (): Promise<Rider[]> => {
+    const r = await getJson<Rider[]>(K.riders, []);
+    return [...r].sort((a, b) => a.name.localeCompare(b.name));
+  }, []);
+
+  const createRider = useCallback(async (rider: Omit<Rider, "id" | "active" | "createdAt">): Promise<Rider> => {
+    const existing = await getJson<Rider[]>(K.riders, []);
+    const nr: Rider = { ...rider, id: generateId(), active: true, createdAt: Date.now() };
+    await setJson(K.riders, [...existing, nr]);
+    return nr;
+  }, []);
+
+  const updateRider = useCallback(async (rider: Rider): Promise<void> => {
+    const existing = await getJson<Rider[]>(K.riders, []);
+    await setJson(K.riders, existing.map((r) => r.id === rider.id ? rider : r));
+  }, []);
+
+  const deleteRider = useCallback(async (id: string): Promise<void> => {
+    const existing = await getJson<Rider[]>(K.riders, []);
+    await setJson(K.riders, existing.filter((r) => r.id !== id));
+  }, []);
+
+  const saveHeldOrder = useCallback(async (order: Omit<HeldOrder, "id" | "createdAt" | "updatedAt"> & { id?: string }): Promise<HeldOrder> => {
+    const now = Date.now();
+    const existing = await getJson<HeldOrder[]>(K.heldOrders, []);
+    const id = order.id || generateId();
+    const isUpdate = existing.some((h) => h.id === id);
+
+    const heldOrder: HeldOrder = {
+      ...order, id,
+      createdAt: isUpdate ? (existing.find((h) => h.id === id)?.createdAt ?? now) : now,
+      updatedAt: now,
+    };
+
+    if (isUpdate) {
+      await setJson(K.heldOrders, existing.map((h) => h.id === id ? heldOrder : h));
+    } else {
+      await setJson(K.heldOrders, [...existing, heldOrder]);
+    }
+
+    const tables = await getJson<PosTable[]>(K.tables, []);
+    await setJson(K.tables, tables.map((t) =>
+      t.id === order.tableId ? { ...t, status: "occupied" as const, currentOrderId: id } : t
+    ));
+
+    return heldOrder;
+  }, []);
+
+  const loadHeldOrders = useCallback(async (): Promise<HeldOrder[]> => {
+    return getJson<HeldOrder[]>(K.heldOrders, []);
+  }, []);
+
+  const loadHeldOrderByTable = useCallback(async (tableId: string): Promise<HeldOrder | null> => {
+    const orders = await getJson<HeldOrder[]>(K.heldOrders, []);
+    return orders.find((h) => h.tableId === tableId) ?? null;
+  }, []);
+
+  const deleteHeldOrder = useCallback(async (id: string): Promise<void> => {
+    const existing = await getJson<HeldOrder[]>(K.heldOrders, []);
+    const order = existing.find((h) => h.id === id);
+    await setJson(K.heldOrders, existing.filter((h) => h.id !== id));
+    if (order) {
+      const tables = await getJson<PosTable[]>(K.tables, []);
+      await setJson(K.tables, tables.map((t) =>
+        t.id === order.tableId ? { ...t, status: "available" as const, currentOrderId: undefined } : t
+      ));
+    }
+  }, []);
+
+  const loadIngredients = useCallback(async (): Promise<Ingredient[]> => {
+    const items = await getJson<Ingredient[]>(K.ingredients, []);
+    return [...items].sort((a, b) => a.name.localeCompare(b.name));
+  }, []);
+
+  const createIngredient = useCallback(async (ingredient: Omit<Ingredient, "id" | "createdAt">): Promise<Ingredient> => {
+    const existing = await getJson<Ingredient[]>(K.ingredients, []);
+    const ni: Ingredient = { ...ingredient, id: generateId(), createdAt: Date.now() };
+    await setJson(K.ingredients, [...existing, ni]);
+    return ni;
+  }, []);
+
+  const updateIngredient = useCallback(async (ingredient: Ingredient): Promise<void> => {
+    const existing = await getJson<Ingredient[]>(K.ingredients, []);
+    await setJson(K.ingredients, existing.map((i) => i.id === ingredient.id ? ingredient : i));
+  }, []);
+
+  const deleteIngredient = useCallback(async (id: string): Promise<void> => {
+    const existing = await getJson<Ingredient[]>(K.ingredients, []);
+    await setJson(K.ingredients, existing.filter((i) => i.id !== id));
+    const recipes = await getJson<RecipeIngredient[]>(K.recipeIngredients, []);
+    await setJson(K.recipeIngredients, recipes.filter((r) => r.ingredientId !== id));
+  }, []);
+
+  const updateIngredientStock = useCallback(async (ingredientId: string, delta: number): Promise<void> => {
+    const existing = await getJson<Ingredient[]>(K.ingredients, []);
+    await setJson(K.ingredients, existing.map((i) =>
+      i.id === ingredientId ? { ...i, stockQuantity: Math.max(0, i.stockQuantity + delta) } : i
+    ));
+  }, []);
+
+  const loadRecipeIngredients = useCallback(async (productId: string): Promise<RecipeIngredient[]> => {
+    const all = await getJson<RecipeIngredient[]>(K.recipeIngredients, []);
+    const ingredients = await getJson<Ingredient[]>(K.ingredients, []);
+    return all.filter((r) => r.productId === productId).map((r) => ({
+      ...r, ingredientName: ingredients.find((i) => i.id === r.ingredientId)?.name,
+    }));
+  }, []);
+
+  const saveRecipeIngredients = useCallback(async (productId: string, items: Omit<RecipeIngredient, "id">[]): Promise<void> => {
+    const all = await getJson<RecipeIngredient[]>(K.recipeIngredients, []);
+    const filtered = all.filter((r) => r.productId !== productId);
+    const newItems = items.map((item) => ({ ...item, id: generateId() }));
+    await setJson(K.recipeIngredients, [...filtered, ...newItems]);
+  }, []);
+
+  const deleteRecipeIngredients = useCallback(async (productId: string): Promise<void> => {
+    const all = await getJson<RecipeIngredient[]>(K.recipeIngredients, []);
+    await setJson(K.recipeIngredients, all.filter((r) => r.productId !== productId));
+  }, []);
+
   return (
     <DatabaseContext.Provider value={{
       loadProducts, createProduct, updateProduct, deleteProduct, updateStock,
@@ -424,6 +565,10 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       loadTaxGroups, createTaxGroup, updateTaxGroup, deleteTaxGroup,
       loadCategories, createCategory, updateCategory, deleteCategory,
       loadSplitPayments, saveZReport, loadZReports,
+      loadRiders, createRider, updateRider, deleteRider,
+      saveHeldOrder, loadHeldOrders, loadHeldOrderByTable, deleteHeldOrder,
+      loadIngredients, createIngredient, updateIngredient, deleteIngredient, updateIngredientStock,
+      loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,
     }}>
       {children}
     </DatabaseContext.Provider>

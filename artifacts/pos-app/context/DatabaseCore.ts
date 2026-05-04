@@ -1,18 +1,22 @@
 import { createContext, useContext } from "react";
 import type {
   BusinessSettings, CartItem, Category, CreditPayment, Customer,
-  PosTable, Product, Sale, SaleItem, SplitPaymentEntry,
+  HeldOrder, Ingredient, OrderType, PosTable, Product,
+  RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
 } from "@/types";
 
 export interface SaleOptions {
   paymentMethod: string;
+  orderType?: OrderType;
   customerId?: string;
   customerName?: string;
   staffId?: string;
   staffName?: string;
   tableId?: string;
   tableName?: string;
+  riderId?: string;
+  riderName?: string;
   discountType?: string;
   discountValue?: number;
   discountAmount?: number;
@@ -69,6 +73,26 @@ export interface DatabaseContextValue {
   loadSplitPayments: (saleId: string) => Promise<SplitPaymentEntry[]>;
   saveZReport: (report: any) => Promise<void>;
   loadZReports: () => Promise<any[]>;
+
+  loadRiders: () => Promise<Rider[]>;
+  createRider: (rider: Omit<Rider, "id" | "active" | "createdAt">) => Promise<Rider>;
+  updateRider: (rider: Rider) => Promise<void>;
+  deleteRider: (id: string) => Promise<void>;
+
+  saveHeldOrder: (order: Omit<HeldOrder, "id" | "createdAt" | "updatedAt"> & { id?: string }) => Promise<HeldOrder>;
+  loadHeldOrders: () => Promise<HeldOrder[]>;
+  loadHeldOrderByTable: (tableId: string) => Promise<HeldOrder | null>;
+  deleteHeldOrder: (id: string) => Promise<void>;
+
+  loadIngredients: () => Promise<Ingredient[]>;
+  createIngredient: (ingredient: Omit<Ingredient, "id" | "createdAt">) => Promise<Ingredient>;
+  updateIngredient: (ingredient: Ingredient) => Promise<void>;
+  deleteIngredient: (id: string) => Promise<void>;
+  updateIngredientStock: (ingredientId: string, delta: number) => Promise<void>;
+
+  loadRecipeIngredients: (productId: string) => Promise<RecipeIngredient[]>;
+  saveRecipeIngredients: (productId: string, items: Omit<RecipeIngredient, "id">[]) => Promise<void>;
+  deleteRecipeIngredients: (productId: string) => Promise<void>;
 }
 
 export const DatabaseContext = createContext<DatabaseContextValue | null>(null);

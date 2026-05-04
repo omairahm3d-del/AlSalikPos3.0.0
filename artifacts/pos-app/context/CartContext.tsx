@@ -1,12 +1,20 @@
-import React, { createContext, useCallback, useContext, useMemo, useReducer } from "react";
+import React, { createContext, useCallback, useContext, useMemo, useReducer, useState } from "react";
 import type { CartItem, Product } from "@/types";
 import { VAT_RATE } from "@/types";
+
+export interface HeldOrderInfo {
+  id: string;
+  tableId: string;
+  tableName: string;
+  orderType?: "dine-in" | "takeaway" | "delivery";
+}
 
 type CartAction =
   | { type: "ADD_ITEM"; product: Product; taxRate?: number }
   | { type: "REMOVE_ITEM"; productId: string }
   | { type: "UPDATE_QUANTITY"; productId: string; quantity: number }
   | { type: "SET_ITEM_DISCOUNT"; productId: string; discountType?: "percentage" | "fixed"; discountValue?: number }
+  | { type: "RESTORE"; items: CartItem[] }
   | { type: "CLEAR" };
 
 interface CartState {
@@ -22,10 +30,12 @@ interface CartContextValue {
   vatAmount: number;
   total: number;
   quantityMap: Record<string, number>;
+  heldOrderInfo: HeldOrderInfo | null;
   addItem: (product: Product, taxRate?: number) => void;
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   setItemDiscount: (productId: string, discountType?: "percentage" | "fixed", discountValue?: number) => void;
+  restoreCart: (items: CartItem[], heldInfo?: HeldOrderInfo) => void;
   clearCart: () => void;
   getItemQuantity: (productId: string) => number;
 }
@@ -80,6 +90,8 @@ function cartReducer(state: CartState, action: CartAction): CartState {
         }),
       };
     }
+    case "RESTORE":
+      return { items: action.items };
     case "CLEAR":
       return { items: [] };
     default:
@@ -91,6 +103,7 @@ const CartContext = createContext<CartContextValue | null>(null);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(cartReducer, { items: [] });
+  const [heldOrderInfo, setHeldOrderInfo] = useState<HeldOrderInfo | null>(null);
 
   const itemCount = useMemo(
     () => state.items.reduce((sum, i) => sum + i.quantity, 0),
@@ -133,15 +146,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: "UPDATE_QUANTITY", productId, quantity }), []);
   const setItemDiscount = useCallback((productId: string, discountType?: "percentage" | "fixed", discountValue?: number) =>
     dispatch({ type: "SET_ITEM_DISCOUNT", productId, discountType, discountValue }), []);
-  const clearCart = useCallback(() => dispatch({ type: "CLEAR" }), []);
+  const restoreCart = useCallback((items: CartItem[], heldInfo?: HeldOrderInfo) => {
+    dispatch({ type: "RESTORE", items });
+    setHeldOrderInfo(heldInfo ?? null);
+  }, []);
+  const clearCart = useCallback(() => {
+    dispatch({ type: "CLEAR" });
+    setHeldOrderInfo(null);
+  }, []);
   const getItemQuantity = useCallback((productId: string) =>
     state.items.find((i) => i.product.id === productId)?.quantity ?? 0, [state.items]);
 
   const value = useMemo(() => ({
     items: state.items, itemCount, subtotal, itemDiscountTotal, effectiveSubtotal,
-    vatAmount, total, quantityMap, addItem, removeItem, updateQuantity, setItemDiscount, clearCart, getItemQuantity,
+    vatAmount, total, quantityMap, heldOrderInfo, addItem, removeItem, updateQuantity, setItemDiscount, restoreCart, clearCart, getItemQuantity,
   }), [state.items, itemCount, subtotal, itemDiscountTotal, effectiveSubtotal,
-    vatAmount, total, quantityMap, addItem, removeItem, updateQuantity, setItemDiscount, clearCart, getItemQuantity]);
+    vatAmount, total, quantityMap, heldOrderInfo, addItem, removeItem, updateQuantity, setItemDiscount, restoreCart, clearCart, getItemQuantity]);
 
   return (
     <CartContext.Provider value={value}>

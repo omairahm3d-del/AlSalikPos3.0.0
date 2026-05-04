@@ -15,11 +15,13 @@ import {
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDatabase } from "@/context/DatabaseCore";
+import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
-import type { PosTable } from "@/types";
+import type { HeldOrder, PosTable, Product } from "@/types";
+import { VAT_RATE } from "@/types";
 
 const STATUS_COLORS: Record<string, { bg: string; fg: string; label: string }> = {
   available: { bg: "#2ECC71", fg: "#fff", label: "Available" },
@@ -31,7 +33,9 @@ export default function TablesScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { loadTables, createTable, updateTable, deleteTable, setTableStatus } = useDatabase();
+  const router = useRouter();
+  const { loadTables, createTable, updateTable, deleteTable, setTableStatus, loadHeldOrderByTable, loadProducts, loadTaxGroups } = useDatabase();
+  const { restoreCart } = useCart();
 
   const [tables, setTables] = useState<PosTable[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,14 +106,49 @@ export default function TablesScreen() {
     ]);
   };
 
-  const cycleStatus = async (table: PosTable) => {
-    const next: Record<string, PosTable["status"]> = {
-      available: "reserved",
-      reserved: "available",
-      occupied: "available",
-    };
-    const newStatus = next[table.status] || "available";
-    await setTableStatus(table.id, newStatus);
+  const handleTableTap = async (table: PosTable) => {
+    if (table.status === "occupied") {
+      try {
+        const heldOrder = await loadHeldOrderByTable(table.id);
+        if (heldOrder && heldOrder.items.length > 0) {
+          const [allProducts, taxGroups] = await Promise.all([loadProducts(), loadTaxGroups()]);
+          const productMap: Record<string, Product> = {};
+          allProducts.forEach((p) => { productMap[p.id] = p; });
+          const taxMap: Record<string, number> = {};
+          taxGroups.forEach((g) => { taxMap[g.id] = g.rate; });
+          const cartItems = heldOrder.items.map((hi) => {
+            const product = productMap[hi.productId] || {
+              id: hi.productId, name: hi.productName, price: hi.productPrice,
+              category: hi.category, description: "", colorHex: hi.colorHex,
+              stockQuantity: 999, lowStockThreshold: 10,
+            };
+            const taxRate = product.taxGroupId ? (taxMap[product.taxGroupId] ?? hi.taxRate ?? VAT_RATE) : (hi.taxRate ?? VAT_RATE);
+            return {
+              product,
+              quantity: hi.quantity,
+              taxRate,
+              discountType: hi.discountType,
+              discountValue: hi.discountValue,
+              discountAmount: hi.discountAmount ?? 0,
+            };
+          });
+          restoreCart(cartItems, { id: heldOrder.id, tableId: table.id, tableName: table.name, orderType: heldOrder.orderType });
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          router.navigate("/");
+          return;
+        }
+      } catch (e: any) {
+        Alert.alert("Error", "Could not load held order");
+        return;
+      }
+    }
+    if (table.status === "available") {
+      await setTableStatus(table.id, "reserved");
+    } else if (table.status === "reserved") {
+      await setTableStatus(table.id, "available");
+    } else {
+      return;
+    }
     await fetchTables();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
@@ -118,7 +157,7 @@ export default function TablesScreen() {
     const sc = STATUS_COLORS[item.status] || STATUS_COLORS.available;
     return (
       <TouchableOpacity
-        onPress={() => cycleStatus(item)}
+        onPress={() => handleTableTap(item)}
         onLongPress={() => openEdit(item)}
         activeOpacity={0.8}
         style={[styles.tableCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}

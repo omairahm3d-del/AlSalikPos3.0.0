@@ -140,6 +140,61 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
       refund_count INTEGER NOT NULL DEFAULT 0,
       data_json TEXT DEFAULT '{}'
     );
+
+    CREATE TABLE IF NOT EXISTS riders (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      phone TEXT DEFAULT '',
+      vehicle_info TEXT DEFAULT '',
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS held_orders (
+      id TEXT PRIMARY KEY,
+      table_id TEXT NOT NULL,
+      table_name TEXT NOT NULL,
+      order_type TEXT NOT NULL DEFAULT 'dine-in',
+      staff_id TEXT DEFAULT NULL,
+      staff_name TEXT DEFAULT NULL,
+      customer_id TEXT DEFAULT NULL,
+      customer_name TEXT DEFAULT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS held_order_items (
+      id TEXT PRIMARY KEY,
+      held_order_id TEXT NOT NULL,
+      product_id TEXT NOT NULL,
+      product_name TEXT NOT NULL,
+      product_price REAL NOT NULL,
+      quantity INTEGER NOT NULL,
+      color_hex TEXT DEFAULT '#4F8EF7',
+      category TEXT DEFAULT '',
+      tax_rate REAL DEFAULT NULL,
+      discount_type TEXT DEFAULT NULL,
+      discount_value REAL DEFAULT NULL,
+      discount_amount REAL DEFAULT 0,
+      image_uri TEXT DEFAULT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ingredients (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      unit TEXT NOT NULL DEFAULT 'pcs',
+      stock_quantity REAL NOT NULL DEFAULT 0,
+      cost_per_unit REAL NOT NULL DEFAULT 0,
+      low_stock_threshold REAL NOT NULL DEFAULT 10,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS recipe_ingredients (
+      id TEXT PRIMARY KEY,
+      product_id TEXT NOT NULL,
+      ingredient_id TEXT NOT NULL,
+      quantity REAL NOT NULL DEFAULT 1
+    );
   `);
 
   const migrations: string[] = [
@@ -164,6 +219,9 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     "ALTER TABLE customers ADD COLUMN loyalty_points INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE sale_items ADD COLUMN discount_amount REAL DEFAULT 0",
     "ALTER TABLE products ADD COLUMN image_uri TEXT DEFAULT NULL",
+    "ALTER TABLE sales ADD COLUMN order_type TEXT DEFAULT NULL",
+    "ALTER TABLE sales ADD COLUMN rider_id TEXT DEFAULT NULL",
+    "ALTER TABLE sales ADD COLUMN rider_name TEXT DEFAULT NULL",
   ];
 
   for (const sql of migrations) {

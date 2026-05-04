@@ -45,6 +45,8 @@ export interface SplitPaymentEntry {
   amount: number;
 }
 
+export type OrderType = "dine-in" | "takeaway" | "delivery";
+
 export interface Sale {
   id: string;
   invoiceNumber: string;
@@ -54,12 +56,15 @@ export interface Sale {
   vatAmount: number;
   total: number;
   paymentMethod: string;
+  orderType?: OrderType;
   customerId?: string;
   customerName?: string;
   staffId?: string;
   staffName?: string;
   tableId?: string;
   tableName?: string;
+  riderId?: string;
+  riderName?: string;
   discountType?: string;
   discountValue?: number;
   discountAmount?: number;
@@ -69,6 +74,63 @@ export interface Sale {
   loyaltyPointsRedeemed?: number;
   splitPayments?: SplitPaymentEntry[];
   items?: SaleItem[];
+}
+
+export interface Rider {
+  id: string;
+  name: string;
+  phone: string;
+  vehicleInfo: string;
+  active: boolean;
+  createdAt: number;
+}
+
+export interface HeldOrder {
+  id: string;
+  tableId: string;
+  tableName: string;
+  orderType: OrderType;
+  staffId?: string;
+  staffName?: string;
+  customerId?: string;
+  customerName?: string;
+  createdAt: number;
+  updatedAt: number;
+  items: HeldOrderItem[];
+}
+
+export interface HeldOrderItem {
+  id: string;
+  heldOrderId: string;
+  productId: string;
+  productName: string;
+  productPrice: number;
+  quantity: number;
+  colorHex: string;
+  category: string;
+  taxRate?: number;
+  discountType?: "percentage" | "fixed";
+  discountValue?: number;
+  discountAmount?: number;
+  imageUri?: string;
+}
+
+export interface Ingredient {
+  id: string;
+  name: string;
+  unit: string;
+  stockQuantity: number;
+  costPerUnit: number;
+  lowStockThreshold: number;
+  createdAt: number;
+}
+
+export interface RecipeIngredient {
+  id: string;
+  productId: string;
+  ingredientId: string;
+  ingredientName?: string;
+  quantity: number;
 }
 
 export interface Customer {

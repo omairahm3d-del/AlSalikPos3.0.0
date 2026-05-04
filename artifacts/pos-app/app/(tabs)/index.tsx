@@ -29,12 +29,19 @@ import { useDatabase } from "@/context/DatabaseCore";
 import { useStaff } from "@/context/StaffContext";
 import { useColors } from "@/hooks/useColors";
 import { generateKitchenTicketHTML, getUniqueStations } from "@/lib/kitchenTicketTemplate";
-import type { BusinessSettings, Category, Customer, KOTSettings, PosTable, Product, Sale, SplitPaymentEntry, TaxGroup } from "@/types";
+import { generateBillHTML } from "@/lib/billTemplate";
+import type { BusinessSettings, Category, Customer, KOTSettings, OrderType, PosTable, Product, Rider, Sale, SplitPaymentEntry, TaxGroup } from "@/types";
 import { DEFAULT_KOT_SETTINGS, VAT_RATE, formatCurrency } from "@/types";
 
 type PaymentMethod = "Card" | "Cash" | "Credit" | "Split";
 
 const PRODUCT_ITEM_HEIGHT = 148;
+
+const ORDER_TYPES: { key: OrderType; label: string; icon: string }[] = [
+  { key: "dine-in", label: "Dine-in", icon: "coffee" },
+  { key: "takeaway", label: "Takeaway", icon: "shopping-bag" },
+  { key: "delivery", label: "Delivery", icon: "truck" },
+];
 
 export default function POSScreen() {
   const colors = useColors();
@@ -42,7 +49,7 @@ export default function POSScreen() {
   const insets = useSafeAreaInsets();
   const isTablet = width >= 768;
 
-  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories } = useDatabase();
+  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders } = useDatabase();
   const { currentStaff } = useStaff();
   const {
     items: cartItems,
@@ -53,19 +60,23 @@ export default function POSScreen() {
     vatAmount,
     total,
     quantityMap,
+    heldOrderInfo,
     addItem,
     removeItem,
     updateQuantity,
     setItemDiscount,
+    restoreCart,
     clearCart,
   } = useCart();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [tables, setTables] = useState<PosTable[]>([]);
+  const [riders, setRiders] = useState<Rider[]>([]);
   const [taxGroupMap, setTaxGroupMap] = useState<Record<string, number>>({});
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [dynamicCategories, setDynamicCategories] = useState<string[]>(["All"]);
   const [kotSettings, setKotSettings] = useState<KOTSettings>(DEFAULT_KOT_SETTINGS);
+  const [businessSettings, setBusinessSettings] = useState<BusinessSettings | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [showCart, setShowCart] = useState(false);
@@ -76,6 +87,9 @@ export default function POSScreen() {
   const [showCustomerSelect, setShowCustomerSelect] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [selectedTable, setSelectedTable] = useState<PosTable | null>(null);
+  const [orderType, setOrderType] = useState<OrderType>("dine-in");
+  const [selectedRider, setSelectedRider] = useState<Rider | null>(null);
+  const [showHoldTablePicker, setShowHoldTablePicker] = useState(false);
 
   const [orderDiscountType, setOrderDiscountType] = useState<"percentage" | "fixed">("percentage");
   const [orderDiscountValue, setOrderDiscountValue] = useState("");
@@ -127,20 +141,28 @@ export default function POSScreen() {
   const splitRemaining = finalTotal - splitEntries.reduce((s, e) => s + e.amount, 0);
 
   const fetchData = useCallback(async () => {
-    const [prods, tbls, biz, tgs, cats] = await Promise.all([loadProducts(), loadTables(), loadBusinessSettings(), loadTaxGroups(), loadCategories()]);
+    const [prods, tbls, biz, tgs, cats, rdrs] = await Promise.all([loadProducts(), loadTables(), loadBusinessSettings(), loadTaxGroups(), loadCategories(), loadRiders()]);
     setProducts(prods);
     setTables(tbls);
+    setRiders(rdrs.filter((r: Rider) => r.active));
     setLoyaltyRate(biz.loyaltyRedemptionRate || 0.01);
     setKotSettings(biz.kotSettings ?? DEFAULT_KOT_SETTINGS);
+    setBusinessSettings(biz);
     const map: Record<string, number> = {};
     tgs.forEach((g: TaxGroup) => { map[g.id] = g.rate; });
     setTaxGroupMap(map);
     const catNames = cats.length > 0 ? ["All", ...cats.map((c: Category) => c.name)] : ["All"];
     setDynamicCategories(catNames);
     setLoading(false);
-  }, [loadProducts, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories]);
+  }, [loadProducts, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, loadRiders]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    if (heldOrderInfo?.orderType) {
+      setOrderType(heldOrderInfo.orderType);
+    }
+  }, [heldOrderInfo]);
 
   const filteredProducts = useMemo(() => {
     let list = products;
@@ -180,6 +202,68 @@ export default function POSScreen() {
     handleAddById(product.id);
   }, [handleAddById]);
 
+  const handleHoldOrder = useCallback(async (table: PosTable) => {
+    if (cartItems.length === 0) return;
+    try {
+      await saveHeldOrder({
+        id: heldOrderInfo?.id,
+        tableId: table.id,
+        tableName: table.name,
+        orderType,
+        staffId: currentStaff?.id,
+        staffName: currentStaff?.name,
+        items: cartItems.map((ci) => ({
+          id: "",
+          heldOrderId: "",
+          productId: ci.product.id,
+          productName: ci.product.name,
+          productPrice: ci.product.price,
+          quantity: ci.quantity,
+          colorHex: ci.product.colorHex,
+          category: ci.product.category,
+          taxRate: ci.taxRate,
+          discountType: ci.discountType,
+          discountValue: ci.discountValue,
+          discountAmount: ci.discountAmount,
+          imageUri: ci.product.imageUri,
+        })),
+      });
+      clearCart();
+      setShowHoldTablePicker(false);
+      setShowCart(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("Order Held", `Order held on ${table.name}`);
+      await fetchData();
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Failed to hold order");
+    }
+  }, [cartItems, heldOrderInfo, orderType, currentStaff, saveHeldOrder, clearCart, fetchData]);
+
+  const handlePrintBill = useCallback(async () => {
+    if (cartItems.length === 0) return;
+    try {
+      const tbl = heldOrderInfo ? heldOrderInfo.tableName : selectedTable?.name;
+      const html = generateBillHTML(cartItems, {
+        businessSettings,
+        orderType,
+        tableName: tbl,
+        staffName: currentStaff?.name,
+        subtotal: effectiveSubtotal,
+        vatAmount,
+        total,
+        itemDiscountTotal,
+      });
+      if (Platform.OS === "web") {
+        const w = window.open("", "_blank", "width=400,height=600");
+        if (w) { w.document.write(html); w.document.close(); w.print(); }
+      } else {
+        await Print.printAsync({ html });
+      }
+    } catch (e: any) {
+      Alert.alert("Print Error", e.message || "Could not print bill");
+    }
+  }, [cartItems, businessSettings, orderType, heldOrderInfo, selectedTable, currentStaff, effectiveSubtotal, vatAmount, total, itemDiscountTotal]);
+
   const handleChargeSale = useCallback(async () => {
     if (cartItems.length === 0) return;
     if (paymentMethod === "Credit" && !selectedCustomer) {
@@ -193,16 +277,22 @@ export default function POSScreen() {
       }
     }
 
+    const chargeTableId = heldOrderInfo?.tableId ?? selectedTable?.id;
+    const chargeTableName = heldOrderInfo?.tableName ?? selectedTable?.name;
+
     try {
       const totalDiscAmt = orderDiscAmt + loyaltyRedeemAmount;
       const sale = await saveSale(cartItems, {
         paymentMethod,
+        orderType,
         customerId: selectedCustomer?.id,
         customerName: selectedCustomer?.name,
         staffId: currentStaff?.id,
         staffName: currentStaff?.name,
-        tableId: selectedTable?.id,
-        tableName: selectedTable?.name,
+        tableId: chargeTableId,
+        tableName: chargeTableName,
+        riderId: selectedRider?.id,
+        riderName: selectedRider?.name,
         discountType: totalDiscAmt > 0 ? orderDiscountType : undefined,
         discountValue: totalDiscAmt > 0 ? parseFloat(orderDiscountValue || "0") : undefined,
         discountAmount: totalDiscAmt,
@@ -210,14 +300,15 @@ export default function POSScreen() {
         splitPayments: paymentMethod === "Split" ? splitEntries : undefined,
       });
 
-      const shouldPrintKOT = kotSettings.enabled && selectedTable;
+      const kotTableName = chargeTableName;
+      const shouldPrintKOT = kotSettings.enabled && kotTableName;
       if (shouldPrintKOT) {
         try {
           const stations = getUniqueStations(cartItems, kotSettings);
           if (stations.length > 0) {
             for (const station of stations) {
               const ticketHtml = generateKitchenTicketHTML(
-                cartItems, sale.invoiceNumber, selectedTable.name, currentStaff?.name, kotSettings, station
+                cartItems, sale.invoiceNumber, kotTableName, currentStaff?.name, kotSettings, station
               );
               if (!ticketHtml) continue;
               if (Platform.OS === "web") {
@@ -229,7 +320,7 @@ export default function POSScreen() {
             }
           } else {
             const ticketHtml = generateKitchenTicketHTML(
-              cartItems, sale.invoiceNumber, selectedTable.name, currentStaff?.name, kotSettings
+              cartItems, sale.invoiceNumber, kotTableName, currentStaff?.name, kotSettings
             );
             if (ticketHtml) {
               if (Platform.OS === "web") {
@@ -250,6 +341,7 @@ export default function POSScreen() {
       setShowCart(false);
       setSelectedCustomer(null);
       setSelectedTable(null);
+      setSelectedRider(null);
       setOrderDiscountValue("");
       setShowDiscountInput(false);
       setSplitEntries([]);
@@ -261,7 +353,7 @@ export default function POSScreen() {
       Alert.alert("Error", e.message || "Failed to save sale");
     }
   }, [cartItems, paymentMethod, selectedCustomer, splitRemaining, orderDiscAmt, loyaltyRedeemAmount,
-    saveSale, currentStaff, selectedTable, orderDiscountType, orderDiscountValue,
+    saveSale, currentStaff, selectedTable, heldOrderInfo, selectedRider, orderType, orderDiscountType, orderDiscountValue,
     loyaltyRedeemPtsActual, splitEntries, clearCart, fetchData]);
 
   const handleAddSplit = useCallback(() => {
@@ -376,18 +468,45 @@ export default function POSScreen() {
   const CartContent = (
     <View style={styles.cartInner}>
       <View style={[styles.cartHeader, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.cartTitle, { color: colors.foreground }]}>Order</Text>
-        <View style={styles.cartHeaderRight}>
-          {currentStaff && (
-            <Text style={[styles.staffLabel, { color: colors.mutedForeground }]}>
-              {currentStaff.name}
-            </Text>
+        <View style={{ flex: 1 }}>
+          <View style={styles.cartHeaderRow}>
+            <Text style={[styles.cartTitle, { color: colors.foreground }]}>Order</Text>
+            <View style={styles.cartHeaderRight}>
+              {currentStaff && (
+                <Text style={[styles.staffLabel, { color: colors.mutedForeground }]}>
+                  {currentStaff.name}
+                </Text>
+              )}
+              {cartItems.length > 0 && (
+                <TouchableOpacity onPress={clearCart}>
+                  <Text style={{ color: colors.destructive, fontSize: 13 }}>Clear</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+          {heldOrderInfo && (
+            <View style={[styles.heldBadge, { backgroundColor: "#F39C12" + "20" }]}>
+              <Feather name="clock" size={11} color="#F39C12" />
+              <Text style={{ color: "#F39C12", fontSize: 11, fontWeight: "600", marginLeft: 4 }}>
+                Held: {heldOrderInfo.tableName}
+              </Text>
+            </View>
           )}
-          {cartItems.length > 0 && (
-            <TouchableOpacity onPress={clearCart}>
-              <Text style={{ color: colors.destructive, fontSize: 13 }}>Clear</Text>
-            </TouchableOpacity>
-          )}
+          <View style={styles.orderTypeRow}>
+            {ORDER_TYPES.map((ot) => {
+              const active = orderType === ot.key;
+              return (
+                <TouchableOpacity
+                  key={ot.key}
+                  onPress={() => { if (!heldOrderInfo) setOrderType(ot.key); }}
+                  style={[styles.orderTypeChip, { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary + "18" : "transparent", borderRadius: colors.radius, opacity: heldOrderInfo && !active ? 0.4 : 1 }]}
+                >
+                  <Feather name={ot.icon as any} size={12} color={active ? colors.primary : colors.mutedForeground} />
+                  <Text style={{ color: active ? colors.primary : colors.mutedForeground, fontSize: 11, fontWeight: "600", marginLeft: 4 }}>{ot.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
       </View>
 
@@ -425,13 +544,37 @@ export default function POSScreen() {
             <Text style={[styles.grandTotalLabel, { color: colors.foreground }]}>Total</Text>
             <Text style={[styles.grandTotalValue, { color: colors.foreground }]}>{formatCurrency(total)}</Text>
           </View>
-          <TouchableOpacity
-            onPress={openPayment}
-            style={[styles.chargeBtn, { backgroundColor: colors.success, borderRadius: colors.radius }]}
-          >
-            <Feather name="credit-card" size={18} color="#fff" />
-            <Text style={styles.chargeBtnText}>Charge {formatCurrency(total)}</Text>
-          </TouchableOpacity>
+          <View style={styles.cartBtnRow}>
+            <TouchableOpacity
+              onPress={handlePrintBill}
+              style={[styles.printBillBtn, { borderColor: colors.border, borderRadius: colors.radius }]}
+            >
+              <Feather name="printer" size={16} color={colors.primary} />
+            </TouchableOpacity>
+            {orderType === "dine-in" && (
+              <TouchableOpacity
+                onPress={() => {
+                  if (heldOrderInfo) {
+                    const tbl = tables.find((t) => t.id === heldOrderInfo.tableId);
+                    if (tbl) handleHoldOrder(tbl);
+                  } else {
+                    setShowHoldTablePicker(true);
+                  }
+                }}
+                style={[styles.holdBtn, { backgroundColor: "#F39C12", borderRadius: colors.radius }]}
+              >
+                <Feather name="pause" size={16} color="#fff" />
+                <Text style={styles.holdBtnText}>Hold</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              onPress={openPayment}
+              style={[styles.chargeBtn, { backgroundColor: colors.success, borderRadius: colors.radius, flex: 1 }]}
+            >
+              <Feather name="credit-card" size={18} color="#fff" />
+              <Text style={styles.chargeBtnText}>Charge {formatCurrency(total)}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
     </View>
@@ -530,7 +673,16 @@ export default function POSScreen() {
             <View style={[styles.paymentSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2 }]}>
               <Text style={[styles.paymentTitle, { color: colors.foreground }]}>Payment</Text>
 
-              {availableTables.length > 0 && (
+              {heldOrderInfo && (
+                <View style={[styles.heldBadge, { backgroundColor: "#F39C12" + "20", marginBottom: 12 }]}>
+                  <Feather name="layout" size={12} color="#F39C12" />
+                  <Text style={{ color: "#F39C12", fontSize: 12, fontWeight: "600", marginLeft: 4 }}>
+                    {heldOrderInfo.tableName} · {orderType}
+                  </Text>
+                </View>
+              )}
+
+              {!heldOrderInfo && orderType === "dine-in" && availableTables.length > 0 && (
                 <>
                   <Text style={[styles.paymentLabel, { color: colors.mutedForeground }]}>Table (optional)</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tableScrollRow}>
@@ -547,6 +699,29 @@ export default function POSScreen() {
                         style={[styles.tableChip, { borderColor: selectedTable?.id === t.id ? colors.primary : colors.border, backgroundColor: selectedTable?.id === t.id ? colors.primary + "18" : "transparent", borderRadius: colors.radius }]}
                       >
                         <Text style={{ color: selectedTable?.id === t.id ? colors.primary : colors.mutedForeground, fontSize: 12, fontWeight: "600" }}>{t.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </>
+              )}
+
+              {orderType === "delivery" && riders.length > 0 && (
+                <>
+                  <Text style={[styles.paymentLabel, { color: colors.mutedForeground }]}>Delivery Rider</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tableScrollRow}>
+                    <TouchableOpacity
+                      onPress={() => setSelectedRider(null)}
+                      style={[styles.tableChip, { borderColor: !selectedRider ? colors.primary : colors.border, backgroundColor: !selectedRider ? colors.primary + "18" : "transparent", borderRadius: colors.radius }]}
+                    >
+                      <Text style={{ color: !selectedRider ? colors.primary : colors.mutedForeground, fontSize: 12, fontWeight: "600" }}>None</Text>
+                    </TouchableOpacity>
+                    {riders.map((r) => (
+                      <TouchableOpacity
+                        key={r.id}
+                        onPress={() => setSelectedRider(r)}
+                        style={[styles.tableChip, { borderColor: selectedRider?.id === r.id ? colors.primary : colors.border, backgroundColor: selectedRider?.id === r.id ? colors.primary + "18" : "transparent", borderRadius: colors.radius }]}
+                      >
+                        <Text style={{ color: selectedRider?.id === r.id ? colors.primary : colors.mutedForeground, fontSize: 12, fontWeight: "600" }}>{r.name}</Text>
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
@@ -796,6 +971,34 @@ export default function POSScreen() {
         </View>
       </Modal>
 
+      <Modal visible={showHoldTablePicker} animationType="fade" transparent>
+        <View style={styles.paymentOverlay}>
+          <View style={[styles.itemDiscSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2 }]}>
+            <Text style={[styles.paymentTitle, { color: colors.foreground, fontSize: 18 }]}>Select Table to Hold</Text>
+            {availableTables.length === 0 ? (
+              <Text style={{ color: colors.mutedForeground, textAlign: "center", marginBottom: 16 }}>No available tables</Text>
+            ) : (
+              <View style={styles.holdTableGrid}>
+                {availableTables.map((t) => (
+                  <TouchableOpacity
+                    key={t.id}
+                    onPress={() => handleHoldOrder(t)}
+                    style={[styles.holdTableCard, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius }]}
+                  >
+                    <Feather name="layout" size={20} color={colors.primary} />
+                    <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: "600", marginTop: 4 }}>{t.name}</Text>
+                    <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>{t.capacity} seats</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            <TouchableOpacity onPress={() => setShowHoldTablePicker(false)} style={[styles.cancelBtn, { borderColor: colors.border, borderRadius: colors.radius, marginTop: 8 }]}>
+              <Text style={{ color: colors.mutedForeground, fontWeight: "600" }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <ReceiptModal visible={!!receiptSale} sale={receiptSale} onClose={closeReceipt} />
       <CustomerSelectModal
         visible={showCustomerSelect}
@@ -826,9 +1029,13 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 14, paddingVertical: 2 },
   scanBtn: { padding: 10, marginLeft: 4 },
   cartInner: { flex: 1 },
-  cartHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1 },
+  cartHeader: { paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1 },
+  cartHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   cartHeaderRight: { flexDirection: "row", gap: 12, alignItems: "center" },
   cartTitle: { fontSize: 17, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  heldBadge: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginTop: 6, alignSelf: "flex-start" },
+  orderTypeRow: { flexDirection: "row", gap: 6, marginTop: 8 },
+  orderTypeChip: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1 },
   staffLabel: { fontSize: 11 },
   cartList: { flex: 1 },
   cartFooter: { padding: 16, borderTopWidth: 1 },
@@ -839,6 +1046,12 @@ const styles = StyleSheet.create({
   grandTotal: { marginBottom: 14 },
   grandTotalLabel: { fontSize: 17, fontWeight: "700", fontFamily: "Inter_700Bold" },
   grandTotalValue: { fontSize: 17, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  cartBtnRow: { flexDirection: "row", gap: 8 },
+  printBillBtn: { width: 48, height: 48, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  holdBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 16, paddingVertical: 12 },
+  holdBtnText: { color: "#fff", fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  holdTableGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
+  holdTableCard: { width: "30%", padding: 12, borderWidth: 1, alignItems: "center", minWidth: 80 },
   chargeBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 15 },
   chargeBtnText: { color: "#fff", fontSize: 16, fontWeight: "700", fontFamily: "Inter_700Bold" },
   cartBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: 14 },

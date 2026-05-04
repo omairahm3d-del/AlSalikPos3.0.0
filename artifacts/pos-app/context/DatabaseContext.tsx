@@ -2,7 +2,8 @@ import React, { useCallback } from "react";
 import { useSQLiteContext } from "expo-sqlite";
 import type {
   BusinessSettings, CartItem, Category, CreditPayment, Customer,
-  PosTable, Product, Sale, SaleItem, SplitPaymentEntry,
+  HeldOrder, HeldOrderItem, Ingredient, PosTable, Product,
+  RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
 } from "@/types";
 import { DEFAULT_BUSINESS_SETTINGS, VAT_RATE } from "@/types";
@@ -48,7 +49,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
   }, [db]);
 
   const saveSale = useCallback(async (items: CartItem[], options: SaleOptions): Promise<Sale> => {
-    const { paymentMethod, customerId, customerName, staffId, staffName, tableId, tableName, discountType, discountValue, discountAmount: orderDiscount, loyaltyPointsRedeemed, splitPayments } = options;
+    const { paymentMethod, orderType, customerId, customerName, staffId, staffName, tableId, tableName, riderId, riderName, discountType, discountValue, discountAmount: orderDiscount, loyaltyPointsRedeemed, splitPayments } = options;
 
     if (paymentMethod === "Credit" && !customerId) throw new Error("Credit sales require a customer");
 
@@ -84,13 +85,13 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
 
       await tx.runAsync(
         `INSERT INTO sales (id, invoice_number, created_at, subtotal, vat_rate, vat_amount, total, payment_method,
-         customer_id, customer_name, staff_id, staff_name, table_id, table_name,
-         discount_type, discount_value, discount_amount, is_refund, original_sale_id,
-         loyalty_points_earned, loyalty_points_redeemed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,NULL,?,?)`,
+         order_type, customer_id, customer_name, staff_id, staff_name, table_id, table_name,
+         rider_id, rider_name, discount_type, discount_value, discount_amount, is_refund, original_sale_id,
+         loyalty_points_earned, loyalty_points_redeemed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,NULL,?,?)`,
         [saleId, invoiceNumber, createdAt, subtotal, effectiveVatRate, vatAmount, total, paymentMethod,
-         customerId ?? null, customerName ?? null, staffId ?? null, staffName ?? null,
-         tableId ?? null, tableName ?? null, discountType ?? null, discountValue ?? null,
-         orderDiscAmt, pointsEarned, loyaltyPointsRedeemed ?? 0]
+         orderType ?? null, customerId ?? null, customerName ?? null, staffId ?? null, staffName ?? null,
+         tableId ?? null, tableName ?? null, riderId ?? null, riderName ?? null,
+         discountType ?? null, discountValue ?? null, orderDiscAmt, pointsEarned, loyaltyPointsRedeemed ?? 0]
       );
 
       for (const item of items) {
@@ -123,11 +124,26 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
 
       if (tableId) {
         await tx.runAsync("UPDATE pos_tables SET status='available', current_order_id=NULL WHERE id=?", [tableId]);
+        await tx.runAsync("DELETE FROM held_order_items WHERE held_order_id IN (SELECT id FROM held_orders WHERE table_id=?)", [tableId]);
+        await tx.runAsync("DELETE FROM held_orders WHERE table_id=?", [tableId]);
+      }
+
+      const recipes = await tx.getAllAsync<{ product_id: string; ingredient_id: string; quantity: number }>(
+        "SELECT * FROM recipe_ingredients"
+      );
+      for (const item of items) {
+        const itemRecipes = recipes.filter((r) => r.product_id === item.product.id);
+        for (const ri of itemRecipes) {
+          await tx.runAsync(
+            "UPDATE ingredients SET stock_quantity = MAX(0, stock_quantity - ?) WHERE id=?",
+            [ri.quantity * item.quantity, ri.ingredient_id]
+          );
+        }
       }
 
       return {
         id: saleId, invoiceNumber, createdAt, subtotal, vatRate: effectiveVatRate, vatAmount, total, paymentMethod,
-        customerId, customerName, staffId, staffName, tableId, tableName,
+        orderType, customerId, customerName, staffId, staffName, tableId, tableName, riderId, riderName,
         discountType, discountValue, discountAmount: orderDiscAmt,
         loyaltyPointsEarned: pointsEarned, loyaltyPointsRedeemed: loyaltyPointsRedeemed ?? 0,
         splitPayments,
@@ -139,9 +155,11 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     id: r.id, invoiceNumber: r.invoice_number ?? "", createdAt: r.created_at,
     subtotal: r.subtotal, vatRate: r.vat_rate, vatAmount: r.vat_amount,
     total: r.total, paymentMethod: r.payment_method,
+    orderType: r.order_type ?? undefined,
     customerId: r.customer_id ?? undefined, customerName: r.customer_name ?? undefined,
     staffId: r.staff_id ?? undefined, staffName: r.staff_name ?? undefined,
     tableId: r.table_id ?? undefined, tableName: r.table_name ?? undefined,
+    riderId: r.rider_id ?? undefined, riderName: r.rider_name ?? undefined,
     discountType: r.discount_type ?? undefined, discountValue: r.discount_value ?? undefined,
     discountAmount: r.discount_amount ?? 0,
     isRefund: r.is_refund === 1, originalSaleId: r.original_sale_id ?? undefined,
@@ -465,6 +483,162 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     });
   }, [db]);
 
+  const loadRiders = useCallback(async (): Promise<Rider[]> => {
+    const rows = await db.getAllAsync<any>("SELECT * FROM riders ORDER BY name ASC");
+    return rows.map((r: any) => ({
+      id: r.id, name: r.name, phone: r.phone ?? "", vehicleInfo: r.vehicle_info ?? "",
+      active: r.active === 1, createdAt: r.created_at,
+    }));
+  }, [db]);
+
+  const createRider = useCallback(async (rider: Omit<Rider, "id" | "active" | "createdAt">): Promise<Rider> => {
+    const id = generateId();
+    const createdAt = Date.now();
+    await db.runAsync("INSERT INTO riders (id, name, phone, vehicle_info, active, created_at) VALUES (?,?,?,?,1,?)",
+      [id, rider.name, rider.phone, rider.vehicleInfo, createdAt]);
+    return { ...rider, id, active: true, createdAt };
+  }, [db]);
+
+  const updateRider = useCallback(async (rider: Rider): Promise<void> => {
+    await db.runAsync("UPDATE riders SET name=?, phone=?, vehicle_info=?, active=? WHERE id=?",
+      [rider.name, rider.phone, rider.vehicleInfo, rider.active ? 1 : 0, rider.id]);
+  }, [db]);
+
+  const deleteRider = useCallback(async (id: string): Promise<void> => {
+    await db.runAsync("DELETE FROM riders WHERE id=?", [id]);
+  }, [db]);
+
+  const saveHeldOrder = useCallback(async (order: Omit<HeldOrder, "id" | "createdAt" | "updatedAt"> & { id?: string }): Promise<HeldOrder> => {
+    const now = Date.now();
+    const isUpdate = !!order.id;
+    const id = order.id || generateId();
+
+    if (isUpdate) {
+      await db.runAsync("UPDATE held_orders SET table_id=?, table_name=?, order_type=?, staff_id=?, staff_name=?, customer_id=?, customer_name=?, updated_at=? WHERE id=?",
+        [order.tableId, order.tableName, order.orderType, order.staffId ?? null, order.staffName ?? null, order.customerId ?? null, order.customerName ?? null, now, id]);
+      await db.runAsync("DELETE FROM held_order_items WHERE held_order_id=?", [id]);
+    } else {
+      await db.runAsync("INSERT INTO held_orders (id, table_id, table_name, order_type, staff_id, staff_name, customer_id, customer_name, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        [id, order.tableId, order.tableName, order.orderType, order.staffId ?? null, order.staffName ?? null, order.customerId ?? null, order.customerName ?? null, now, now]);
+    }
+
+    for (const item of order.items) {
+      const itemId = generateId();
+      await db.runAsync(
+        "INSERT INTO held_order_items (id, held_order_id, product_id, product_name, product_price, quantity, color_hex, category, tax_rate, discount_type, discount_value, discount_amount, image_uri) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [itemId, id, item.productId, item.productName, item.productPrice, item.quantity, item.colorHex, item.category, item.taxRate ?? null, item.discountType ?? null, item.discountValue ?? null, item.discountAmount ?? 0, item.imageUri ?? null]
+      );
+    }
+
+    await db.runAsync("UPDATE pos_tables SET status='occupied', current_order_id=? WHERE id=?", [id, order.tableId]);
+
+    const existingCreatedAt = isUpdate
+      ? (await db.getFirstAsync<any>("SELECT created_at FROM held_orders WHERE id=?", [id]))?.created_at ?? now
+      : now;
+    return { ...order, id, createdAt: existingCreatedAt, updatedAt: now };
+  }, [db]);
+
+  const loadHeldOrders = useCallback(async (): Promise<HeldOrder[]> => {
+    const rows = await db.getAllAsync<any>("SELECT * FROM held_orders ORDER BY updated_at DESC");
+    const allItems = await db.getAllAsync<any>("SELECT * FROM held_order_items");
+    return rows.map((r: any) => ({
+      id: r.id, tableId: r.table_id, tableName: r.table_name, orderType: r.order_type ?? "dine-in",
+      staffId: r.staff_id ?? undefined, staffName: r.staff_name ?? undefined,
+      customerId: r.customer_id ?? undefined, customerName: r.customer_name ?? undefined,
+      createdAt: r.created_at, updatedAt: r.updated_at,
+      items: allItems.filter((i: any) => i.held_order_id === r.id).map((i: any): HeldOrderItem => ({
+        id: i.id, heldOrderId: i.held_order_id, productId: i.product_id,
+        productName: i.product_name, productPrice: i.product_price, quantity: i.quantity,
+        colorHex: i.color_hex ?? "#4F8EF7", category: i.category ?? "",
+        taxRate: i.tax_rate ?? undefined, discountType: i.discount_type ?? undefined,
+        discountValue: i.discount_value ?? undefined, discountAmount: i.discount_amount ?? 0,
+        imageUri: i.image_uri ?? undefined,
+      })),
+    }));
+  }, [db]);
+
+  const loadHeldOrderByTable = useCallback(async (tableId: string): Promise<HeldOrder | null> => {
+    const row = await db.getFirstAsync<any>("SELECT * FROM held_orders WHERE table_id=?", [tableId]);
+    if (!row) return null;
+    const items = await db.getAllAsync<any>("SELECT * FROM held_order_items WHERE held_order_id=?", [row.id]);
+    return {
+      id: row.id, tableId: row.table_id, tableName: row.table_name, orderType: row.order_type ?? "dine-in",
+      staffId: row.staff_id ?? undefined, staffName: row.staff_name ?? undefined,
+      customerId: row.customer_id ?? undefined, customerName: row.customer_name ?? undefined,
+      createdAt: row.created_at, updatedAt: row.updated_at,
+      items: items.map((i: any): HeldOrderItem => ({
+        id: i.id, heldOrderId: i.held_order_id, productId: i.product_id,
+        productName: i.product_name, productPrice: i.product_price, quantity: i.quantity,
+        colorHex: i.color_hex ?? "#4F8EF7", category: i.category ?? "",
+        taxRate: i.tax_rate ?? undefined, discountType: i.discount_type ?? undefined,
+        discountValue: i.discount_value ?? undefined, discountAmount: i.discount_amount ?? 0,
+        imageUri: i.image_uri ?? undefined,
+      })),
+    };
+  }, [db]);
+
+  const deleteHeldOrder = useCallback(async (id: string): Promise<void> => {
+    const order = await db.getFirstAsync<any>("SELECT table_id FROM held_orders WHERE id=?", [id]);
+    await db.runAsync("DELETE FROM held_order_items WHERE held_order_id=?", [id]);
+    await db.runAsync("DELETE FROM held_orders WHERE id=?", [id]);
+    if (order) {
+      await db.runAsync("UPDATE pos_tables SET status='available', current_order_id=NULL WHERE id=?", [order.table_id]);
+    }
+  }, [db]);
+
+  const loadIngredients = useCallback(async (): Promise<Ingredient[]> => {
+    const rows = await db.getAllAsync<any>("SELECT * FROM ingredients ORDER BY name ASC");
+    return rows.map((r: any) => ({
+      id: r.id, name: r.name, unit: r.unit, stockQuantity: r.stock_quantity,
+      costPerUnit: r.cost_per_unit, lowStockThreshold: r.low_stock_threshold, createdAt: r.created_at,
+    }));
+  }, [db]);
+
+  const createIngredient = useCallback(async (ingredient: Omit<Ingredient, "id" | "createdAt">): Promise<Ingredient> => {
+    const id = generateId();
+    const createdAt = Date.now();
+    await db.runAsync("INSERT INTO ingredients (id, name, unit, stock_quantity, cost_per_unit, low_stock_threshold, created_at) VALUES (?,?,?,?,?,?,?)",
+      [id, ingredient.name, ingredient.unit, ingredient.stockQuantity, ingredient.costPerUnit, ingredient.lowStockThreshold, createdAt]);
+    return { ...ingredient, id, createdAt };
+  }, [db]);
+
+  const updateIngredient = useCallback(async (ingredient: Ingredient): Promise<void> => {
+    await db.runAsync("UPDATE ingredients SET name=?, unit=?, stock_quantity=?, cost_per_unit=?, low_stock_threshold=? WHERE id=?",
+      [ingredient.name, ingredient.unit, ingredient.stockQuantity, ingredient.costPerUnit, ingredient.lowStockThreshold, ingredient.id]);
+  }, [db]);
+
+  const deleteIngredient = useCallback(async (id: string): Promise<void> => {
+    await db.runAsync("DELETE FROM recipe_ingredients WHERE ingredient_id=?", [id]);
+    await db.runAsync("DELETE FROM ingredients WHERE id=?", [id]);
+  }, [db]);
+
+  const updateIngredientStock = useCallback(async (ingredientId: string, delta: number): Promise<void> => {
+    await db.runAsync("UPDATE ingredients SET stock_quantity = MAX(0, stock_quantity + ?) WHERE id=?", [delta, ingredientId]);
+  }, [db]);
+
+  const loadRecipeIngredients = useCallback(async (productId: string): Promise<RecipeIngredient[]> => {
+    const rows = await db.getAllAsync<any>(
+      "SELECT ri.*, i.name as ingredient_name FROM recipe_ingredients ri LEFT JOIN ingredients i ON ri.ingredient_id = i.id WHERE ri.product_id=?",
+      [productId]
+    );
+    return rows.map((r: any) => ({
+      id: r.id, productId: r.product_id, ingredientId: r.ingredient_id,
+      ingredientName: r.ingredient_name ?? undefined, quantity: r.quantity,
+    }));
+  }, [db]);
+
+  const saveRecipeIngredients = useCallback(async (productId: string, items: Omit<RecipeIngredient, "id">[]): Promise<void> => {
+    await db.runAsync("DELETE FROM recipe_ingredients WHERE product_id=?", [productId]);
+    for (const item of items) {
+      await db.runAsync("INSERT INTO recipe_ingredients (id, product_id, ingredient_id, quantity) VALUES (?,?,?,?)",
+        [generateId(), productId, item.ingredientId, item.quantity]);
+    }
+  }, [db]);
+
+  const deleteRecipeIngredients = useCallback(async (productId: string): Promise<void> => {
+    await db.runAsync("DELETE FROM recipe_ingredients WHERE product_id=?", [productId]);
+  }, [db]);
+
   return (
     <DatabaseContext.Provider value={{
       loadProducts, createProduct, updateProduct, deleteProduct, updateStock,
@@ -477,6 +651,10 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       loadTaxGroups, createTaxGroup, updateTaxGroup, deleteTaxGroup,
       loadCategories, createCategory, updateCategory, deleteCategory,
       loadSplitPayments, saveZReport, loadZReports,
+      loadRiders, createRider, updateRider, deleteRider,
+      saveHeldOrder, loadHeldOrders, loadHeldOrderByTable, deleteHeldOrder,
+      loadIngredients, createIngredient, updateIngredient, deleteIngredient, updateIngredientStock,
+      loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,
     }}>
       {children}
     </DatabaseContext.Provider>

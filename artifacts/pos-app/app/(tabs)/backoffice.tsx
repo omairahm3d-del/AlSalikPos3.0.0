@@ -27,9 +27,13 @@ import type {
   BusinessSettings,
   Category,
   CustomerDisplaySettings,
+  Ingredient,
   KOTSettings,
   PrinterSettings,
+  Product,
+  RecipeIngredient,
   ReceiptDesignSettings,
+  Rider,
   Staff,
   TaxGroup,
 } from "@/types";
@@ -51,7 +55,10 @@ type Section =
   | "display"
   | "staff"
   | "tax"
-  | "business";
+  | "business"
+  | "riders"
+  | "ingredients"
+  | "recipes";
 
 interface SectionCard {
   id: Section;
@@ -63,6 +70,9 @@ interface SectionCard {
 
 const SECTIONS: SectionCard[] = [
   { id: "categories", icon: "layers", title: "Categories", subtitle: "Manage product categories", color: "#4F8EF7" },
+  { id: "riders", icon: "truck", title: "Delivery Riders", subtitle: "Manage delivery riders", color: "#3498DB" },
+  { id: "ingredients", icon: "package", title: "Ingredients", subtitle: "Inventory & stock levels", color: "#16A085" },
+  { id: "recipes", icon: "book-open", title: "Recipes", subtitle: "Link products to ingredients", color: "#8E44AD" },
   { id: "receipt", icon: "file-text", title: "Receipt Designer", subtitle: "Customize receipt layout", color: "#2ECC71" },
   { id: "printer", icon: "printer", title: "Printer Settings", subtitle: "Paper size & auto-print", color: "#9B59B6" },
   { id: "kot", icon: "clipboard", title: "KOT Settings", subtitle: "Kitchen ticket routing", color: "#E67E22" },
@@ -107,6 +117,28 @@ export default function BackOfficeScreen() {
   const [showTaxModal, setShowTaxModal] = useState(false);
 
   const [showBizSettings, setShowBizSettings] = useState(false);
+
+  const [riderList, setRiderList] = useState<Rider[]>([]);
+  const [riderName, setRiderName] = useState("");
+  const [riderPhone, setRiderPhone] = useState("");
+  const [editingRider, setEditingRider] = useState<Rider | null>(null);
+  const [showRiderModal, setShowRiderModal] = useState(false);
+
+  const [ingredientList, setIngredientList] = useState<Ingredient[]>([]);
+  const [ingName, setIngName] = useState("");
+  const [ingUnit, setIngUnit] = useState("g");
+  const [ingStock, setIngStock] = useState("0");
+  const [ingCost, setIngCost] = useState("0");
+  const [ingLowStock, setIngLowStock] = useState("10");
+  const [editingIngredient, setEditingIngredient] = useState<Ingredient | null>(null);
+  const [showIngModal, setShowIngModal] = useState(false);
+
+  const [productsList, setProductsList] = useState<Product[]>([]);
+  const [recipeProductId, setRecipeProductId] = useState<string | null>(null);
+  const [recipeItems, setRecipeItems] = useState<{ ingredientId: string; ingredientName: string; quantity: number }[]>([]);
+  const [showRecipeModal, setShowRecipeModal] = useState(false);
+  const [recipeIngId, setRecipeIngId] = useState("");
+  const [recipeIngQty, setRecipeIngQty] = useState("");
 
   const topPadding = Platform.OS === "web" ? insets.top + 8 : 0;
 
@@ -274,6 +306,98 @@ export default function BackOfficeScreen() {
     ]);
   };
 
+  const loadRiderList = async () => { const list = await db.loadRiders(); setRiderList(list); };
+
+  const handleSaveRider = async () => {
+    if (!riderName.trim()) { Alert.alert("Invalid", "Rider name is required."); return; }
+    try {
+      if (editingRider) {
+        await db.updateRider({ ...editingRider, name: riderName.trim(), phone: riderPhone.trim() });
+      } else {
+        await db.createRider({ name: riderName.trim(), phone: riderPhone.trim(), vehicleInfo: "" });
+      }
+      await loadRiderList();
+      setEditingRider(null); setRiderName(""); setRiderPhone(""); setShowRiderModal(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Failed to save rider");
+    }
+  };
+
+  const handleDeleteRider = (rider: Rider) => {
+    Alert.alert("Delete Rider", `Remove "${rider.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => { await db.deleteRider(rider.id); await loadRiderList(); } },
+    ]);
+  };
+
+  const loadIngredientList = async () => { const list = await db.loadIngredients(); setIngredientList(list); };
+
+  const handleSaveIngredient = async () => {
+    if (!ingName.trim()) { Alert.alert("Invalid", "Ingredient name is required."); return; }
+    const stock = parseFloat(ingStock) || 0;
+    const cost = parseFloat(ingCost) || 0;
+    const low = parseFloat(ingLowStock) || 10;
+    try {
+      if (editingIngredient) {
+        await db.updateIngredient({ ...editingIngredient, name: ingName.trim(), unit: ingUnit.trim(), stockQuantity: stock, costPerUnit: cost, lowStockThreshold: low });
+      } else {
+        await db.createIngredient({ name: ingName.trim(), unit: ingUnit.trim() || "g", stockQuantity: stock, costPerUnit: cost, lowStockThreshold: low });
+      }
+      await loadIngredientList();
+      setEditingIngredient(null); setIngName(""); setIngUnit("g"); setIngStock("0"); setIngCost("0"); setIngLowStock("10"); setShowIngModal(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Failed to save ingredient");
+    }
+  };
+
+  const handleDeleteIngredient = (ing: Ingredient) => {
+    Alert.alert("Delete Ingredient", `Remove "${ing.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => { await db.deleteIngredient(ing.id); await loadIngredientList(); } },
+    ]);
+  };
+
+  const loadProductsList = async () => { const list = await db.loadProducts(); setProductsList(list); };
+
+  const openRecipeEditor = async (product: Product) => {
+    setRecipeProductId(product.id);
+    const items = await db.loadRecipeIngredients(product.id);
+    setRecipeItems(items.map((ri) => ({ ingredientId: ri.ingredientId, ingredientName: ri.ingredientName ?? "", quantity: ri.quantity })));
+    setRecipeIngId(""); setRecipeIngQty("");
+    setShowRecipeModal(true);
+  };
+
+  const handleAddRecipeItem = () => {
+    if (!recipeIngId) return;
+    const qty = parseFloat(recipeIngQty);
+    if (isNaN(qty) || qty <= 0) { Alert.alert("Invalid", "Enter a valid quantity."); return; }
+    if (recipeItems.some((r) => r.ingredientId === recipeIngId)) { Alert.alert("Duplicate", "This ingredient is already added."); return; }
+    const ing = ingredientList.find((i) => i.id === recipeIngId);
+    if (!ing) return;
+    setRecipeItems((prev) => [...prev, { ingredientId: ing.id, ingredientName: ing.name, quantity: qty }]);
+    setRecipeIngId(""); setRecipeIngQty("");
+  };
+
+  const handleSaveRecipe = async () => {
+    if (!recipeProductId) return;
+    try {
+      await db.saveRecipeIngredients(recipeProductId, recipeItems.map((ri) => ({
+        productId: recipeProductId,
+        ingredientId: ri.ingredientId,
+        ingredientName: ri.ingredientName,
+        quantity: ri.quantity,
+      })));
+      setShowRecipeModal(false);
+      setRecipeProductId(null);
+      setRecipeItems([]);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Failed to save recipe");
+    }
+  };
+
   const renderHeader = (title: string) => (
     <View style={[s.sectionHeader, { borderBottomColor: colors.border }]}>
       <TouchableOpacity onPress={() => setSection("menu")} style={s.backBtn}>
@@ -315,6 +439,9 @@ export default function BackOfficeScreen() {
               setSection(sec.id);
               if (sec.id === "staff") loadStaffList();
               if (sec.id === "tax") loadTaxList();
+              if (sec.id === "riders") loadRiderList();
+              if (sec.id === "ingredients") loadIngredientList();
+              if (sec.id === "recipes") { loadProductsList(); loadIngredientList(); }
               if (sec.id === "business") setShowBizSettings(true);
             }}
             style={[s.sectionCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
@@ -604,6 +731,113 @@ export default function BackOfficeScreen() {
     </View>
   );
 
+  const renderRiders = () => (
+    <View style={s.sectionContent}>
+      {renderHeader("Delivery Riders")}
+      <FlatList
+        data={riderList}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={s.listContent}
+        ListEmptyComponent={<Text style={[s.emptyText, { color: colors.mutedForeground }]}>No riders yet. Tap + to add one.</Text>}
+        renderItem={({ item }) => (
+          <TouchableOpacity onPress={() => { setEditingRider(item); setRiderName(item.name); setRiderPhone(item.phone || ""); setShowRiderModal(true); }}
+            style={[s.listItem, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+            <View style={[s.cardIconWrap, { backgroundColor: "#3498DB18" }]}>
+              <Feather name="truck" size={18} color="#3498DB" />
+            </View>
+            <View style={s.listItemInfo}>
+              <Text style={[s.listItemTitle, { color: colors.foreground }]}>{item.name}</Text>
+              <Text style={[s.listItemSub, { color: colors.mutedForeground }]}>{item.phone || "No phone"} · {item.active ? "Active" : "Inactive"}</Text>
+            </View>
+            <TouchableOpacity onPress={() => handleDeleteRider(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Feather name="trash-2" size={16} color={colors.destructive} />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        )}
+      />
+      <TouchableOpacity onPress={() => { setEditingRider(null); setRiderName(""); setRiderPhone(""); setShowRiderModal(true); }}
+        style={[s.fab, { backgroundColor: colors.primary, borderRadius: 28, bottom: insets.bottom + 20 }]}>
+        <Feather name="plus" size={24} color="#fff" />
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderIngredients = () => {
+    const lowStockItems = ingredientList.filter((i) => i.stockQuantity <= i.lowStockThreshold);
+    return (
+      <View style={s.sectionContent}>
+        {renderHeader("Ingredients")}
+        {lowStockItems.length > 0 && (
+          <View style={[s.lowStockBanner, { backgroundColor: "#E74C3C18", borderBottomColor: colors.border }]}>
+            <Feather name="alert-triangle" size={14} color="#E74C3C" />
+            <Text style={{ color: "#E74C3C", fontSize: 12, fontWeight: "600", marginLeft: 6 }}>
+              {lowStockItems.length} ingredient{lowStockItems.length > 1 ? "s" : ""} low on stock
+            </Text>
+          </View>
+        )}
+        <FlatList
+          data={ingredientList}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={s.listContent}
+          ListEmptyComponent={<Text style={[s.emptyText, { color: colors.mutedForeground }]}>No ingredients yet. Tap + to add one.</Text>}
+          renderItem={({ item }) => {
+            const isLow = item.stockQuantity <= item.lowStockThreshold;
+            return (
+              <TouchableOpacity onPress={() => {
+                setEditingIngredient(item); setIngName(item.name); setIngUnit(item.unit);
+                setIngStock(String(item.stockQuantity)); setIngCost(String(item.costPerUnit));
+                setIngLowStock(String(item.lowStockThreshold)); setShowIngModal(true);
+              }}
+                style={[s.listItem, { backgroundColor: colors.card, borderColor: isLow ? "#E74C3C" : colors.border, borderRadius: colors.radius }]}>
+                <View style={[s.cardIconWrap, { backgroundColor: isLow ? "#E74C3C18" : "#16A08518" }]}>
+                  <Feather name="package" size={18} color={isLow ? "#E74C3C" : "#16A085"} />
+                </View>
+                <View style={s.listItemInfo}>
+                  <Text style={[s.listItemTitle, { color: colors.foreground }]}>{item.name}</Text>
+                  <Text style={[s.listItemSub, { color: isLow ? "#E74C3C" : colors.mutedForeground }]}>
+                    Stock: {item.stockQuantity} {item.unit} · Cost: {formatCurrency(item.costPerUnit)}/{item.unit}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => handleDeleteIngredient(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Feather name="trash-2" size={16} color={colors.destructive} />
+                </TouchableOpacity>
+              </TouchableOpacity>
+            );
+          }}
+        />
+        <TouchableOpacity onPress={() => { setEditingIngredient(null); setIngName(""); setIngUnit("g"); setIngStock("0"); setIngCost("0"); setIngLowStock("10"); setShowIngModal(true); }}
+          style={[s.fab, { backgroundColor: colors.primary, borderRadius: 28, bottom: insets.bottom + 20 }]}>
+          <Feather name="plus" size={24} color="#fff" />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const renderRecipes = () => (
+    <View style={s.sectionContent}>
+      {renderHeader("Recipe Management")}
+      <FlatList
+        data={productsList}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={s.listContent}
+        ListEmptyComponent={<Text style={[s.emptyText, { color: colors.mutedForeground }]}>No products found.</Text>}
+        renderItem={({ item }) => (
+          <TouchableOpacity onPress={() => openRecipeEditor(item)}
+            style={[s.listItem, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+            <View style={[s.cardIconWrap, { backgroundColor: (item.colorHex || "#8E44AD") + "18" }]}>
+              <Feather name="book-open" size={18} color={item.colorHex || "#8E44AD"} />
+            </View>
+            <View style={s.listItemInfo}>
+              <Text style={[s.listItemTitle, { color: colors.foreground }]}>{item.name}</Text>
+              <Text style={[s.listItemSub, { color: colors.mutedForeground }]}>{item.category} · {formatCurrency(item.price)}</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+          </TouchableOpacity>
+        )}
+      />
+    </View>
+  );
+
   const renderContent = () => {
     switch (section) {
       case "menu": return renderMenu();
@@ -614,6 +848,9 @@ export default function BackOfficeScreen() {
       case "display": return renderCustomerDisplay();
       case "staff": return renderStaff();
       case "tax": return renderTax();
+      case "riders": return renderRiders();
+      case "ingredients": return renderIngredients();
+      case "recipes": return renderRecipes();
       case "business": {
         setSection("menu");
         setShowBizSettings(true);
@@ -707,6 +944,103 @@ export default function BackOfficeScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
+      <Modal visible={showRiderModal} animationType="slide" presentationStyle="pageSheet">
+        <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[s.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={() => setShowRiderModal(false)}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
+            <Text style={[s.modalTitle, { color: colors.foreground }]}>{editingRider ? "Edit Rider" : "New Rider"}</Text>
+            <TouchableOpacity onPress={handleSaveRider}><Text style={{ color: colors.primary, fontWeight: "700", fontSize: 16 }}>Save</Text></TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={s.formContent}>
+            {renderField("Name", riderName, setRiderName, "Rider name")}
+            {renderField("Phone", riderPhone, setRiderPhone, "050-xxx-xxxx")}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal visible={showIngModal} animationType="slide" presentationStyle="pageSheet">
+        <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[s.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={() => setShowIngModal(false)}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
+            <Text style={[s.modalTitle, { color: colors.foreground }]}>{editingIngredient ? "Edit Ingredient" : "New Ingredient"}</Text>
+            <TouchableOpacity onPress={handleSaveIngredient}><Text style={{ color: colors.primary, fontWeight: "700", fontSize: 16 }}>Save</Text></TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={s.formContent}>
+            {renderField("Name", ingName, setIngName, "e.g. Flour")}
+            {renderField("Unit", ingUnit, setIngUnit, "g, kg, ml, pcs")}
+            {renderField("Current Stock", ingStock, setIngStock, "0", "decimal-pad")}
+            {renderField("Cost per Unit (AED)", ingCost, setIngCost, "0.00", "decimal-pad")}
+            {renderField("Low Stock Threshold", ingLowStock, setIngLowStock, "10", "decimal-pad")}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal visible={showRecipeModal} animationType="slide" presentationStyle="pageSheet">
+        <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[s.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={() => setShowRecipeModal(false)}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
+            <Text style={[s.modalTitle, { color: colors.foreground }]}>Recipe</Text>
+            <TouchableOpacity onPress={handleSaveRecipe}><Text style={{ color: colors.primary, fontWeight: "700", fontSize: 16 }}>Save</Text></TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={s.formContent}>
+            <Text style={[s.fieldLabel, { color: colors.mutedForeground }]}>Product: {productsList.find((p) => p.id === recipeProductId)?.name ?? ""}</Text>
+
+            {recipeItems.length > 0 && (
+              <View style={{ marginBottom: 16 }}>
+                <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 12 }]}>Ingredients in Recipe</Text>
+                {recipeItems.map((ri, idx) => (
+                  <View key={ri.ingredientId} style={[s.recipeItemRow, { borderColor: colors.border }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: colors.foreground, fontSize: 14, fontWeight: "600" }}>{ri.ingredientName}</Text>
+                      <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{ri.quantity} {ingredientList.find((i) => i.id === ri.ingredientId)?.unit ?? ""}</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => setRecipeItems((prev) => prev.filter((_, i) => i !== idx))} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                      <Feather name="x-circle" size={18} color={colors.destructive} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 8 }]}>Add Ingredient</Text>
+            <View style={{ marginBottom: 8 }}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {ingredientList.filter((i) => !recipeItems.some((r) => r.ingredientId === i.id)).map((ing) => (
+                  <TouchableOpacity
+                    key={ing.id}
+                    onPress={() => setRecipeIngId(ing.id)}
+                    style={[s.chip, { borderColor: recipeIngId === ing.id ? colors.primary : colors.border, backgroundColor: recipeIngId === ing.id ? colors.primary + "18" : "transparent", borderRadius: colors.radius, marginRight: 6 }]}
+                  >
+                    <Text style={{ color: recipeIngId === ing.id ? colors.primary : colors.mutedForeground, fontSize: 12, fontWeight: "600" }}>{ing.name} ({ing.unit})</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+            {recipeIngId !== "" && (
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+                <TextInput
+                  value={recipeIngQty}
+                  onChangeText={setRecipeIngQty}
+                  placeholder="Qty"
+                  placeholderTextColor={colors.mutedForeground}
+                  keyboardType="decimal-pad"
+                  style={[s.input, { flex: 1, backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
+                />
+                <TouchableOpacity onPress={handleAddRecipeItem} style={[s.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius, marginTop: 0, paddingVertical: 12 }]}>
+                  <Text style={s.saveBtnText}>Add</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {ingredientList.length === 0 && (
+              <Text style={{ color: colors.mutedForeground, fontSize: 13, textAlign: "center", marginTop: 20 }}>
+                Add ingredients in the Ingredients section first.
+              </Text>
+            )}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
       <BusinessSettingsModal visible={showBizSettings} onClose={() => { setShowBizSettings(false); loadAllSettings(); }} />
     </View>
   );
@@ -764,4 +1098,6 @@ const s = StyleSheet.create({
   imagePreview: { width: "100%", height: "100%" },
   imagePickerPlaceholder: { alignItems: "center", justifyContent: "center" },
   removeImageBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1 },
+  lowStockBanner: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1 },
+  recipeItemRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 0.5, gap: 8 },
 });
