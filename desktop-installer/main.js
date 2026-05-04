@@ -96,10 +96,34 @@ async function createWindow() {
   mainWindow.loadURL(`http://localhost:${port}/`);
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http') && !url.includes('localhost')) {
+    if (url.startsWith('mailto:') || url.startsWith('tel:')) {
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    if (!url || url === 'about:blank') {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 480,
+          height: 760,
+          title: 'Print Preview',
+          autoHideMenuBar: true,
+          webPreferences: { nodeIntegration: false, contextIsolation: true },
+        },
+      };
+    }
+    if (url.startsWith('http') && !/localhost|127\.0\.0\.1/.test(url)) {
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url.startsWith('mailto:') || url.startsWith('tel:')) {
+      event.preventDefault();
       shell.openExternal(url);
     }
-    return { action: 'deny' };
   });
 
   mainWindow.on('closed', () => { mainWindow = null; });
