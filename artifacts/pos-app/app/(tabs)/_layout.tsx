@@ -26,14 +26,6 @@ function NativeTabLayout() {
         <Icon sf={{ default: "person.2", selected: "person.2.fill" }} />
         <Label>Customers</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="reports">
-        <Icon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
-        <Label>Reports</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="products">
-        <Icon sf={{ default: "cube.box", selected: "cube.box.fill" }} />
-        <Label>Products</Label>
-      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="backoffice">
         <Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
         <Label>Back Office</Label>
@@ -106,30 +98,6 @@ function ClassicTabLayout() {
               <SymbolView name="person.2" tintColor={color} size={24} />
             ) : (
               <Feather name="users" size={22} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
-        name="reports"
-        options={{
-          title: "Reports",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="chart.bar" tintColor={color} size={24} />
-            ) : (
-              <Feather name="bar-chart-2" size={22} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
-        name="products"
-        options={{
-          title: "Products",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="cube.box" tintColor={color} size={24} />
-            ) : (
-              <Feather name="package" size={22} color={color} />
             ),
         }}
       />

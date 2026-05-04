@@ -49,6 +49,9 @@ import {
 
 type Section =
   | "menu"
+  | "products"
+  | "customers"
+  | "reports"
   | "categories"
   | "receipt"
   | "printer"
@@ -70,6 +73,9 @@ interface SectionCard {
 }
 
 const SECTIONS: SectionCard[] = [
+  { id: "products", icon: "package", title: "Products", subtitle: "Manage items, pricing & stock", color: "#4F8EF7" },
+  { id: "customers", icon: "users", title: "Customers", subtitle: "Manage customer profiles", color: "#1ABC9C" },
+  { id: "reports", icon: "bar-chart-2", title: "Reports", subtitle: "View sales summaries", color: "#F39C12" },
   { id: "categories", icon: "layers", title: "Categories", subtitle: "Manage product categories", color: "#4F8EF7" },
   { id: "riders", icon: "truck", title: "Delivery Riders", subtitle: "Manage delivery riders", color: "#3498DB" },
   { id: "ingredients", icon: "package", title: "Ingredients", subtitle: "Inventory & stock levels", color: "#16A085" },
@@ -180,6 +186,19 @@ export default function BackOfficeScreen() {
     setBizSettings(updated);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, [bizSettings, receiptDesign, printerSettings, kotSettings, customerDisplay, db]);
+
+  const openSection = useCallback((sec: Section) => {
+    setSection(sec);
+    if (sec === "staff") loadStaffList();
+    if (sec === "tax") loadTaxList();
+    if (sec === "riders") loadRiderList();
+    if (sec === "ingredients") loadIngredientList();
+    if (sec === "recipes") {
+      loadProductsList();
+      loadIngredientList();
+    }
+    if (sec === "business") setShowBizSettings(true);
+  }, []);
 
   const pickCatImage = async () => {
     try {
@@ -436,15 +455,7 @@ export default function BackOfficeScreen() {
         {SECTIONS.map((sec) => (
           <TouchableOpacity
             key={sec.id}
-            onPress={() => {
-              setSection(sec.id);
-              if (sec.id === "staff") loadStaffList();
-              if (sec.id === "tax") loadTaxList();
-              if (sec.id === "riders") loadRiderList();
-              if (sec.id === "ingredients") loadIngredientList();
-              if (sec.id === "recipes") { loadProductsList(); loadIngredientList(); }
-              if (sec.id === "business") setShowBizSettings(true);
-            }}
+            onPress={() => openSection(sec.id)}
             style={[s.sectionCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
           >
             <View style={[s.cardIconWrap, { backgroundColor: sec.color + "18" }]}>
