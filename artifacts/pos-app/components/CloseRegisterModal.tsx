@@ -53,18 +53,23 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
   const [isClosing, setIsClosing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [done, setDone] = useState(false);
-  const [resultLines, setResultLines] = useState<string[]>([]);
+  const [savedHtml, setSavedHtml] = useState<string>("");
+  const [savedBusiness, setSavedBusiness] = useState<BusinessSettings | null>(null);
+  const [lastClosedAt, setLastClosedAt] = useState<number>(0);
 
-  const todayDate = new Date();
-  const todayStr = todayDate.toISOString().split("T")[0];
+  const today = new Date();
+  const todayStr = today.toISOString().split("T")[0];
+  const dateLabel = today.toLocaleDateString("en-GB", {
+    weekday: "short", day: "numeric", month: "short", year: "numeric",
+  });
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await loadSalesWithItemsByDateRange(
-        getStartOfDay(todayDate),
-        getEndOfDay(todayDate)
-      );
+      const business = await loadBusinessSettings();
+      const sessionStart = business.lastClosedAt ?? getStartOfDay(today);
+      setLastClosedAt(sessionStart);
+      const result = await loadSalesWithItemsByDateRange(sessionStart, getEndOfDay(today));
       setSales(result.sales);
       setItems(result.items);
     } catch {
@@ -72,7 +77,7 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [loadSalesWithItemsByDateRange]);
+  }, [loadSalesWithItemsByDateRange, loadBusinessSettings]);
 
   useEffect(() => {
     if (visible) {
@@ -80,7 +85,8 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
       setIsClosing(false);
       setConfirming(false);
       setDone(false);
-      setResultLines([]);
+      setSavedHtml("");
+      setSavedBusiness(null);
       fetchData();
     }
   }, [visible]);
@@ -121,22 +127,21 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
   const variance = cashEntered - cashExpected;
   const hasInput = closingCash.trim() !== "";
 
-  const printZReport = async (html: string): Promise<boolean> => {
+  const printReport = async (html: string) => {
     if (Platform.OS === "web") {
       try {
         const w = window.open("", "_blank", "width=420,height=700");
-        if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 350); return true; }
-        return false;
-      } catch { return false; }
+        if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 350); }
+      } catch { /* ignore */ }
+    } else {
+      try {
+        const Print = await import("expo-print");
+        await Print.printAsync({ html });
+      } catch { /* ignore */ }
     }
-    try {
-      const Print = await import("expo-print");
-      await Print.printAsync({ html });
-      return true;
-    } catch { return false; }
   };
 
-  const emailZReport = async (html: string, business: BusinessSettings, dateLabel: string): Promise<boolean> => {
+  const sendEmail = async (html: string, business: BusinessSettings): Promise<boolean> => {
     const to = business.zReportEmail?.trim();
     if (!to) return false;
     const smtp = business.smtpConfig;
@@ -146,15 +151,27 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
         const res = await fetch(`${base}/api/email/send`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ to, subject: `Z-Report - ${business.businessName || "POS"} - ${dateLabel}`, html, config: smtp }),
+          body: JSON.stringify({
+            to,
+            subject: `Z-Report - ${business.businessName || "POS"} - ${dateLabel}`,
+            html,
+            config: smtp,
+          }),
         });
-        return ((await res.json()) as { success: boolean }).success;
-      } catch { return false; }
+        const json = await res.json() as { success: boolean; error?: string };
+        if (!json.success) throw new Error(json.error || "Send failed");
+        return true;
+      } catch (err: any) {
+        Alert.alert("Email Failed", err.message || "Could not send email. Check your SMTP settings.");
+        return false;
+      }
     }
     if (Platform.OS === "web") {
       try {
         const subject = encodeURIComponent(`Z-Report - ${dateLabel}`);
-        const body = encodeURIComponent(`Z-Report\nNet Sales: ${formatCurrency(stats.revenue - stats.refunds)}\nTransactions: ${stats.transactionCount}`);
+        const body = encodeURIComponent(
+          `Z-Report\nNet Sales: ${formatCurrency(stats.revenue - stats.refunds)}\nTransactions: ${stats.transactionCount}`
+        );
         window.open(`mailto:${encodeURIComponent(to)}?subject=${subject}&body=${body}`, "_blank");
         return true;
       } catch { return false; }
@@ -164,25 +181,28 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
       const { uri } = await Print.printToFileAsync({ html, base64: false });
       const MailComposer = await import("expo-mail-composer");
       if (await MailComposer.isAvailableAsync()) {
-        await MailComposer.composeAsync({ recipients: [to], subject: `Z-Report - ${dateLabel}`, body: "", attachments: [uri] });
+        await MailComposer.composeAsync({
+          recipients: [to],
+          subject: `Z-Report - ${dateLabel}`,
+          body: "",
+          attachments: [uri],
+        });
         return true;
       }
-      return false;
-    } catch { return false; }
+    } catch { /* ignore */ }
+    return false;
   };
 
   const doCloseRegister = async () => {
     setIsClosing(true);
     try {
       const cashVal = parseFloat(closingCash) || 0;
-      const dateLabel = todayDate.toLocaleDateString("en-GB", {
-        weekday: "short", day: "numeric", month: "short", year: "numeric",
-      });
+      const nowMs = Date.now();
 
       const report = {
         date: todayStr,
-        openedAt: getStartOfDay(todayDate),
-        closedAt: Date.now(),
+        openedAt: lastClosedAt || getStartOfDay(today),
+        closedAt: nowMs,
         openingCash: 0,
         closingCash: cashVal,
         totalSales: stats.revenue,
@@ -200,22 +220,19 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
       await saveZReport(report);
 
       const business = await loadBusinessSettings();
-      await saveBusinessSettings({ ...business, lastClosedDate: todayStr });
+      const updatedBusiness = { ...business, lastClosedAt: nowMs };
+      await saveBusinessSettings(updatedBusiness);
 
-      const html = generateZReportHTML(report, business);
+      const html = generateZReportHTML(report, updatedBusiness);
+      setSavedHtml(html);
+      setSavedBusiness(updatedBusiness);
 
-      const lines: string[] = [`Z-Report saved for ${dateLabel}.`];
-
-      const printed = await printZReport(html);
-      lines.push(printed ? "Print dialog opened." : "Printing not available on this device.");
-
-      if (business.zReportEmail?.trim()) {
-        const sent = await emailZReport(html, business, dateLabel);
-        lines.push(sent ? `Email sent to ${business.zReportEmail}.` : "Could not send Z-Report email — check email settings.");
+      if (updatedBusiness.zReportEmail?.trim()) {
+        sendEmail(html, updatedBusiness);
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setResultLines(lines);
+      setIsClosing(false);
       setDone(true);
     } catch (err: any) {
       setIsClosing(false);
@@ -243,29 +260,52 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[s.title, { color: colors.foreground }]}>End of Day</Text>
-              <Text style={[s.subtitle, { color: colors.mutedForeground }]}>
-                {todayDate.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
-              </Text>
+              <Text style={[s.subtitle, { color: colors.mutedForeground }]}>{dateLabel}</Text>
             </View>
-            {!isClosing && (
-              <TouchableOpacity onPress={handleDismiss} style={s.closeX}>
-                <Feather name="x" size={20} color={colors.mutedForeground} />
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity onPress={handleDismiss} disabled={isClosing} style={[s.closeX, { opacity: isClosing ? 0.3 : 1 }]}>
+              <Feather name="x" size={22} color={colors.mutedForeground} />
+            </TouchableOpacity>
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-            {/* SUCCESS STATE */}
+            {/* ── SUCCESS STATE ── */}
             {done ? (
               <View style={s.successBox}>
                 <View style={[s.successIcon, { backgroundColor: colors.success + "20" }]}>
-                  <Feather name="check-circle" size={40} color={colors.success} />
+                  <Feather name="check-circle" size={44} color={colors.success} />
                 </View>
                 <Text style={[s.successTitle, { color: colors.foreground }]}>Register Closed</Text>
-                {resultLines.map((line, i) => (
-                  <Text key={i} style={[s.successLine, { color: colors.mutedForeground }]}>{line}</Text>
-                ))}
+                <Text style={[s.successSub, { color: colors.mutedForeground }]}>
+                  Z-Report saved. Next session starts fresh.
+                </Text>
+                {savedBusiness?.zReportEmail?.trim() && (
+                  <Text style={[s.successSub, { color: colors.mutedForeground }]}>
+                    Email sent to {savedBusiness.zReportEmail}.
+                  </Text>
+                )}
+
+                <View style={s.successActions}>
+                  {!!savedHtml && (
+                    <TouchableOpacity
+                      onPress={() => printReport(savedHtml)}
+                      style={[s.successActionBtn, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius }]}
+                    >
+                      <Feather name="printer" size={16} color={colors.primary} />
+                      <Text style={{ color: colors.primary, fontWeight: "600", marginLeft: 6 }}>Print Z-Report</Text>
+                    </TouchableOpacity>
+                  )}
+                  {!!savedHtml && !!savedBusiness?.zReportEmail?.trim() && (
+                    <TouchableOpacity
+                      onPress={() => savedBusiness && sendEmail(savedHtml, savedBusiness)}
+                      style={[s.successActionBtn, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius }]}
+                    >
+                      <Feather name="mail" size={16} color={colors.primary} />
+                      <Text style={{ color: colors.primary, fontWeight: "600", marginLeft: 6 }}>Resend Email</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
                 <TouchableOpacity
                   onPress={handleDismiss}
                   style={[s.doneBtn, { backgroundColor: colors.success, borderRadius: colors.radius }]}
@@ -273,16 +313,28 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
                   <Text style={{ color: "#fff", fontWeight: "700", fontSize: 16 }}>Done</Text>
                 </TouchableOpacity>
               </View>
+
             ) : loading ? (
               <View style={s.loadingBox}>
                 <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={[s.loadingText, { color: colors.mutedForeground }]}>Loading today's data…</Text>
+                <Text style={[s.loadingText, { color: colors.mutedForeground }]}>Loading session data…</Text>
               </View>
+
             ) : (
               <>
+                {/* Session badge */}
+                {lastClosedAt > 0 && (
+                  <View style={[s.sessionBadge, { backgroundColor: colors.primary + "12", borderColor: colors.primary + "30", borderRadius: colors.radius }]}>
+                    <Feather name="clock" size={13} color={colors.primary} />
+                    <Text style={{ color: colors.primary, fontSize: 12, marginLeft: 6 }}>
+                      Session started: {new Date(lastClosedAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                    </Text>
+                  </View>
+                )}
+
                 {/* Summary */}
                 <View style={[s.box, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}>
-                  <Text style={[s.boxTitle, { color: colors.foreground }]}>Today's Summary</Text>
+                  <Text style={[s.boxTitle, { color: colors.foreground }]}>Session Summary</Text>
                   <Row label="Gross Sales" value={formatCurrency(stats.revenue)} color={colors.success} bold />
                   {stats.refunds > 0 && (
                     <Row label="Refunds" value={`-${formatCurrency(stats.refunds)}`} color={colors.destructive} />
@@ -298,12 +350,17 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
                     <>
                       <View style={[s.divider, { backgroundColor: colors.border }]} />
                       {stats.paymentBreakdown.map((p) => (
-                        <Row key={p.method} label={`${p.method} (${p.count} txn)`} value={formatCurrency(p.amount)} color={colors.mutedForeground} />
+                        <Row
+                          key={p.method}
+                          label={`${p.method} (${p.count} txn)`}
+                          value={formatCurrency(p.amount)}
+                          color={colors.mutedForeground}
+                        />
                       ))}
                     </>
                   )}
                   {stats.transactionCount === 0 && (
-                    <Text style={[s.noSales, { color: colors.mutedForeground }]}>No sales recorded today.</Text>
+                    <Text style={[s.noSales, { color: colors.mutedForeground }]}>No sales in this session.</Text>
                   )}
                 </View>
 
@@ -317,12 +374,12 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
                   keyboardType="decimal-pad"
                   style={[s.cashInput, {
                     backgroundColor: colors.secondary,
-                    borderColor: colors.border,
+                    borderColor: hasInput ? colors.primary : colors.border,
                     color: colors.foreground,
                     borderRadius: colors.radius,
                   }]}
                 />
-                <View style={[s.box, { backgroundColor: colors.secondary, borderRadius: colors.radius, marginBottom: 16 }]}>
+                <View style={[s.box, { backgroundColor: colors.secondary, borderRadius: colors.radius, marginBottom: 10 }]}>
                   <Row label="Cash Sales (Expected)" value={formatCurrency(cashExpected)} color={colors.foreground} />
                   {hasInput && (
                     <Row
@@ -334,12 +391,16 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
                   )}
                 </View>
 
-                {/* Inline confirmation panel */}
+                {/* Confirmation panel */}
                 {confirming && (
-                  <View style={[s.confirmPanel, { backgroundColor: colors.destructive + "12", borderColor: colors.destructive + "40", borderRadius: colors.radius }]}>
-                    <Feather name="alert-triangle" size={16} color={colors.destructive} style={{ marginRight: 8 }} />
-                    <Text style={[s.confirmText, { color: colors.foreground, flex: 1 }]}>
-                      This will save the Z-Report and mark today as closed. Continue?
+                  <View style={[s.confirmPanel, {
+                    backgroundColor: colors.destructive + "10",
+                    borderColor: colors.destructive + "40",
+                    borderRadius: colors.radius,
+                  }]}>
+                    <Feather name="alert-triangle" size={15} color={colors.destructive} />
+                    <Text style={[s.confirmText, { color: colors.foreground }]}>
+                      This will save the Z-Report, mark this session as closed, and start a fresh session. Are you sure?
                     </Text>
                   </View>
                 )}
@@ -347,7 +408,7 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
             )}
           </ScrollView>
 
-          {/* Action buttons */}
+          {/* ── Action Buttons ── */}
           {!done && !loading && (
             <View style={s.actions}>
               {confirming ? (
@@ -364,11 +425,10 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
                     disabled={isClosing}
                     style={[s.closeBtn, { backgroundColor: colors.destructive, borderRadius: colors.radius, opacity: isClosing ? 0.6 : 1 }]}
                   >
-                    {isClosing ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <Feather name="check-circle" size={16} color="#fff" />
-                    )}
+                    {isClosing
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <Feather name="check-circle" size={16} color="#fff" />
+                    }
                     <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15, marginLeft: 6 }}>
                       {isClosing ? "Closing…" : "Yes, Close Register"}
                     </Text>
@@ -402,17 +462,18 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
 const s = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" },
   sheet: { maxHeight: "92%", paddingHorizontal: 20, paddingTop: 20, paddingBottom: 32 },
-  header: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16, paddingBottom: 14, borderBottomWidth: 1 },
+  header: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14, paddingBottom: 14, borderBottomWidth: 1 },
   iconWrap: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   title: { fontSize: 18, fontWeight: "700" },
   subtitle: { fontSize: 12, marginTop: 2 },
-  closeX: { padding: 4 },
+  closeX: { padding: 6 },
   loadingBox: { alignItems: "center", paddingVertical: 40, gap: 12 },
   loadingText: { fontSize: 13 },
+  sessionBadge: { flexDirection: "row", alignItems: "center", padding: 10, borderWidth: 1, marginBottom: 10 },
   box: { padding: 14, marginBottom: 12, gap: 5 },
   boxTitle: { fontSize: 13, fontWeight: "700", marginBottom: 6 },
   divider: { height: 1, marginVertical: 6 },
-  noSales: { fontSize: 13, textAlign: "center", paddingVertical: 8 },
+  noSales: { fontSize: 13, textAlign: "center", paddingVertical: 6 },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 3 },
   rowLabel: { fontSize: 13, flex: 1 },
   rowValue: { fontSize: 13, textAlign: "right" },
@@ -426,20 +487,16 @@ const s = StyleSheet.create({
     textAlign: "center",
     marginBottom: 10,
   },
-  confirmPanel: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-  },
-  confirmText: { fontSize: 13, lineHeight: 18 },
+  confirmPanel: { flexDirection: "row", alignItems: "flex-start", gap: 8, padding: 12, borderWidth: 1, marginBottom: 8 },
+  confirmText: { fontSize: 13, lineHeight: 18, flex: 1 },
   actions: { flexDirection: "row", gap: 10, marginTop: 8 },
   cancelBtn: { flex: 1, borderWidth: 1, paddingVertical: 14, alignItems: "center", justifyContent: "center" },
   closeBtn: { flex: 2, flexDirection: "row", paddingVertical: 14, alignItems: "center", justifyContent: "center" },
-  successBox: { alignItems: "center", paddingVertical: 32, paddingHorizontal: 16, gap: 8 },
-  successIcon: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center", marginBottom: 8 },
-  successTitle: { fontSize: 22, fontWeight: "700", marginBottom: 4 },
-  successLine: { fontSize: 13, textAlign: "center", lineHeight: 20 },
-  doneBtn: { marginTop: 20, paddingVertical: 14, paddingHorizontal: 40, alignItems: "center" },
+  successBox: { alignItems: "center", paddingVertical: 24, paddingHorizontal: 8, gap: 8 },
+  successIcon: { width: 84, height: 84, borderRadius: 42, alignItems: "center", justifyContent: "center", marginBottom: 4 },
+  successTitle: { fontSize: 22, fontWeight: "700", marginBottom: 2 },
+  successSub: { fontSize: 13, textAlign: "center", lineHeight: 20 },
+  successActions: { flexDirection: "row", gap: 10, marginTop: 14, marginBottom: 4 },
+  successActionBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1 },
+  doneBtn: { marginTop: 10, paddingVertical: 14, paddingHorizontal: 48, alignItems: "center" },
 });

@@ -275,7 +275,7 @@ export interface BusinessSettings {
   rolePermissions?: { cashier: StaffPermissions };
   zReportEmail?: string;
   smtpConfig?: SmtpConfig;
-  lastClosedDate?: string;
+  lastClosedAt?: number;
 }
 
 export interface ZReport {

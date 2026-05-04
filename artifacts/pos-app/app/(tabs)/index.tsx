@@ -21,6 +21,7 @@ import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
 import { CartItemRow } from "@/components/CartItemRow";
 import { CategoryFilter } from "@/components/CategoryFilter";
 import { CloseRegisterModal } from "@/components/CloseRegisterModal";
+import { CreditCollectionModal } from "@/components/CreditCollectionModal";
 import { EmptyState } from "@/components/EmptyState";
 import { ProductCard } from "@/components/ProductCard";
 import { CustomerSelectModal } from "@/components/CustomerSelectModal";
@@ -84,6 +85,7 @@ export default function POSScreen() {
   const [showPayment, setShowPayment] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [showCloseRegister, setShowCloseRegister] = useState(false);
+  const [showCreditCollection, setShowCreditCollection] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Card");
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
   const [showCustomerSelect, setShowCustomerSelect] = useState(false);
@@ -523,6 +525,16 @@ export default function POSScreen() {
     </TouchableOpacity>
   ), [colors]);
 
+  const CollectCreditButton = useMemo(() => (
+    <TouchableOpacity
+      onPress={() => setShowCreditCollection(true)}
+      style={[styles.endOfDayBtn, { backgroundColor: colors.primary + "15", borderColor: colors.primary + "35", borderRadius: colors.radius }]}
+    >
+      <Feather name="dollar-sign" size={15} color={colors.primary} />
+      <Text style={[styles.endOfDayText, { color: colors.primary }]}>Collect</Text>
+    </TouchableOpacity>
+  ), [colors]);
+
   const CartContent = (
     <View style={styles.cartInner}>
       <View style={[styles.cartHeader, { borderBottomColor: colors.border }]}>
@@ -645,6 +657,7 @@ export default function POSScreen() {
           <View style={styles.catalogPane}>
             <View style={[styles.catalogHeader, { borderBottomColor: colors.border }]}>
               <CategoryFilter categories={dynamicCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
+              {CollectCreditButton}
               {EndOfDayButton}
               {ScanButton}
             </View>
@@ -679,6 +692,7 @@ export default function POSScreen() {
           <View style={styles.mobileContent}>
             <View style={[styles.catalogHeader, { borderBottomColor: colors.border }]}>
               <CategoryFilter categories={dynamicCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
+              {CollectCreditButton}
               {EndOfDayButton}
               {ScanButton}
             </View>
@@ -1063,6 +1077,10 @@ export default function POSScreen() {
       <CloseRegisterModal
         visible={showCloseRegister}
         onClose={() => setShowCloseRegister(false)}
+      />
+      <CreditCollectionModal
+        visible={showCreditCollection}
+        onClose={() => setShowCreditCollection(false)}
       />
       <CustomerSelectModal
         visible={showCustomerSelect}
