@@ -32,7 +32,27 @@ export interface Sale {
   vatAmount: number;
   total: number;
   paymentMethod: string;
+  customerId?: string;
+  customerName?: string;
   items?: SaleItem[];
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  company: string;
+  creditBalance: number;
+  createdAt: number;
+}
+
+export interface CreditPayment {
+  id: string;
+  customerId: string;
+  amount: number;
+  note: string;
+  createdAt: number;
 }
 
 export interface BusinessSettings {

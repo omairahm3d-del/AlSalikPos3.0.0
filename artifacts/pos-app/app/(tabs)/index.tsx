@@ -20,14 +20,15 @@ import { CartItemRow } from "@/components/CartItemRow";
 import { CategoryFilter } from "@/components/CategoryFilter";
 import { EmptyState } from "@/components/EmptyState";
 import { ProductCard } from "@/components/ProductCard";
+import { CustomerSelectModal } from "@/components/CustomerSelectModal";
 import { ReceiptModal } from "@/components/ReceiptModal";
 import { useCart } from "@/context/CartContext";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
-import type { Product, Sale } from "@/types";
+import type { Customer, Product, Sale } from "@/types";
 import { CATEGORIES, VAT_RATE, formatCurrency } from "@/types";
 
-type PaymentMethod = "Card" | "Cash";
+type PaymentMethod = "Card" | "Cash" | "Credit";
 
 export default function POSScreen() {
   const colors = useColors();
@@ -55,6 +56,8 @@ export default function POSScreen() {
   const [showScanner, setShowScanner] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Card");
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
+  const [showCustomerSelect, setShowCustomerSelect] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
   const fetchProducts = useCallback(async () => {
     const data = await loadProducts();
@@ -86,10 +89,20 @@ export default function POSScreen() {
 
   const handleChargeSale = async () => {
     if (cartItems.length === 0) return;
-    const sale = await saveSale(cartItems, paymentMethod);
+    if (paymentMethod === "Credit" && !selectedCustomer) {
+      setShowCustomerSelect(true);
+      return;
+    }
+    const sale = await saveSale(
+      cartItems,
+      paymentMethod,
+      paymentMethod === "Credit" ? selectedCustomer?.id : undefined,
+      paymentMethod === "Credit" ? selectedCustomer?.name : undefined,
+    );
     clearCart();
     setShowPayment(false);
     setShowCart(false);
+    setSelectedCustomer(null);
     setReceiptSale(sale);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
@@ -322,37 +335,76 @@ export default function POSScreen() {
               Payment method
             </Text>
             <View style={styles.paymentMethods}>
-              {(["Card", "Cash"] as PaymentMethod[]).map((m) => (
-                <TouchableOpacity
-                  key={m}
-                  onPress={() => setPaymentMethod(m)}
-                  style={[
-                    styles.methodBtn,
-                    {
-                      borderColor: paymentMethod === m ? colors.primary : colors.border,
-                      backgroundColor: paymentMethod === m ? colors.primary + "18" : "transparent",
-                      borderRadius: colors.radius,
-                    },
-                  ]}
-                >
-                  <Feather
-                    name={m === "Card" ? "credit-card" : "dollar-sign"}
-                    size={18}
-                    color={paymentMethod === m ? colors.primary : colors.mutedForeground}
-                  />
-                  <Text
-                    style={{
-                      color: paymentMethod === m ? colors.primary : colors.mutedForeground,
-                      fontWeight: "600",
-                      fontFamily: "Inter_600SemiBold",
-                      marginLeft: 8,
+              {(["Card", "Cash", "Credit"] as PaymentMethod[]).map((m) => {
+                const active = paymentMethod === m;
+                const iconName = m === "Card" ? "credit-card" : m === "Cash" ? "dollar-sign" : "users";
+                const activeColor = m === "Credit" ? colors.destructive : colors.primary;
+                return (
+                  <TouchableOpacity
+                    key={m}
+                    onPress={() => {
+                      setPaymentMethod(m);
+                      if (m !== "Credit") setSelectedCustomer(null);
                     }}
+                    style={[
+                      styles.methodBtn,
+                      {
+                        borderColor: active ? activeColor : colors.border,
+                        backgroundColor: active ? activeColor + "18" : "transparent",
+                        borderRadius: colors.radius,
+                      },
+                    ]}
                   >
-                    {m}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Feather
+                      name={iconName}
+                      size={18}
+                      color={active ? activeColor : colors.mutedForeground}
+                    />
+                    <Text
+                      style={{
+                        color: active ? activeColor : colors.mutedForeground,
+                        fontWeight: "600",
+                        fontFamily: "Inter_600SemiBold",
+                        marginLeft: 8,
+                      }}
+                    >
+                      {m}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
+
+            {paymentMethod === "Credit" && (
+              <TouchableOpacity
+                onPress={() => setShowCustomerSelect(true)}
+                style={[styles.customerPickerBtn, { backgroundColor: colors.secondary, borderColor: selectedCustomer ? colors.success : colors.border, borderRadius: colors.radius }]}
+              >
+                {selectedCustomer ? (
+                  <View style={styles.customerPickerRow}>
+                    <View style={[styles.customerPickerAvatar, { backgroundColor: colors.primary + "20" }]}>
+                      <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 14 }}>
+                        {selectedCustomer.name.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.customerPickerName, { color: colors.foreground }]}>{selectedCustomer.name}</Text>
+                      {selectedCustomer.creditBalance > 0 && (
+                        <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>
+                          Current balance: {formatCurrency(selectedCustomer.creditBalance)}
+                        </Text>
+                      )}
+                    </View>
+                    <Feather name="edit-2" size={14} color={colors.mutedForeground} />
+                  </View>
+                ) : (
+                  <View style={styles.customerPickerRow}>
+                    <Feather name="user-plus" size={16} color={colors.mutedForeground} />
+                    <Text style={{ color: colors.mutedForeground, marginLeft: 8 }}>Select or create customer</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            )}
 
             <View style={[styles.summaryBox, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}>
               <View style={styles.summaryRow}>
@@ -403,6 +455,15 @@ export default function POSScreen() {
         visible={!!receiptSale}
         sale={receiptSale}
         onClose={() => setReceiptSale(null)}
+      />
+
+      <CustomerSelectModal
+        visible={showCustomerSelect}
+        onSelect={(customer) => {
+          setSelectedCustomer(customer);
+          setShowCustomerSelect(false);
+        }}
+        onClose={() => setShowCustomerSelect(false)}
       />
 
       <BarcodeScannerModal
@@ -530,7 +591,11 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   paymentLabel: { fontSize: 13, marginBottom: 10 },
-  paymentMethods: { flexDirection: "row", gap: 10, marginBottom: 20 },
+  paymentMethods: { flexDirection: "row", gap: 10, marginBottom: 12 },
+  customerPickerBtn: { padding: 14, borderWidth: 1, marginBottom: 20 },
+  customerPickerRow: { flexDirection: "row", alignItems: "center" },
+  customerPickerAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", marginRight: 10 },
+  customerPickerName: { fontSize: 14, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
   methodBtn: {
     flex: 1,
     flexDirection: "row",

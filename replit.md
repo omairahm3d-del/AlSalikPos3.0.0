@@ -46,32 +46,37 @@ Mobile-first Point of Sale app built with Expo (SDK 54) and React Native, config
   - Register screen: scan to instantly add product to cart
   - Products screen: assign mode to link a barcode to any product
 - **Shopping cart** with 5% VAT calculation, subtotal, grand total in AED
+- **3 payment methods** — Card, Cash, Credit (credit requires customer selection)
+- **Customer management** — create/edit/delete customers with name, phone, email, company
+- **Credit payment system** — sell on credit linked to a customer, tracks outstanding balances, record payments to collect credit
 - **Sales history** with per-day grouping, stats, and receipt printing from any past sale
 - **Daily sales report** — date-navigable report with revenue, transactions, avg order, VAT, hourly sales chart, top-selling products, revenue by category, payment method breakdown
 - **Business settings** — accessible via gear icon on Reports screen; stores business name, TRN, address, phone, email
-- **UAE tax invoice receipts** — print/share receipts with Arabic header "فاتورة ضريبية مبسطة", TRN, invoice number, itemized VAT
+- **UAE tax invoice receipts** — print/share receipts with Arabic header "فاتورة ضريبية مبسطة", TRN, invoice number, itemized VAT; shows customer name on credit invoices
 - **Dark UI theme** (`#0F1117` background) — designed for 10-inch tablets
 - **Split-panel layout** on screens ≥768px wide; single-panel + bottom cart bar on mobile
 
 ### Tabs
-1. **Register** (`index.tsx`) — POS grid + search bar + cart + barcode scan + receipt after sale
+1. **Register** (`index.tsx`) — POS grid + search bar + cart + barcode scan + Card/Cash/Credit payment + receipt after sale
 2. **History** (`history.tsx`) — transaction list with today's stats + print receipt from any sale
-3. **Reports** (`reports.tsx`) — daily sales report + settings gear icon for business config
-4. **Products** (`products.tsx`) — CRUD product management + barcode assignment
+3. **Customers** (`customers.tsx`) — customer list with credit balances, create/edit/delete, payment collection, credit sale history
+4. **Reports** (`reports.tsx`) — daily sales report + settings gear icon for business config
+5. **Products** (`products.tsx`) — CRUD product management + barcode assignment
 
 ### Key Files
-- `types/index.ts` — Product, CartItem, Sale (with invoiceNumber), SaleItem, BusinessSettings interfaces; VAT_RATE=0.05, CURRENCY="AED", formatCurrency()
-- `lib/database.ts` — SQLite init with settings table, invoice_counter table, unique index on invoice_number
-- `lib/receiptTemplate.ts` — HTML receipt generator for UAE Simplified Tax Invoice (80mm thermal format)
-- `context/DatabaseCore.ts` — shared context with loadBusinessSettings, saveBusinessSettings, loadSaleWithItems
-- `context/DatabaseContext.tsx` — SQLite (native) provider with atomic invoice counter
-- `context/WebDatabaseProvider.tsx` — AsyncStorage (web) provider with counter key
+- `types/index.ts` — Product, CartItem, Sale (with invoiceNumber, customerId, customerName), SaleItem, Customer, CreditPayment, BusinessSettings; VAT_RATE=0.05, CURRENCY="AED", formatCurrency()
+- `lib/database.ts` — SQLite init with customers, credit_payments, settings, invoice_counter tables; migrations for customer_id/customer_name on sales
+- `lib/receiptTemplate.ts` — HTML receipt generator for UAE Simplified Tax Invoice (80mm thermal format), includes customer name for credit sales
+- `context/DatabaseCore.ts` — shared context with customer CRUD, recordCreditPayment, loadCreditPayments + all sale/product/settings methods
+- `context/DatabaseContext.tsx` — SQLite (native) provider with exclusive transactions for credit operations, atomic invoice counter, data-layer validation
+- `context/WebDatabaseProvider.tsx` — AsyncStorage (web) provider with customer/credit operations and validation
 - `context/DatabaseProvider.native.tsx` / `.web.tsx` — platform dispatch
 - `context/CartContext.tsx` — cart reducer with 5% VAT
-- `components/ReceiptModal.tsx` — UAE tax invoice preview with print/share buttons and TRN warning
+- `components/ReceiptModal.tsx` — UAE tax invoice preview with customer name, print/share buttons and TRN warning
 - `components/BusinessSettingsModal.tsx` — TRN validation (15-digit), business info editor
 - `components/BarcodeScannerModal.tsx` — full-screen camera scanner with viewfinder UI
-- `components/SaleCard.tsx` — sale display with invoice number and "View Receipt" button
+- `components/CustomerSelectModal.tsx` — search/select/create customer during credit checkout
+- `components/SaleCard.tsx` — sale display with invoice number, customer tag for credit sales, and "View Receipt" button
 
 ### APK Build (Android)
 - EAS CLI installed (`eas-cli` in devDependencies)

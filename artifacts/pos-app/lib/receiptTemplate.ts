@@ -124,6 +124,10 @@ export function generateReceiptHTML(
       <td class="info-line"><strong>Payment:</strong></td>
       <td class="info-line" style="text-align:right;">${sale.paymentMethod}</td>
     </tr>
+    ${sale.customerName ? `<tr>
+      <td class="info-line"><strong>Customer:</strong></td>
+      <td class="info-line" style="text-align:right;">${sale.customerName}</td>
+    </tr>` : ""}
   </table>
 
   <div class="divider"></div>

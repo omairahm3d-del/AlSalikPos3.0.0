@@ -47,6 +47,24 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL DEFAULT ''
     );
+
+    CREATE TABLE IF NOT EXISTS customers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      phone TEXT DEFAULT '',
+      email TEXT DEFAULT '',
+      company TEXT DEFAULT '',
+      credit_balance REAL NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS credit_payments (
+      id TEXT PRIMARY KEY,
+      customer_id TEXT NOT NULL,
+      amount REAL NOT NULL,
+      note TEXT DEFAULT '',
+      created_at INTEGER NOT NULL
+    );
   `);
 
   try {
@@ -61,6 +79,16 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
 
   try {
     await db.execAsync("CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_invoice_number ON sales(invoice_number) WHERE invoice_number != ''");
+  } catch {
+  }
+
+  try {
+    await db.execAsync("ALTER TABLE sales ADD COLUMN customer_id TEXT DEFAULT NULL");
+  } catch {
+  }
+
+  try {
+    await db.execAsync("ALTER TABLE sales ADD COLUMN customer_name TEXT DEFAULT NULL");
   } catch {
   }
 

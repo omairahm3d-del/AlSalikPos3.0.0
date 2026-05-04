@@ -27,6 +27,8 @@ function formatDate(ts: number): string {
 export function SaleCard({ sale, expanded, items, onPress, onPrintReceipt }: Props) {
   const colors = useColors();
   const isCard = sale.paymentMethod === "Card";
+  const isCredit = sale.paymentMethod === "Credit";
+  const badgeColor = isCredit ? colors.destructive : isCard ? colors.primary : colors.success;
 
   return (
     <TouchableOpacity
@@ -55,13 +57,21 @@ export function SaleCard({ sale, expanded, items, onPress, onPrintReceipt }: Pro
               {sale.invoiceNumber}
             </Text>
           ) : null}
+          {sale.customerName ? (
+            <View style={styles.customerTag}>
+              <Feather name="user" size={10} color={colors.mutedForeground} />
+              <Text style={[styles.customerTagText, { color: colors.mutedForeground }]}>
+                {sale.customerName}
+              </Text>
+            </View>
+          ) : null}
         </View>
         <View style={styles.rightCol}>
           <View
             style={[
               styles.badge,
               {
-                backgroundColor: isCard ? colors.primary + "28" : colors.success + "28",
+                backgroundColor: badgeColor + "28",
                 borderRadius: colors.radius / 1.5,
               },
             ]}
@@ -69,7 +79,7 @@ export function SaleCard({ sale, expanded, items, onPress, onPrintReceipt }: Pro
             <Text
               style={[
                 styles.badgeText,
-                { color: isCard ? colors.primary : colors.success },
+                { color: badgeColor },
               ]}
             >
               {sale.paymentMethod}
@@ -145,6 +155,15 @@ const styles = StyleSheet.create({
   invoiceNum: {
     fontSize: 11,
     marginTop: 2,
+  },
+  customerTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 3,
+  },
+  customerTagText: {
+    fontSize: 11,
   },
   rightCol: {
     alignItems: "flex-end",

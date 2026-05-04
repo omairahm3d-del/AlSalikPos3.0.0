@@ -152,6 +152,12 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
                 <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>Payment</Text>
                 <Text style={[styles.infoValue, { color: colors.foreground }]}>{sale.paymentMethod}</Text>
               </View>
+              {sale.customerName ? (
+                <View style={styles.infoRow}>
+                  <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>Customer</Text>
+                  <Text style={[styles.infoValue, { color: colors.foreground }]}>{sale.customerName}</Text>
+                </View>
+              ) : null}
 
               <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
