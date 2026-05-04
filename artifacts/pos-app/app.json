@@ -16,7 +16,8 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "Used to scan product barcodes at the point of sale."
+        "NSCameraUsageDescription": "Used to scan product barcodes at the point of sale.",
+        "NSPhotoLibraryUsageDescription": "Used to add images for products and categories."
       }
     },
     "android": {
@@ -44,6 +45,12 @@
           "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera to scan product barcodes.",
           "microphonePermission": false,
           "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to access your photos to add product and category images."
         }
       ]
     ],

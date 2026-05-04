@@ -72,27 +72,37 @@ Mobile-first Point of Sale app built with Expo (SDK 54) and React Native, config
 - **Memoized derived values** — `availableTables`, `filteredProducts`, `SearchBar`, `ScanButton` all wrapped in `useMemo`; all handlers use `useCallback`
 - **Visual stock indicators** — out-of-stock products show dark overlay with "OUT OF STOCK" text + dimmed opacity; low-stock products show amber "X left" badge
 
-### Tabs (6 total)
-1. **Register** (`index.tsx`) — POS grid + search + cart + barcode scan + payment modal (Card/Cash/Credit/Split) + per-item discounts + order discount + table/staff/customer selection + receipt
+### Tabs (7 total)
+1. **Register** (`index.tsx`) — POS grid + search + cart + barcode scan + payment modal (Card/Cash/Credit/Split) + per-item discounts + order discount + table/staff/customer selection + receipt; uses dynamic categories from DB; KOT with per-category station routing
 2. **Tables** (`tables.tsx`) — table grid with status badges, create/edit/delete, capacity, status cycling
 3. **History** (`history.tsx`) — transaction list with today's stats, refund button, refund/refunded badges, print receipt
 4. **Customers** (`customers.tsx`) — customer list with credit balances + loyalty points, create/edit/delete, payment collection, credit sale history
-5. **Reports** (`reports.tsx`) — daily sales report + staff management modal + tax groups modal + Z-report close register + business settings
-6. **Products** (`products.tsx`) — CRUD product management + stock tracking + low stock filter + tax group picker + barcode assignment
+5. **Reports** (`reports.tsx`) — daily sales report + Z-report close register (pure reporting — no settings modals)
+6. **Products** (`products.tsx`) — CRUD product management + stock tracking + low stock filter + tax group picker + barcode assignment + dynamic category selection from DB + imageUri support
+7. **Back Office** (`backoffice.tsx`) — centralized settings hub with 8 sections:
+   - **Categories** — CRUD category management with color picker, sort order
+   - **Receipt Designer** — customize header/footer text, show/hide TRN & logo, font size (small/medium/large), paper width (58mm/80mm), live HTML preview on web
+   - **Printer Settings** — paper width, auto-print receipt on sale, auto-print KOT, print method (system dialog / direct IP)
+   - **KOT Settings** — enable/disable kitchen tickets globally, show/hide price & notes, font size, per-category station routing
+   - **Customer Display** — display mode (mirror/summary/custom), show/hide item list & total, welcome & thank-you messages
+   - **Staff Management** — add/edit/delete staff with name, PIN, role (admin/cashier)
+   - **Tax Groups** — add/edit/delete custom tax groups
+   - **Business Settings** — opens existing BusinessSettingsModal (company info, TRN, loyalty config)
 
 ### Key Files
-- `types/index.ts` — All entities: Product (with stockQuantity, taxGroupId, lowStockThreshold), CartItem (with discountAmount), Sale (with staff/table/discount/refund/loyalty fields), SaleItem, Customer (with loyaltyPoints), CreditPayment, BusinessSettings (with loyalty config), Staff, PosTable, TaxGroup, SplitPaymentEntry, ZReport
-- `lib/database.ts` — SQLite init with all tables: products, sales, sale_items, settings, customers, credit_payments, staff, pos_tables, tax_groups, split_payments, z_reports, invoice_counter
-- `lib/receiptTemplate.ts` — HTML receipt generator for UAE Simplified Tax Invoice with discount/staff/refund/table support
-- `lib/kitchenTicketTemplate.ts` — HTML kitchen ticket template with table number, order items, timestamps
-- `context/DatabaseCore.ts` — shared DatabaseContextValue interface with SaleOptions type, all CRUD methods
-- `context/DatabaseContext.tsx` — SQLite (native) provider with exclusive transactions, atomic invoice counter
-- `context/WebDatabaseProvider.tsx` — AsyncStorage (web) provider with all methods matching native provider
+- `types/index.ts` — All entities: Product (with stockQuantity, taxGroupId, lowStockThreshold, imageUri), CartItem (with discountAmount), Sale (with staff/table/discount/refund/loyalty fields), SaleItem, Customer (with loyaltyPoints), CreditPayment, BusinessSettings (with loyalty config + receiptDesign/printerSettings/kotSettings/customerDisplay sub-settings), Staff, PosTable, TaxGroup, SplitPaymentEntry, ZReport, Category, ReceiptDesignSettings, PrinterSettings, KOTSettings, CustomerDisplaySettings; DEFAULT_* constants for all settings
+- `lib/database.ts` — SQLite init with all tables: products, sales, sale_items, settings, customers, credit_payments, staff, pos_tables, tax_groups, split_payments, z_reports, invoice_counter, categories; migrations include image_uri on products
+- `lib/receiptTemplate.ts` — HTML receipt generator for UAE Simplified Tax Invoice with discount/staff/refund/table support; accepts optional ReceiptDesignSettings for custom header/footer/font/paper width
+- `lib/kitchenTicketTemplate.ts` — HTML kitchen ticket template with table number, order items, timestamps; accepts optional KOTSettings for font size, show/hide price, per-category station routing; `getUniqueStations()` helper for multi-station printing
+- `context/DatabaseCore.ts` — shared DatabaseContextValue interface with SaleOptions type, all CRUD methods including loadCategories/createCategory/updateCategory/deleteCategory
+- `context/DatabaseContext.tsx` — SQLite (native) provider with exclusive transactions, atomic invoice counter, category CRUD, JSON-serialized sub-settings
+- `context/WebDatabaseProvider.tsx` — AsyncStorage (web) provider with all methods matching native provider including category CRUD
 - `context/CartContext.tsx` — cart reducer with SET_ITEM_DISCOUNT action, item discount computation, per-item tax rate tracking, order discount support
 - `context/StaffContext.tsx` — staff login/logout, PIN authentication, staffRequired state, auto-lock
 - `components/LockScreen.tsx` — PIN pad lock screen for staff authentication
 - `components/ReceiptModal.tsx` — UAE tax invoice preview with print/share
 - `components/BusinessSettingsModal.tsx` — TRN validation, business info editor, loyalty config
+- `components/ProductCard.tsx` — displays product image (imageUri) when available, falls back to color band with initial letter
 - `components/BarcodeScannerModal.tsx` — full-screen camera scanner
 - `components/CustomerSelectModal.tsx` — search/select/create customer during checkout
 - `components/SaleCard.tsx` — sale display with refund/refunded badges, staff/table/discount info

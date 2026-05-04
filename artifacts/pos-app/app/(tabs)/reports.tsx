@@ -15,12 +15,10 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BusinessSettingsModal } from "@/components/BusinessSettingsModal";
 import { EmptyState } from "@/components/EmptyState";
 import { useDatabase } from "@/context/DatabaseCore";
-import { useStaff } from "@/context/StaffContext";
 import { useColors } from "@/hooks/useColors";
-import type { Sale, SaleItem, Staff, TaxGroup } from "@/types";
+import type { Sale, SaleItem } from "@/types";
 import { formatCurrency } from "@/types";
 
 function getStartOfDay(date: Date): number { const d = new Date(date); d.setHours(0, 0, 0, 0); return d.getTime(); }
@@ -35,32 +33,13 @@ function formatDateLabel(date: Date): string {
 export default function ReportsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const {
-    loadSalesWithItemsByDateRange, loadProducts, saveZReport,
-    loadStaff, createStaff, updateStaff, deleteStaff,
-    loadTaxGroups, createTaxGroup, updateTaxGroup, deleteTaxGroup,
-  } = useDatabase();
-  const { currentStaff, refreshStaffCheck, logout } = useStaff();
+  const { loadSalesWithItemsByDateRange, loadProducts, saveZReport } = useDatabase();
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [sales, setSales] = useState<Sale[]>([]);
   const [items, setItems] = useState<SaleItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [productCategories, setProductCategories] = useState<Record<string, string>>({});
-  const [showSettings, setShowSettings] = useState(false);
-
-  const [showStaffModal, setShowStaffModal] = useState(false);
-  const [staffList, setStaffList] = useState<Staff[]>([]);
-  const [staffName, setStaffName] = useState("");
-  const [staffPin, setStaffPin] = useState("");
-  const [staffRole, setStaffRole] = useState<"admin" | "cashier">("cashier");
-  const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
-
-  const [showTaxModal, setShowTaxModal] = useState(false);
-  const [taxList, setTaxList] = useState<TaxGroup[]>([]);
-  const [taxName, setTaxName] = useState("");
-  const [taxRate, setTaxRate] = useState("");
-  const [editingTax, setEditingTax] = useState<TaxGroup | null>(null);
 
   const [showZReport, setShowZReport] = useState(false);
   const [closingCash, setClosingCash] = useState("");
@@ -148,44 +127,6 @@ export default function ReportsScreen() {
     return hourlyData[maxIdx].value > 0 ? hourlyData[maxIdx] : null;
   }, [hourlyData, sales]);
 
-  const openStaffModal = async () => { const list = await loadStaff(); setStaffList(list); setEditingStaff(null); setStaffName(""); setStaffPin(""); setStaffRole("cashier"); setShowStaffModal(true); };
-  const openTaxModal = async () => { const list = await loadTaxGroups(); setTaxList(list); setEditingTax(null); setTaxName(""); setTaxRate(""); setShowTaxModal(true); };
-
-  const handleSaveStaff = async () => {
-    if (!staffName.trim() || !staffPin.trim() || staffPin.length < 4) { Alert.alert("Invalid", "Name and 4+ digit PIN required."); return; }
-    if (editingStaff) { await updateStaff({ ...editingStaff, name: staffName.trim(), pin: staffPin, role: staffRole }); }
-    else { await createStaff({ name: staffName.trim(), pin: staffPin, role: staffRole }); }
-    const list = await loadStaff(); setStaffList(list); setEditingStaff(null); setStaffName(""); setStaffPin(""); setStaffRole("cashier");
-    await refreshStaffCheck();
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  };
-
-  const handleDeleteStaff = (staff: Staff) => {
-    Alert.alert("Delete Staff", `Remove "${staff.name}"?`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: async () => {
-        await deleteStaff(staff.id); const list = await loadStaff(); setStaffList(list);
-        await refreshStaffCheck();
-      }},
-    ]);
-  };
-
-  const handleSaveTax = async () => {
-    const rate = parseFloat(taxRate);
-    if (!taxName.trim() || isNaN(rate) || rate < 0 || rate > 100) { Alert.alert("Invalid", "Name and valid rate (0-100) required."); return; }
-    if (editingTax) { await updateTaxGroup({ ...editingTax, name: taxName.trim(), rate: rate / 100 }); }
-    else { await createTaxGroup({ name: taxName.trim(), rate: rate / 100 }); }
-    const list = await loadTaxGroups(); setTaxList(list); setEditingTax(null); setTaxName(""); setTaxRate("");
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  };
-
-  const handleDeleteTax = (tg: TaxGroup) => {
-    Alert.alert("Delete Tax Group", `Remove "${tg.name}"?`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: async () => { await deleteTaxGroup(tg.id); const list = await loadTaxGroups(); setTaxList(list); } },
-    ]);
-  };
-
   const handleGenerateZReport = async () => {
     const cashVal = parseFloat(closingCash) || 0;
     const report = {
@@ -216,12 +157,7 @@ export default function ReportsScreen() {
           <Feather name="calendar" size={14} color={colors.mutedForeground} style={{ marginRight: 6 }} />
           <Text style={[styles.dateLabel, { color: colors.foreground }]}>{formatDateLabel(selectedDate)}</Text>
         </TouchableOpacity>
-        <View style={styles.dateRightActions}>
-          <TouchableOpacity onPress={goToNextDay} style={[styles.dateArrow, isToday && { opacity: 0.25 }]} disabled={isToday}><Feather name="chevron-right" size={22} color={colors.foreground} /></TouchableOpacity>
-          <TouchableOpacity onPress={openStaffModal} style={styles.settingsBtn}><Feather name="user-check" size={17} color={colors.mutedForeground} /></TouchableOpacity>
-          <TouchableOpacity onPress={openTaxModal} style={styles.settingsBtn}><Feather name="percent" size={17} color={colors.mutedForeground} /></TouchableOpacity>
-          <TouchableOpacity onPress={() => setShowSettings(true)} style={styles.settingsBtn}><Feather name="settings" size={17} color={colors.mutedForeground} /></TouchableOpacity>
-        </View>
+        <TouchableOpacity onPress={goToNextDay} style={[styles.dateArrow, isToday && { opacity: 0.25 }]} disabled={isToday}><Feather name="chevron-right" size={22} color={colors.foreground} /></TouchableOpacity>
       </View>
 
       {loading ? null : sales.length === 0 ? (
@@ -348,13 +284,6 @@ export default function ReportsScreen() {
             <Text style={styles.zReportBtnText}>Close Register (Z-Report)</Text>
           </TouchableOpacity>
 
-          {currentStaff && (
-            <TouchableOpacity onPress={logout} style={[styles.logoutBtn, { borderColor: colors.border, borderRadius: colors.radius }]}>
-              <Feather name="log-out" size={16} color={colors.mutedForeground} />
-              <Text style={{ color: colors.mutedForeground, marginLeft: 8, fontWeight: "600" }}>Lock / Switch Staff</Text>
-            </TouchableOpacity>
-          )}
-
           <View style={{ height: 40 }} />
         </ScrollView>
       )}
@@ -389,80 +318,6 @@ export default function ReportsScreen() {
           </KeyboardAvoidingView>
         </View>
       </Modal>
-
-      <Modal visible={showStaffModal} animationType="slide" presentationStyle="pageSheet">
-        <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
-          <View style={[styles.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={() => setShowStaffModal(false)}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Staff Management</Text>
-            <View style={{ width: 22 }} />
-          </View>
-          <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
-            <View style={[styles.staffForm, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-              <Text style={[styles.formLabel, { color: colors.foreground }]}>{editingStaff ? "Edit Staff" : "Add Staff"}</Text>
-              <TextInput value={staffName} onChangeText={setStaffName} placeholder="Staff name" placeholderTextColor={colors.mutedForeground} style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]} />
-              <TextInput value={staffPin} onChangeText={setStaffPin} placeholder="4-digit PIN" placeholderTextColor={colors.mutedForeground} keyboardType="number-pad" secureTextEntry maxLength={6} style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius, marginTop: 10 }]} />
-              <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
-                {(["admin", "cashier"] as const).map((r) => (
-                  <TouchableOpacity key={r} onPress={() => setStaffRole(r)} style={[styles.roleBtn, { borderColor: staffRole === r ? colors.primary : colors.border, backgroundColor: staffRole === r ? colors.primary + "18" : "transparent", borderRadius: colors.radius }]}>
-                    <Text style={{ color: staffRole === r ? colors.primary : colors.mutedForeground, fontWeight: "600", textTransform: "capitalize" }}>{r}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <TouchableOpacity onPress={handleSaveStaff} style={[styles.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}>
-                <Text style={{ color: "#fff", fontWeight: "700" }}>{editingStaff ? "Update" : "Add Staff"}</Text>
-              </TouchableOpacity>
-            </View>
-            {staffList.map((s) => (
-              <View key={s.id} style={[styles.staffRow, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-                <View style={[styles.staffAvatar, { backgroundColor: (s.role === "admin" ? "#9B59B6" : colors.primary) + "20" }]}>
-                  <Text style={{ color: s.role === "admin" ? "#9B59B6" : colors.primary, fontWeight: "700" }}>{s.name.charAt(0).toUpperCase()}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.staffName, { color: colors.foreground }]}>{s.name}</Text>
-                  <Text style={{ color: colors.mutedForeground, fontSize: 11, textTransform: "capitalize" }}>{s.role}</Text>
-                </View>
-                <TouchableOpacity onPress={() => { setEditingStaff(s); setStaffName(s.name); setStaffPin(s.pin); setStaffRole(s.role); }} style={{ padding: 8 }}><Feather name="edit-2" size={14} color={colors.primary} /></TouchableOpacity>
-                <TouchableOpacity onPress={() => handleDeleteStaff(s)} style={{ padding: 8 }}><Feather name="trash-2" size={14} color={colors.destructive} /></TouchableOpacity>
-              </View>
-            ))}
-          </ScrollView>
-        </View>
-      </Modal>
-
-      <Modal visible={showTaxModal} animationType="slide" presentationStyle="pageSheet">
-        <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
-          <View style={[styles.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={() => setShowTaxModal(false)}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Tax Groups</Text>
-            <View style={{ width: 22 }} />
-          </View>
-          <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
-            <View style={[styles.staffForm, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-              <Text style={[styles.formLabel, { color: colors.foreground }]}>{editingTax ? "Edit Tax Group" : "Add Tax Group"}</Text>
-              <TextInput value={taxName} onChangeText={setTaxName} placeholder="e.g. Zero-rated, Exempt" placeholderTextColor={colors.mutedForeground} style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]} />
-              <TextInput value={taxRate} onChangeText={setTaxRate} placeholder="Rate % (e.g. 0, 5, 10)" placeholderTextColor={colors.mutedForeground} keyboardType="decimal-pad" style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius, marginTop: 10 }]} />
-              <TouchableOpacity onPress={handleSaveTax} style={[styles.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}>
-                <Text style={{ color: "#fff", fontWeight: "700" }}>{editingTax ? "Update" : "Add Tax Group"}</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={[styles.staffRow, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-              <View style={{ flex: 1 }}><Text style={[styles.staffName, { color: colors.foreground }]}>Default VAT</Text><Text style={{ color: colors.mutedForeground, fontSize: 11 }}>5% (UAE standard)</Text></View>
-              <Text style={{ color: colors.primary, fontWeight: "700" }}>5%</Text>
-            </View>
-            {taxList.map((tg) => (
-              <View key={tg.id} style={[styles.staffRow, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-                <View style={{ flex: 1 }}><Text style={[styles.staffName, { color: colors.foreground }]}>{tg.name}</Text></View>
-                <Text style={{ color: colors.primary, fontWeight: "700", marginRight: 8 }}>{(tg.rate * 100).toFixed(0)}%</Text>
-                <TouchableOpacity onPress={() => { setEditingTax(tg); setTaxName(tg.name); setTaxRate(String(tg.rate * 100)); }} style={{ padding: 8 }}><Feather name="edit-2" size={14} color={colors.primary} /></TouchableOpacity>
-                <TouchableOpacity onPress={() => handleDeleteTax(tg)} style={{ padding: 8 }}><Feather name="trash-2" size={14} color={colors.destructive} /></TouchableOpacity>
-              </View>
-            ))}
-          </ScrollView>
-        </View>
-      </Modal>
-
-      <BusinessSettingsModal visible={showSettings} onClose={() => setShowSettings(false)} />
     </View>
   );
 }
@@ -473,8 +328,6 @@ const styles = StyleSheet.create({
   dateArrow: { padding: 6 },
   dateLabelWrap: { flexDirection: "row", alignItems: "center" },
   dateLabel: { fontSize: 16, fontWeight: "700", fontFamily: "Inter_700Bold" },
-  dateRightActions: { flexDirection: "row", alignItems: "center", gap: 2 },
-  settingsBtn: { padding: 6 },
   scroll: { flex: 1 },
   scrollContent: { padding: 16 },
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 16 },
@@ -514,7 +367,6 @@ const styles = StyleSheet.create({
   catRevenue: { fontSize: 13, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
   zReportBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 16, marginTop: 8 },
   zReportBtnText: { color: "#fff", fontSize: 16, fontWeight: "700", fontFamily: "Inter_700Bold" },
-  logoutBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 14, marginTop: 12, borderWidth: 1 },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "center", alignItems: "center", padding: 24 },
   sheet: { width: "100%", maxWidth: 460, padding: 24 },
   sheetTitle: { fontSize: 20, fontWeight: "700", fontFamily: "Inter_700Bold", marginBottom: 4 },
@@ -526,15 +378,4 @@ const styles = StyleSheet.create({
   actions: { flexDirection: "row", gap: 12, marginTop: 20 },
   cancelBtn: { flex: 1, paddingVertical: 14, alignItems: "center", borderWidth: 1 },
   confirmBtn: { flex: 2, flexDirection: "row", paddingVertical: 14, alignItems: "center", justifyContent: "center", gap: 8 },
-  modalRoot: { flex: 1 },
-  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1 },
-  modalTitle: { fontSize: 18, fontWeight: "700", fontFamily: "Inter_700Bold" },
-  form: { padding: 20, paddingBottom: 60 },
-  staffForm: { padding: 16, borderWidth: 1, marginBottom: 16 },
-  formLabel: { fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold", marginBottom: 12 },
-  roleBtn: { flex: 1, paddingVertical: 10, alignItems: "center", borderWidth: 1 },
-  saveBtn: { marginTop: 14, paddingVertical: 12, alignItems: "center" },
-  staffRow: { flexDirection: "row", alignItems: "center", padding: 14, borderWidth: 1, marginBottom: 8 },
-  staffAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", marginRight: 12 },
-  staffName: { fontSize: 14, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
 });

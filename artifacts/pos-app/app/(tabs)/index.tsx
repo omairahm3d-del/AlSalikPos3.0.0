@@ -28,9 +28,9 @@ import { useCart } from "@/context/CartContext";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useStaff } from "@/context/StaffContext";
 import { useColors } from "@/hooks/useColors";
-import { generateKitchenTicketHTML } from "@/lib/kitchenTicketTemplate";
-import type { Customer, PosTable, Product, Sale, SplitPaymentEntry, TaxGroup } from "@/types";
-import { CATEGORIES, VAT_RATE, formatCurrency } from "@/types";
+import { generateKitchenTicketHTML, getUniqueStations } from "@/lib/kitchenTicketTemplate";
+import type { BusinessSettings, Category, Customer, KOTSettings, PosTable, Product, Sale, SplitPaymentEntry, TaxGroup } from "@/types";
+import { DEFAULT_KOT_SETTINGS, VAT_RATE, formatCurrency } from "@/types";
 
 type PaymentMethod = "Card" | "Cash" | "Credit" | "Split";
 
@@ -42,7 +42,7 @@ export default function POSScreen() {
   const insets = useSafeAreaInsets();
   const isTablet = width >= 768;
 
-  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups } = useDatabase();
+  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories } = useDatabase();
   const { currentStaff } = useStaff();
   const {
     items: cartItems,
@@ -64,6 +64,8 @@ export default function POSScreen() {
   const [tables, setTables] = useState<PosTable[]>([]);
   const [taxGroupMap, setTaxGroupMap] = useState<Record<string, number>>({});
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [dynamicCategories, setDynamicCategories] = useState<string[]>(["All"]);
+  const [kotSettings, setKotSettings] = useState<KOTSettings>(DEFAULT_KOT_SETTINGS);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [showCart, setShowCart] = useState(false);
@@ -125,15 +127,18 @@ export default function POSScreen() {
   const splitRemaining = finalTotal - splitEntries.reduce((s, e) => s + e.amount, 0);
 
   const fetchData = useCallback(async () => {
-    const [prods, tbls, biz, tgs] = await Promise.all([loadProducts(), loadTables(), loadBusinessSettings(), loadTaxGroups()]);
+    const [prods, tbls, biz, tgs, cats] = await Promise.all([loadProducts(), loadTables(), loadBusinessSettings(), loadTaxGroups(), loadCategories()]);
     setProducts(prods);
     setTables(tbls);
     setLoyaltyRate(biz.loyaltyRedemptionRate || 0.01);
+    setKotSettings(biz.kotSettings ?? DEFAULT_KOT_SETTINGS);
     const map: Record<string, number> = {};
     tgs.forEach((g: TaxGroup) => { map[g.id] = g.rate; });
     setTaxGroupMap(map);
+    const catNames = cats.length > 0 ? ["All", ...cats.map((c: Category) => c.name)] : ["All"];
+    setDynamicCategories(catNames);
     setLoading(false);
-  }, [loadProducts, loadTables, loadBusinessSettings, loadTaxGroups]);
+  }, [loadProducts, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -205,16 +210,35 @@ export default function POSScreen() {
         splitPayments: paymentMethod === "Split" ? splitEntries : undefined,
       });
 
-      if (selectedTable) {
+      const shouldPrintKOT = kotSettings.enabled && selectedTable;
+      if (shouldPrintKOT) {
         try {
-          const ticketHtml = generateKitchenTicketHTML(
-            cartItems, sale.invoiceNumber, selectedTable.name, currentStaff?.name
-          );
-          if (Platform.OS === "web") {
-            const w = window.open("", "_blank", "width=400,height=600");
-            if (w) { w.document.write(ticketHtml); w.document.close(); w.print(); }
+          const stations = getUniqueStations(cartItems, kotSettings);
+          if (stations.length > 0) {
+            for (const station of stations) {
+              const ticketHtml = generateKitchenTicketHTML(
+                cartItems, sale.invoiceNumber, selectedTable.name, currentStaff?.name, kotSettings, station
+              );
+              if (!ticketHtml) continue;
+              if (Platform.OS === "web") {
+                const w = window.open("", "_blank", "width=400,height=600");
+                if (w) { w.document.write(ticketHtml); w.document.close(); w.print(); }
+              } else {
+                await Print.printAsync({ html: ticketHtml });
+              }
+            }
           } else {
-            await Print.printAsync({ html: ticketHtml });
+            const ticketHtml = generateKitchenTicketHTML(
+              cartItems, sale.invoiceNumber, selectedTable.name, currentStaff?.name, kotSettings
+            );
+            if (ticketHtml) {
+              if (Platform.OS === "web") {
+                const w = window.open("", "_blank", "width=400,height=600");
+                if (w) { w.document.write(ticketHtml); w.document.close(); w.print(); }
+              } else {
+                await Print.printAsync({ html: ticketHtml });
+              }
+            }
           }
         } catch (printErr: any) {
           Alert.alert("Kitchen Ticket", "Could not print kitchen ticket: " + (printErr?.message || "Unknown error"));
@@ -419,7 +443,7 @@ export default function POSScreen() {
         <View style={styles.splitRow}>
           <View style={styles.catalogPane}>
             <View style={[styles.catalogHeader, { borderBottomColor: colors.border }]}>
-              <CategoryFilter categories={CATEGORIES} selected={selectedCategory} onSelect={setSelectedCategory} />
+              <CategoryFilter categories={dynamicCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
               {ScanButton}
             </View>
             {SearchBar}
@@ -452,7 +476,7 @@ export default function POSScreen() {
         <>
           <View style={styles.mobileContent}>
             <View style={[styles.catalogHeader, { borderBottomColor: colors.border }]}>
-              <CategoryFilter categories={CATEGORIES} selected={selectedCategory} onSelect={setSelectedCategory} />
+              <CategoryFilter categories={dynamicCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
               {ScanButton}
             </View>
             {SearchBar}

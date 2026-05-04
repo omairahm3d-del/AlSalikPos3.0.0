@@ -1,5 +1,5 @@
-import type { BusinessSettings, Sale, SaleItem } from "@/types";
-import { CURRENCY } from "@/types";
+import type { BusinessSettings, ReceiptDesignSettings, Sale, SaleItem } from "@/types";
+import { CURRENCY, DEFAULT_RECEIPT_DESIGN } from "@/types";
 
 function fmt(amount: number): string {
   return `${CURRENCY} ${Math.abs(amount).toFixed(2)}`;
@@ -12,13 +12,30 @@ function formatDateTime(ts: number): string {
   return `${date} ${time}`;
 }
 
+function getFontSize(size: ReceiptDesignSettings["fontSize"]): { body: number; header: number; title: number } {
+  switch (size) {
+    case "small": return { body: 10, header: 12, title: 11 };
+    case "large": return { body: 14, header: 16, title: 15 };
+    default: return { body: 12, header: 14, title: 13 };
+  }
+}
+
+function getPaperWidth(width: ReceiptDesignSettings["paperWidth"]): string {
+  return width === "58mm" ? "48mm" : "72mm";
+}
+
 export function generateReceiptHTML(
   sale: Sale,
   items: SaleItem[],
-  business: BusinessSettings
+  business: BusinessSettings,
+  design?: ReceiptDesignSettings
 ): string {
+  const rd = design ?? business.receiptDesign ?? DEFAULT_RECEIPT_DESIGN;
   const vatPct = Math.round(sale.vatRate * 100);
   const isRefund = sale.isRefund;
+  const fs = getFontSize(rd.fontSize);
+  const pw = getPaperWidth(rd.paperWidth);
+  const pageSize = rd.paperWidth === "58mm" ? "58mm" : "80mm";
 
   const itemRows = items
     .map(
@@ -36,31 +53,43 @@ export function generateReceiptHTML(
     ? `<tr><td style="text-align:left;color:#2ECC71;">Discount${sale.discountType === "percentage" ? ` (${sale.discountValue}%)` : ""}</td><td style="text-align:right;color:#2ECC71;">-${fmt(sale.discountAmount!)}</td></tr>`
     : "";
 
+  const headerText = rd.headerText ? `<div class="center" style="font-size:${fs.body}px;margin-bottom:4px;">${rd.headerText.replace(/\n/g, "<br/>")}</div>` : "";
+
+  const footerText = rd.footerText
+    ? rd.footerText.replace(/\n/g, "<br/>")
+    : "Thank you for your business!<br/>شكراً لتعاملكم معنا";
+
+  const trnLine = rd.showTrn
+    ? (business.trn ? `<div>TRN: ${business.trn}</div>` : '<div style="color:#999;">TRN: Not configured</div>')
+    : "";
+
   return `<!DOCTYPE html>
 <html dir="ltr" lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <style>
-    @page { margin: 4mm; size: 80mm auto; }
+    @page { margin: 4mm; size: ${pageSize} auto; }
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: 'Courier New', Courier, monospace; font-size: 12px; color: #000; width: 72mm; margin: 0 auto; padding: 4mm 0; }
+    body { font-family: 'Courier New', Courier, monospace; font-size: ${fs.body}px; color: #000; width: ${pw}; margin: 0 auto; padding: 4mm 0; }
     .center { text-align: center; }
     .bold { font-weight: bold; }
     .divider { border-top: 1px dashed #000; margin: 6px 0; }
-    .header-title { font-size: 14px; font-weight: bold; margin-bottom: 2px; }
-    .header-ar { font-size: 13px; font-weight: bold; margin-bottom: 4px; }
-    .info-line { font-size: 11px; line-height: 1.6; }
+    .header-title { font-size: ${fs.header}px; font-weight: bold; margin-bottom: 2px; }
+    .header-ar { font-size: ${fs.title}px; font-weight: bold; margin-bottom: 4px; }
+    .info-line { font-size: ${fs.body - 1}px; line-height: 1.6; }
     table { width: 100%; border-collapse: collapse; }
-    th { font-size: 11px; font-weight: bold; padding: 4px 0; border-bottom: 1px solid #000; }
+    th { font-size: ${fs.body - 1}px; font-weight: bold; padding: 4px 0; border-bottom: 1px solid #000; }
     .total-section td { padding: 2px 0; }
-    .grand-total td { font-size: 14px; font-weight: bold; padding: 4px 0; }
-    .footer { font-size: 10px; text-align: center; margin-top: 8px; line-height: 1.5; }
-    .refund-banner { background: #E74C3C; color: #fff; padding: 4px 0; font-size: 14px; font-weight: bold; text-align: center; margin-bottom: 4px; }
+    .grand-total td { font-size: ${fs.header}px; font-weight: bold; padding: 4px 0; }
+    .footer { font-size: ${fs.body - 2}px; text-align: center; margin-top: 8px; line-height: 1.5; }
+    .refund-banner { background: #E74C3C; color: #fff; padding: 4px 0; font-size: ${fs.header}px; font-weight: bold; text-align: center; margin-bottom: 4px; }
   </style>
 </head>
 <body>
   ${isRefund ? '<div class="refund-banner">*** REFUND ***</div>' : ""}
+
+  ${headerText}
 
   <div class="center">
     <div class="header-ar">فاتورة ضريبية مبسطة</div>
@@ -70,8 +99,8 @@ export function generateReceiptHTML(
   <div class="divider"></div>
 
   <div class="center info-line">
-    ${business.businessName ? `<div class="bold" style="font-size:13px;">${business.businessName}</div>` : ""}
-    ${business.trn ? `<div>TRN: ${business.trn}</div>` : '<div style="color:#999;">TRN: Not configured</div>'}
+    ${business.businessName ? `<div class="bold" style="font-size:${fs.title}px;">${business.businessName}</div>` : ""}
+    ${trnLine}
     ${business.address ? `<div>${business.address}</div>` : ""}
     ${business.phone ? `<div>Tel: ${business.phone}</div>` : ""}
     ${business.email ? `<div>${business.email}</div>` : ""}
@@ -118,8 +147,7 @@ export function generateReceiptHTML(
   <div class="footer">
     ${isRefund ? "This is a refund receipt<br/>" : ""}
     Prices are inclusive of ${vatPct}% VAT where applicable<br/>
-    Thank you for your business!<br/>
-    شكراً لتعاملكم معنا
+    ${footerText}
   </div>
 </body>
 </html>`;

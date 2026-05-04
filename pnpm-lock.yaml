@@ -469,7 +469,7 @@ importers:
         specifier: ~3.0.11
         version: 3.0.11(expo@54.0.34)(react-native-web@0.21.2(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       expo-image-picker:
-        specifier: ~17.0.9
+        specifier: ~17.0.11
         version: 17.0.11(expo@54.0.34)
       expo-linear-gradient:
         specifier: ~15.0.8

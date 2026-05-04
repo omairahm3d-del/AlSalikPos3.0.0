@@ -1,5 +1,5 @@
 import React, { useCallback, useRef } from "react";
-import { Animated, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Animated, Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { useColors } from "@/hooks/useColors";
 import type { Product } from "@/types";
@@ -42,14 +42,25 @@ function ProductCardInner({ product, onAdd, quantity }: Props) {
           },
         ]}
       >
-        <View style={[styles.colorBand, { backgroundColor: product.colorHex }]}>
-          <Text style={styles.initial}>{product.name.charAt(0).toUpperCase()}</Text>
-          {isOutOfStock && (
-            <View style={styles.stockOverlay}>
-              <Text style={styles.stockOverlayText}>OUT OF STOCK</Text>
-            </View>
-          )}
-        </View>
+        {product.imageUri ? (
+          <View style={styles.imageBand}>
+            <Image source={{ uri: product.imageUri }} style={styles.productImage} resizeMode="cover" />
+            {isOutOfStock && (
+              <View style={styles.stockOverlay}>
+                <Text style={styles.stockOverlayText}>OUT OF STOCK</Text>
+              </View>
+            )}
+          </View>
+        ) : (
+          <View style={[styles.colorBand, { backgroundColor: product.colorHex }]}>
+            <Text style={styles.initial}>{product.name.charAt(0).toUpperCase()}</Text>
+            {isOutOfStock && (
+              <View style={styles.stockOverlay}>
+                <Text style={styles.stockOverlayText}>OUT OF STOCK</Text>
+              </View>
+            )}
+          </View>
+        )}
 
         <View style={styles.info}>
           <Text style={[styles.name, { color: colors.foreground }]} numberOfLines={2}>
@@ -92,6 +103,14 @@ const styles = StyleSheet.create({
     height: 80,
     alignItems: "center",
     justifyContent: "center",
+  },
+  imageBand: {
+    height: 80,
+    backgroundColor: "#1A1D25",
+  },
+  productImage: {
+    width: "100%",
+    height: "100%",
   },
   initial: {
     fontSize: 34,

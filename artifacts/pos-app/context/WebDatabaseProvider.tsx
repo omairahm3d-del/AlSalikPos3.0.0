@@ -1,11 +1,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback } from "react";
 import type {
-  BusinessSettings, CartItem, CreditPayment, Customer,
+  BusinessSettings, CartItem, Category, CreditPayment, Customer,
   PosTable, Product, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
 } from "@/types";
-import { DEFAULT_BUSINESS_SETTINGS, SEED_PRODUCTS, VAT_RATE } from "@/types";
+import { DEFAULT_BUSINESS_SETTINGS, SEED_CATEGORIES, SEED_PRODUCTS, VAT_RATE } from "@/types";
 import { generateId, generateInvoiceNumber } from "@/lib/database";
 import { DatabaseContext, type SaleOptions } from "./DatabaseCore";
 
@@ -15,6 +15,7 @@ const K = {
   customers: "@pos_customers", creditPayments: "@pos_credit_payments",
   staff: "@pos_staff", tables: "@pos_tables", taxGroups: "@pos_tax_groups",
   splitPayments: "@pos_split_payments", zReports: "@pos_z_reports",
+  categories: "@pos_categories",
 };
 
 async function getJson<T>(key: string, fallback: T): Promise<T> {
@@ -29,6 +30,12 @@ async function getProducts(): Promise<Product[]> {
   const raw = await AsyncStorage.getItem(K.products);
   if (!raw) { await setJson(K.products, SEED_PRODUCTS); return SEED_PRODUCTS; }
   return JSON.parse(raw) as Product[];
+}
+
+async function getCategories(): Promise<Category[]> {
+  const raw = await AsyncStorage.getItem(K.categories);
+  if (!raw) { await setJson(K.categories, SEED_CATEGORIES); return SEED_CATEGORIES; }
+  return JSON.parse(raw) as Category[];
 }
 
 export function WebDatabaseProvider({ children }: { children: React.ReactNode }) {
@@ -369,6 +376,28 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     await setJson(K.taxGroups, existing.filter((g) => g.id !== id));
   }, []);
 
+  const loadCategories = useCallback(async (): Promise<Category[]> => {
+    const cats = await getCategories();
+    return [...cats].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name));
+  }, []);
+
+  const createCategory = useCallback(async (category: Omit<Category, "id">): Promise<Category> => {
+    const existing = await getCategories();
+    const nc: Category = { ...category, id: generateId() };
+    await setJson(K.categories, [...existing, nc]);
+    return nc;
+  }, []);
+
+  const updateCategory = useCallback(async (category: Category): Promise<void> => {
+    const existing = await getCategories();
+    await setJson(K.categories, existing.map((c) => c.id === category.id ? category : c));
+  }, []);
+
+  const deleteCategory = useCallback(async (id: string): Promise<void> => {
+    const existing = await getCategories();
+    await setJson(K.categories, existing.filter((c) => c.id !== id));
+  }, []);
+
   const loadSplitPayments = useCallback(async (saleId: string): Promise<SplitPaymentEntry[]> => {
     const all = await getJson<any[]>(K.splitPayments, []);
     return all.filter((sp) => sp.saleId === saleId).map((sp) => ({ method: sp.method, amount: sp.amount }));
@@ -393,6 +422,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       loadStaff, createStaff, updateStaff, deleteStaff, authenticateStaff,
       loadTables, createTable, updateTable, deleteTable, setTableStatus,
       loadTaxGroups, createTaxGroup, updateTaxGroup, deleteTaxGroup,
+      loadCategories, createCategory, updateCategory, deleteCategory,
       loadSplitPayments, saveZReport, loadZReports,
     }}>
       {children}

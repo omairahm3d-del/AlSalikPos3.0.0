@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
-import { SEED_PRODUCTS } from "@/types";
+import { SEED_PRODUCTS, SEED_CATEGORIES } from "@/types";
 
 export async function initDatabase(db: SQLiteDatabase): Promise<void> {
   await db.execAsync(`
@@ -15,7 +15,16 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
       barcode TEXT DEFAULT NULL,
       stock_quantity INTEGER NOT NULL DEFAULT 999,
       tax_group_id TEXT DEFAULT NULL,
-      low_stock_threshold INTEGER NOT NULL DEFAULT 10
+      low_stock_threshold INTEGER NOT NULL DEFAULT 10,
+      image_uri TEXT DEFAULT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS categories (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      color_hex TEXT DEFAULT '#4F8EF7',
+      image_uri TEXT DEFAULT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS sales (
@@ -154,6 +163,7 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     "ALTER TABLE products ADD COLUMN low_stock_threshold INTEGER NOT NULL DEFAULT 10",
     "ALTER TABLE customers ADD COLUMN loyalty_points INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE sale_items ADD COLUMN discount_amount REAL DEFAULT 0",
+    "ALTER TABLE products ADD COLUMN image_uri TEXT DEFAULT NULL",
   ];
 
   for (const sql of migrations) {
@@ -201,6 +211,18 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
       "INSERT INTO tax_groups (id, name, rate) VALUES (?, ?, ?)",
       ["tg_default", "Standard VAT (5%)", 0.05]
     );
+  }
+
+  const catCount = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM categories"
+  );
+  if (!catCount || catCount.count === 0) {
+    for (const c of SEED_CATEGORIES) {
+      await db.runAsync(
+        "INSERT INTO categories (id, name, color_hex, image_uri, sort_order) VALUES (?, ?, ?, ?, ?)",
+        [c.id, c.name, c.colorHex, c.imageUri ?? null, c.sortOrder]
+      );
+    }
   }
 }
 

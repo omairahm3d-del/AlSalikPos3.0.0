@@ -209,7 +209,7 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
               <View style={[styles.trnWarning, { backgroundColor: colors.destructive + "18", borderRadius: colors.radius }]}>
                 <Feather name="alert-triangle" size={14} color={colors.destructive} />
                 <Text style={[styles.trnWarningText, { color: colors.destructive }]}>
-                  TRN not configured. Go to Reports → Settings to add your 15-digit Tax Registration Number for compliant invoices.
+                  TRN not configured. Go to Back Office → Business Settings to add your 15-digit Tax Registration Number for compliant invoices.
                 </Text>
               </View>
             )}

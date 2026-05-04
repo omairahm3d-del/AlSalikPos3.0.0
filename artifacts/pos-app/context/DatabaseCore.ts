@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import type {
-  BusinessSettings, CartItem, CreditPayment, Customer,
+  BusinessSettings, CartItem, Category, CreditPayment, Customer,
   PosTable, Product, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
 } from "@/types";
@@ -60,6 +60,11 @@ export interface DatabaseContextValue {
   createTaxGroup: (group: Omit<TaxGroup, "id">) => Promise<TaxGroup>;
   updateTaxGroup: (group: TaxGroup) => Promise<void>;
   deleteTaxGroup: (id: string) => Promise<void>;
+
+  loadCategories: () => Promise<Category[]>;
+  createCategory: (category: Omit<Category, "id">) => Promise<Category>;
+  updateCategory: (category: Category) => Promise<void>;
+  deleteCategory: (id: string) => Promise<void>;
 
   loadSplitPayments: (saleId: string) => Promise<SplitPaymentEntry[]>;
   saveZReport: (report: any) => Promise<void>;

@@ -9,6 +9,15 @@ export interface Product {
   stockQuantity: number;
   taxGroupId?: string;
   lowStockThreshold: number;
+  imageUri?: string;
+}
+
+export interface Category {
+  id: string;
+  name: string;
+  colorHex: string;
+  imageUri?: string;
+  sortOrder: number;
 }
 
 export interface CartItem {
@@ -105,6 +114,39 @@ export interface TaxGroup {
   rate: number;
 }
 
+export interface ReceiptDesignSettings {
+  headerText: string;
+  footerText: string;
+  showLogo: boolean;
+  showTrn: boolean;
+  fontSize: "small" | "medium" | "large";
+  paperWidth: "58mm" | "80mm";
+}
+
+export interface PrinterSettings {
+  paperWidth: "58mm" | "80mm";
+  autoPrintReceipt: boolean;
+  autoPrintKOT: boolean;
+  printMethod: "system" | "direct";
+  printerIp: string;
+}
+
+export interface KOTSettings {
+  enabled: boolean;
+  showPrice: boolean;
+  showNotes: boolean;
+  fontSize: "small" | "medium" | "large";
+  categoryRouting: Record<string, string>;
+}
+
+export interface CustomerDisplaySettings {
+  showItemList: boolean;
+  showTotal: boolean;
+  welcomeMessage: string;
+  thankYouMessage: string;
+  displayMode: "mirror" | "summary" | "custom";
+}
+
 export interface BusinessSettings {
   businessName: string;
   trn: string;
@@ -113,6 +155,10 @@ export interface BusinessSettings {
   email: string;
   loyaltyPointsPerAed: number;
   loyaltyRedemptionRate: number;
+  receiptDesign?: ReceiptDesignSettings;
+  printerSettings?: PrinterSettings;
+  kotSettings?: KOTSettings;
+  customerDisplay?: CustomerDisplaySettings;
 }
 
 export interface ZReport {
@@ -175,6 +221,46 @@ export const SEED_PRODUCTS: Product[] = [
   { id: "p18", name: "Brownie", category: "Desserts", price: 15, description: "Warm fudge brownie", colorHex: "#6C63FF", stockQuantity: 40, lowStockThreshold: 5 },
 ];
 
+export const SEED_CATEGORIES: Category[] = [
+  { id: "cat_beverages", name: "Beverages", colorHex: "#E74C3C", sortOrder: 1 },
+  { id: "cat_food", name: "Food", colorHex: "#4F8EF7", sortOrder: 2 },
+  { id: "cat_snacks", name: "Snacks", colorHex: "#F39C12", sortOrder: 3 },
+  { id: "cat_desserts", name: "Desserts", colorHex: "#9B59B6", sortOrder: 4 },
+];
+
+export const DEFAULT_RECEIPT_DESIGN: ReceiptDesignSettings = {
+  headerText: "",
+  footerText: "Thank you for your business!\nشكراً لتعاملكم معنا",
+  showLogo: false,
+  showTrn: true,
+  fontSize: "medium",
+  paperWidth: "80mm",
+};
+
+export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
+  paperWidth: "80mm",
+  autoPrintReceipt: false,
+  autoPrintKOT: false,
+  printMethod: "system",
+  printerIp: "",
+};
+
+export const DEFAULT_KOT_SETTINGS: KOTSettings = {
+  enabled: true,
+  showPrice: false,
+  showNotes: true,
+  fontSize: "medium",
+  categoryRouting: {},
+};
+
+export const DEFAULT_CUSTOMER_DISPLAY: CustomerDisplaySettings = {
+  showItemList: true,
+  showTotal: true,
+  welcomeMessage: "Welcome!",
+  thankYouMessage: "Thank you for your purchase!",
+  displayMode: "mirror",
+};
+
 export const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
   businessName: "",
   trn: "",
@@ -183,4 +269,8 @@ export const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
   email: "",
   loyaltyPointsPerAed: 1,
   loyaltyRedemptionRate: 0.01,
+  receiptDesign: DEFAULT_RECEIPT_DESIGN,
+  printerSettings: DEFAULT_PRINTER_SETTINGS,
+  kotSettings: DEFAULT_KOT_SETTINGS,
+  customerDisplay: DEFAULT_CUSTOMER_DISPLAY,
 };

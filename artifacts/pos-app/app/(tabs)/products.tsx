@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -15,24 +16,24 @@ import {
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
 import { EmptyState } from "@/components/EmptyState";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
-import type { Product, TaxGroup } from "@/types";
-import { CATEGORIES, CURRENCY, PRODUCT_COLORS, formatCurrency } from "@/types";
-
-const CATEGORY_OPTIONS = CATEGORIES.filter((c) => c !== "All");
+import type { Category, Product, TaxGroup } from "@/types";
+import { CURRENCY, PRODUCT_COLORS, formatCurrency } from "@/types";
 
 export default function ProductsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { loadProducts, createProduct, updateProduct, deleteProduct, loadTaxGroups } = useDatabase();
+  const { loadProducts, createProduct, updateProduct, deleteProduct, loadTaxGroups, loadCategories } = useDatabase();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [taxGroups, setTaxGroups] = useState<TaxGroup[]>([]);
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -41,7 +42,7 @@ export default function ProductsScreen() {
   const [filterLowStock, setFilterLowStock] = useState(false);
 
   const [name, setName] = useState("");
-  const [category, setCategory] = useState(CATEGORY_OPTIONS[0]);
+  const [category, setCategory] = useState("");
   const [price, setPrice] = useState("");
   const [description, setDescription] = useState("");
   const [selectedColor, setSelectedColor] = useState(PRODUCT_COLORS[0]);
@@ -49,13 +50,44 @@ export default function ProductsScreen() {
   const [stockQty, setStockQty] = useState("999");
   const [lowStockThreshold, setLowStockThreshold] = useState("10");
   const [selectedTaxGroupId, setSelectedTaxGroupId] = useState<string | undefined>(undefined);
+  const [imageUri, setImageUri] = useState<string | undefined>(undefined);
+
+  const pickImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Required", "Please allow photo library access to add product images.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.6,
+        base64: true,
+      });
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        if (asset.base64) {
+          const mimeType = asset.mimeType || "image/jpeg";
+          setImageUri(`data:${mimeType};base64,${asset.base64}`);
+        } else {
+          Alert.alert("Image Error", "Could not process the selected image. Please try another.");
+        }
+      }
+    } catch {
+      Alert.alert("Error", "Failed to open image picker. Please try again.");
+    }
+  };
 
   const fetchProducts = useCallback(async () => {
-    const [data, groups] = await Promise.all([loadProducts(), loadTaxGroups()]);
+    const [data, groups, cats] = await Promise.all([loadProducts(), loadTaxGroups(), loadCategories()]);
     setProducts(data);
     setTaxGroups(groups);
+    const catNames = cats.length > 0 ? cats.map((c: Category) => c.name) : ["Beverages", "Food", "Snacks", "Desserts"];
+    setCategoryOptions(catNames);
     setLoading(false);
-  }, [loadProducts, loadTaxGroups]);
+  }, [loadProducts, loadTaxGroups, loadCategories]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
@@ -74,9 +106,9 @@ export default function ProductsScreen() {
 
   const openAdd = () => {
     setEditingProduct(null);
-    setName(""); setCategory(CATEGORY_OPTIONS[0]); setPrice(""); setDescription("");
+    setName(""); setCategory(categoryOptions[0] ?? ""); setPrice(""); setDescription("");
     setSelectedColor(PRODUCT_COLORS[0]); setBarcode(""); setStockQty("999");
-    setLowStockThreshold("10"); setSelectedTaxGroupId(undefined);
+    setLowStockThreshold("10"); setSelectedTaxGroupId(undefined); setImageUri(undefined);
     setModalVisible(true);
   };
 
@@ -86,7 +118,7 @@ export default function ProductsScreen() {
     setDescription(product.description); setSelectedColor(product.colorHex);
     setBarcode(product.barcode ?? ""); setStockQty(String(product.stockQuantity));
     setLowStockThreshold(String(product.lowStockThreshold));
-    setSelectedTaxGroupId(product.taxGroupId);
+    setSelectedTaxGroupId(product.taxGroupId); setImageUri(product.imageUri);
     setModalVisible(true);
   };
 
@@ -105,13 +137,13 @@ export default function ProductsScreen() {
         ...editingProduct,
         name: name.trim(), category, price: priceNum, description: description.trim(),
         colorHex: selectedColor, barcode: barcodeVal, stockQuantity: stock,
-        lowStockThreshold: threshold, taxGroupId: selectedTaxGroupId,
+        lowStockThreshold: threshold, taxGroupId: selectedTaxGroupId, imageUri,
       });
     } else {
       await createProduct({
         name: name.trim(), category, price: priceNum, description: description.trim(),
         colorHex: selectedColor, barcode: barcodeVal, stockQuantity: stock,
-        lowStockThreshold: threshold, taxGroupId: selectedTaxGroupId,
+        lowStockThreshold: threshold, taxGroupId: selectedTaxGroupId, imageUri,
       });
     }
     setModalVisible(false);
@@ -139,8 +171,12 @@ export default function ProductsScreen() {
         activeOpacity={0.8}
         style={[styles.productCard, { backgroundColor: colors.card, borderRadius: colors.radius, borderColor: isOut ? colors.destructive + "60" : isLow ? "#F39C12" + "60" : colors.border }]}
       >
-        <View style={[styles.productColorBand, { backgroundColor: item.colorHex, opacity: isOut ? 0.5 : 1 }]}>
-          <Text style={styles.productInitial}>{item.name.charAt(0).toUpperCase()}</Text>
+        <View style={[styles.productColorBand, { backgroundColor: item.imageUri ? "transparent" : item.colorHex, opacity: isOut ? 0.5 : 1 }]}>
+          {item.imageUri ? (
+            <Image source={{ uri: item.imageUri }} style={styles.productImage} resizeMode="cover" />
+          ) : (
+            <Text style={styles.productInitial}>{item.name.charAt(0).toUpperCase()}</Text>
+          )}
           {item.barcode && (
             <View style={styles.barcodeTag}>
               <Feather name="maximize" size={9} color="rgba(255,255,255,0.8)" />
@@ -225,7 +261,7 @@ export default function ProductsScreen() {
 
             <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Category</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips}>
-              {CATEGORY_OPTIONS.map((cat) => (
+              {categoryOptions.map((cat) => (
                 <TouchableOpacity key={cat} onPress={() => setCategory(cat)} style={[styles.chip, { backgroundColor: category === cat ? colors.primary : colors.secondary, borderColor: category === cat ? colors.primary : colors.border, borderRadius: colors.radius }]}>
                   <Text style={{ color: category === cat ? "#fff" : colors.mutedForeground, fontWeight: "600" }}>{cat}</Text>
                 </TouchableOpacity>
@@ -262,7 +298,27 @@ export default function ProductsScreen() {
             <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Description (optional)</Text>
             <TextInput value={description} onChangeText={setDescription} placeholder="Short description" placeholderTextColor={colors.mutedForeground} multiline numberOfLines={2} style={[styles.input, styles.textArea, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]} />
 
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Color</Text>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Product Image</Text>
+            <View style={styles.imagePickerRow}>
+              <TouchableOpacity onPress={pickImage} style={[styles.imagePickerBtn, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius }]}>
+                {imageUri ? (
+                  <Image source={{ uri: imageUri }} style={styles.imagePreview} resizeMode="cover" />
+                ) : (
+                  <View style={styles.imagePickerPlaceholder}>
+                    <Feather name="camera" size={24} color={colors.mutedForeground} />
+                    <Text style={{ color: colors.mutedForeground, fontSize: 11, marginTop: 4 }}>Add Photo</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              {imageUri && (
+                <TouchableOpacity onPress={() => setImageUri(undefined)} style={[styles.removeImageBtn, { borderColor: colors.destructive, borderRadius: colors.radius }]}>
+                  <Feather name="trash-2" size={14} color={colors.destructive} />
+                  <Text style={{ color: colors.destructive, fontSize: 12, marginLeft: 6 }}>Remove</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Color {imageUri ? "(fallback)" : ""}</Text>
             <View style={styles.colorRow}>
               {PRODUCT_COLORS.map((c) => (
                 <TouchableOpacity key={c} onPress={() => setSelectedColor(c)} style={[styles.colorSwatch, { backgroundColor: c }, selectedColor === c && styles.colorSwatchSelected]}>
@@ -305,7 +361,8 @@ const styles = StyleSheet.create({
   emptyContainer: { flex: 1 },
   grid: { padding: 10, paddingBottom: 100 },
   productCard: { flex: 1, margin: 5, overflow: "hidden", borderWidth: 1, minWidth: 100 },
-  productColorBand: { height: 70, alignItems: "center", justifyContent: "center" },
+  productColorBand: { height: 70, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  productImage: { width: "100%", height: "100%", position: "absolute" },
   productInitial: { fontSize: 28, fontWeight: "700", color: "rgba(255,255,255,0.9)", fontFamily: "Inter_700Bold" },
   barcodeTag: { position: "absolute", top: 6, right: 6, backgroundColor: "rgba(0,0,0,0.35)", borderRadius: 4, padding: 3 },
   outBadge: { position: "absolute", bottom: 6, right: 6, backgroundColor: "#E74C3C", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
@@ -334,4 +391,9 @@ const styles = StyleSheet.create({
   barcodeInput: { flex: 1 },
   scanIconBtn: { width: 46, height: 46, alignItems: "center", justifyContent: "center" },
   barcodePreview: { flexDirection: "row", alignItems: "center", marginTop: 8 },
+  imagePickerRow: { flexDirection: "row", alignItems: "flex-end", gap: 12, marginBottom: 4 },
+  imagePickerBtn: { width: 90, height: 90, borderWidth: 1, overflow: "hidden", alignItems: "center", justifyContent: "center" },
+  imagePreview: { width: "100%", height: "100%" },
+  imagePickerPlaceholder: { alignItems: "center", justifyContent: "center" },
+  removeImageBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1 },
 });

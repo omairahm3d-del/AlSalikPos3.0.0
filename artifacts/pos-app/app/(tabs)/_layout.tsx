@@ -34,6 +34,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "cube.box", selected: "cube.box.fill" }} />
         <Label>Products</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="backoffice">
+        <Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
+        <Label>Back Office</Label>
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
@@ -126,6 +130,18 @@ function ClassicTabLayout() {
               <SymbolView name="cube.box" tintColor={color} size={24} />
             ) : (
               <Feather name="package" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="backoffice"
+        options={{
+          title: "Back Office",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="gearshape" tintColor={color} size={24} />
+            ) : (
+              <Feather name="settings" size={22} color={color} />
             ),
         }}
       />

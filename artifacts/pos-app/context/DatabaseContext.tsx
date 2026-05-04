@@ -1,11 +1,11 @@
 import React, { useCallback } from "react";
 import { useSQLiteContext } from "expo-sqlite";
 import type {
-  BusinessSettings, CartItem, CreditPayment, Customer,
+  BusinessSettings, CartItem, Category, CreditPayment, Customer,
   PosTable, Product, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
 } from "@/types";
-import { VAT_RATE } from "@/types";
+import { DEFAULT_BUSINESS_SETTINGS, VAT_RATE } from "@/types";
 import { generateId, generateInvoiceNumber } from "@/lib/database";
 import { DatabaseContext, type SaleOptions } from "./DatabaseCore";
 
@@ -19,22 +19,23 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       description: r.description ?? "", colorHex: r.color_hex ?? "#4F8EF7",
       barcode: r.barcode ?? undefined, stockQuantity: r.stock_quantity ?? 999,
       taxGroupId: r.tax_group_id ?? undefined, lowStockThreshold: r.low_stock_threshold ?? 10,
+      imageUri: r.image_uri ?? undefined,
     }));
   }, [db]);
 
   const createProduct = useCallback(async (product: Omit<Product, "id">): Promise<Product> => {
     const id = generateId();
     await db.runAsync(
-      "INSERT INTO products (id, name, category, price, description, color_hex, barcode, stock_quantity, tax_group_id, low_stock_threshold) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [id, product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.taxGroupId ?? null, product.lowStockThreshold]
+      "INSERT INTO products (id, name, category, price, description, color_hex, barcode, stock_quantity, tax_group_id, low_stock_threshold, image_uri) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [id, product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null]
     );
     return { ...product, id };
   }, [db]);
 
   const updateProduct = useCallback(async (product: Product): Promise<void> => {
     await db.runAsync(
-      "UPDATE products SET name=?, category=?, price=?, description=?, color_hex=?, barcode=?, stock_quantity=?, tax_group_id=?, low_stock_threshold=? WHERE id=?",
-      [product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.taxGroupId ?? null, product.lowStockThreshold, product.id]
+      "UPDATE products SET name=?, category=?, price=?, description=?, color_hex=?, barcode=?, stock_quantity=?, tax_group_id=?, low_stock_threshold=?, image_uri=? WHERE id=?",
+      [product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.id]
     );
   }, [db]);
 
@@ -230,16 +231,32 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
 
   const loadBusinessSettings = useCallback(async (): Promise<BusinessSettings> => {
     const rows = await db.getAllAsync<{ key: string; value: string }>(
-      "SELECT key, value FROM settings WHERE key IN ('businessName','trn','address','phone','email','loyaltyPointsPerAed','loyaltyRedemptionRate')"
+      "SELECT key, value FROM settings"
     );
     const map: Record<string, string> = {};
     rows.forEach((r) => { map[r.key] = r.value; });
-    return {
+
+    const base: BusinessSettings = {
       businessName: map.businessName ?? "", trn: map.trn ?? "",
       address: map.address ?? "", phone: map.phone ?? "", email: map.email ?? "",
       loyaltyPointsPerAed: parseFloat(map.loyaltyPointsPerAed || "1"),
       loyaltyRedemptionRate: parseFloat(map.loyaltyRedemptionRate || "0.01"),
     };
+
+    if (map.receiptDesign) {
+      try { base.receiptDesign = JSON.parse(map.receiptDesign); } catch {}
+    }
+    if (map.printerSettings) {
+      try { base.printerSettings = JSON.parse(map.printerSettings); } catch {}
+    }
+    if (map.kotSettings) {
+      try { base.kotSettings = JSON.parse(map.kotSettings); } catch {}
+    }
+    if (map.customerDisplay) {
+      try { base.customerDisplay = JSON.parse(map.customerDisplay); } catch {}
+    }
+
+    return base;
   }, [db]);
 
   const saveBusinessSettings = useCallback(async (settings: BusinessSettings): Promise<void> => {
@@ -249,6 +266,18 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       ["loyaltyPointsPerAed", String(settings.loyaltyPointsPerAed)],
       ["loyaltyRedemptionRate", String(settings.loyaltyRedemptionRate)],
     ];
+    if (settings.receiptDesign) {
+      entries.push(["receiptDesign", JSON.stringify(settings.receiptDesign)]);
+    }
+    if (settings.printerSettings) {
+      entries.push(["printerSettings", JSON.stringify(settings.printerSettings)]);
+    }
+    if (settings.kotSettings) {
+      entries.push(["kotSettings", JSON.stringify(settings.kotSettings)]);
+    }
+    if (settings.customerDisplay) {
+      entries.push(["customerDisplay", JSON.stringify(settings.customerDisplay)]);
+    }
     for (const [key, value] of entries) {
       await db.runAsync("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", [key, value]);
     }
@@ -386,6 +415,34 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     await db.runAsync("DELETE FROM tax_groups WHERE id=?", [id]);
   }, [db]);
 
+  const loadCategories = useCallback(async (): Promise<Category[]> => {
+    const rows = await db.getAllAsync<any>("SELECT * FROM categories ORDER BY sort_order ASC, name ASC");
+    return rows.map((r: any) => ({
+      id: r.id, name: r.name, colorHex: r.color_hex ?? "#4F8EF7",
+      imageUri: r.image_uri ?? undefined, sortOrder: r.sort_order ?? 0,
+    }));
+  }, [db]);
+
+  const createCategory = useCallback(async (category: Omit<Category, "id">): Promise<Category> => {
+    const id = generateId();
+    await db.runAsync(
+      "INSERT INTO categories (id, name, color_hex, image_uri, sort_order) VALUES (?,?,?,?,?)",
+      [id, category.name, category.colorHex, category.imageUri ?? null, category.sortOrder]
+    );
+    return { ...category, id };
+  }, [db]);
+
+  const updateCategory = useCallback(async (category: Category): Promise<void> => {
+    await db.runAsync(
+      "UPDATE categories SET name=?, color_hex=?, image_uri=?, sort_order=? WHERE id=?",
+      [category.name, category.colorHex, category.imageUri ?? null, category.sortOrder, category.id]
+    );
+  }, [db]);
+
+  const deleteCategory = useCallback(async (id: string): Promise<void> => {
+    await db.runAsync("DELETE FROM categories WHERE id=?", [id]);
+  }, [db]);
+
   const loadSplitPayments = useCallback(async (saleId: string): Promise<SplitPaymentEntry[]> => {
     const rows = await db.getAllAsync<any>("SELECT * FROM split_payments WHERE sale_id=?", [saleId]);
     return rows.map((r: any) => ({ method: r.method, amount: r.amount }));
@@ -418,6 +475,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       loadStaff, createStaff, updateStaff, deleteStaff, authenticateStaff,
       loadTables, createTable, updateTable, deleteTable, setTableStatus,
       loadTaxGroups, createTaxGroup, updateTaxGroup, deleteTaxGroup,
+      loadCategories, createCategory, updateCategory, deleteCategory,
       loadSplitPayments, saveZReport, loadZReports,
     }}>
       {children}
