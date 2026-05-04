@@ -111,6 +111,19 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     return { ...sale, items: allItems.filter((i) => i.saleId === saleId) };
   }, []);
 
+  const loadSalesWithItemsByDateRange = useCallback(
+    async (startMs: number, endMs: number): Promise<{ sales: Sale[]; items: SaleItem[] }> => {
+      const allSales = await getAllSales();
+      const sales = allSales.filter((s) => s.createdAt >= startMs && s.createdAt < endMs);
+      if (sales.length === 0) return { sales, items: [] };
+      const saleIds = new Set(sales.map((s) => s.id));
+      const allItems = await getAllSaleItems();
+      const items = allItems.filter((i) => saleIds.has(i.saleId));
+      return { sales, items };
+    },
+    []
+  );
+
   return (
     <DatabaseContext.Provider
       value={{
@@ -121,6 +134,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
         saveSale,
         loadSales,
         loadSaleWithItems,
+        loadSalesWithItemsByDateRange,
       }}
     >
       {children}

@@ -38,23 +38,34 @@ Mobile-first Point of Sale app built with Expo (SDK 54) and React Native.
   - Products screen: assign mode to link a barcode to any product
 - **Shopping cart** with 20% VAT calculation, subtotal, grand total
 - **Sales history** with per-day grouping and stats
+- **Daily sales report** — date-navigable report with revenue, transactions, avg order, VAT, hourly sales chart, top-selling products, revenue by category, payment method breakdown
 - **Dark UI theme** (`#0F1117` background) — designed for 10-inch tablets
 - **Split-panel layout** on screens ≥768px wide; single-panel + bottom cart bar on mobile
+
+### Tabs
+1. **Register** (`index.tsx`) — POS grid + cart + barcode scan
+2. **History** (`history.tsx`) — transaction list with today's stats
+3. **Reports** (`reports.tsx`) — daily sales report with date navigation
+4. **Products** (`products.tsx`) — CRUD product management + barcode assignment
 
 ### Key Files
 - `types/index.ts` — Product (includes optional `barcode`), CartItem, Sale, SaleItem interfaces
 - `lib/database.ts` — SQLite init + barcode column migration
-- `context/DatabaseCore.ts` — shared context + `useDatabase()` hook
+- `context/DatabaseCore.ts` — shared context + `useDatabase()` hook (includes `loadSalesWithItemsByDateRange`)
 - `context/DatabaseContext.tsx` — SQLite (native) provider: `NativeDatabaseProvider`
 - `context/WebDatabaseProvider.tsx` — AsyncStorage (web) provider
 - `context/DatabaseProvider.native.tsx` / `.web.tsx` — platform dispatch
 - `context/CartContext.tsx` — cart reducer with VAT
 - `components/BarcodeScannerModal.tsx` — full-screen camera scanner with viewfinder UI
-- `app/(tabs)/index.tsx` — Register screen (split-panel POS + scan button)
-- `app/(tabs)/history.tsx` — Sales history
-- `app/(tabs)/products.tsx` — Product management with barcode assignment
+
+### APK Build (Android)
+- EAS CLI installed (`eas-cli` in devDependencies)
+- Config: `eas.json` with `preview` profile (APK) and `production` profile (AAB)
+- Build command: `cd artifacts/pos-app && pnpm exec eas build --platform android --profile preview`
+- Requires free Expo account — run `pnpm exec eas login` first
 
 ### Platform Notes
 - Barcode scanning requires a physical device (Expo Go on Android/iOS)
 - Web preview shows "Camera unavailable" fallback in the scanner modal
-- `metro.config.js` blocks barcode-detector temp dirs to prevent Metro watcher crash
+- `metro.config.js` blocks `_tmp_` dirs to prevent Metro watcher crash
+- Tab bar uses normal flow positioning (not absolute) to avoid content overlap

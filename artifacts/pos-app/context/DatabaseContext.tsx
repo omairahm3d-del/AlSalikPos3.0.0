@@ -156,9 +156,60 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     [db]
   );
 
+  const loadSalesWithItemsByDateRange = useCallback(
+    async (startMs: number, endMs: number): Promise<{ sales: Sale[]; items: SaleItem[] }> => {
+      const saleRows = await db.getAllAsync<{
+        id: string;
+        created_at: number;
+        subtotal: number;
+        vat_rate: number;
+        vat_amount: number;
+        total: number;
+        payment_method: string;
+      }>("SELECT * FROM sales WHERE created_at >= ? AND created_at < ? ORDER BY created_at DESC", [startMs, endMs]);
+
+      const sales: Sale[] = saleRows.map((r) => ({
+        id: r.id,
+        createdAt: r.created_at,
+        subtotal: r.subtotal,
+        vatRate: r.vat_rate,
+        vatAmount: r.vat_amount,
+        total: r.total,
+        paymentMethod: r.payment_method,
+      }));
+
+      if (sales.length === 0) return { sales, items: [] };
+
+      const ids = sales.map((s) => s.id);
+      const placeholders = ids.map(() => "?").join(",");
+      const itemRows = await db.getAllAsync<{
+        id: string;
+        sale_id: string;
+        product_id: string;
+        product_name: string;
+        product_price: number;
+        quantity: number;
+        line_total: number;
+      }>(`SELECT * FROM sale_items WHERE sale_id IN (${placeholders})`, ids);
+
+      const items: SaleItem[] = itemRows.map((i) => ({
+        id: i.id,
+        saleId: i.sale_id,
+        productId: i.product_id,
+        productName: i.product_name,
+        productPrice: i.product_price,
+        quantity: i.quantity,
+        lineTotal: i.line_total,
+      }));
+
+      return { sales, items };
+    },
+    [db]
+  );
+
   return (
     <DatabaseContext.Provider
-      value={{ loadProducts, createProduct, updateProduct, deleteProduct, saveSale, loadSales, loadSaleWithItems }}
+      value={{ loadProducts, createProduct, updateProduct, deleteProduct, saveSale, loadSales, loadSaleWithItems, loadSalesWithItemsByDateRange }}
     >
       {children}
     </DatabaseContext.Provider>

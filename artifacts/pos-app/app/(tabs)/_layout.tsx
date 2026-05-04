@@ -18,6 +18,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "clock", selected: "clock.fill" }} />
         <Label>History</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="reports">
+        <Icon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
+        <Label>Reports</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="products">
         <Icon sf={{ default: "cube.box", selected: "cube.box.fill" }} />
         <Label>Products</Label>
@@ -66,6 +70,18 @@ function ClassicTabLayout() {
               <SymbolView name="clock" tintColor={color} size={24} />
             ) : (
               <Feather name="clock" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="reports"
+        options={{
+          title: "Reports",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="chart.bar" tintColor={color} size={24} />
+            ) : (
+              <Feather name="bar-chart-2" size={22} color={color} />
             ),
         }}
       />

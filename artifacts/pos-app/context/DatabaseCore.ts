@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { CartItem, Product, Sale } from "@/types";
+import type { CartItem, Product, Sale, SaleItem } from "@/types";
 
 export interface DatabaseContextValue {
   loadProducts: () => Promise<Product[]>;
@@ -9,6 +9,7 @@ export interface DatabaseContextValue {
   saveSale: (items: CartItem[], paymentMethod: string) => Promise<Sale>;
   loadSales: () => Promise<Sale[]>;
   loadSaleWithItems: (saleId: string) => Promise<Sale | null>;
+  loadSalesWithItemsByDateRange: (startMs: number, endMs: number) => Promise<{ sales: Sale[]; items: SaleItem[] }>;
 }
 
 export const DatabaseContext = createContext<DatabaseContextValue | null>(null);

@@ -5,10 +5,9 @@ const config = getDefaultConfig(__dirname);
 
 config.resolver.assetExts.push("wasm");
 
-// Block Metro from watching temp dirs created by barcode-detector during install
-const barcodeDetectorTmpPattern = /barcode-detector[^/]*_tmp_\d+/;
+const tmpDirPattern = /[^/]+_tmp_\d+/;
 config.watchFolders = (config.watchFolders ?? []).filter(
-  (folder) => !barcodeDetectorTmpPattern.test(folder)
+  (folder) => !tmpDirPattern.test(folder)
 );
 const defaultBlockList = config.resolver.blockList
   ? Array.isArray(config.resolver.blockList)
@@ -17,7 +16,7 @@ const defaultBlockList = config.resolver.blockList
   : [];
 config.resolver.blockList = [
   ...defaultBlockList,
-  new RegExp(barcodeDetectorTmpPattern.source),
+  tmpDirPattern,
 ];
 
 module.exports = config;
