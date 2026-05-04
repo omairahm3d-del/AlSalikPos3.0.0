@@ -10,6 +10,14 @@ export interface Product {
   taxGroupId?: string;
   lowStockThreshold: number;
   imageUri?: string;
+  printerId?: string;
+}
+
+export interface PrinterConfig {
+  id: string;
+  name: string;
+  ipAddress: string;
+  type: "receipt" | "kitchen" | "both";
 }
 
 export interface Category {
@@ -191,6 +199,9 @@ export interface PrinterSettings {
   autoPrintKOT: boolean;
   printMethod: "system" | "direct";
   printerIp: string;
+  printers: PrinterConfig[];
+  defaultReceiptPrinterId: string;
+  defaultKOTPrinterId: string;
 }
 
 export interface KOTSettings {
@@ -305,6 +316,9 @@ export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
   autoPrintKOT: false,
   printMethod: "system",
   printerIp: "",
+  printers: [],
+  defaultReceiptPrinterId: "",
+  defaultKOTPrinterId: "",
 };
 
 export const DEFAULT_KOT_SETTINGS: KOTSettings = {

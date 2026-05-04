@@ -29,6 +29,7 @@ import type {
   CustomerDisplaySettings,
   Ingredient,
   KOTSettings,
+  PrinterConfig,
   PrinterSettings,
   Product,
   RecipeIngredient,
@@ -553,6 +554,57 @@ export default function BackOfficeScreen() {
     );
   };
 
+  const [showPrinterModal, setShowPrinterModal] = useState(false);
+  const [editingPrinter, setEditingPrinter] = useState<PrinterConfig | null>(null);
+  const [printerNameInput, setPrinterNameInput] = useState("");
+  const [printerIpInput, setPrinterIpInput] = useState("");
+  const [printerTypeInput, setPrinterTypeInput] = useState<PrinterConfig["type"]>("both");
+
+  const openAddPrinter = () => {
+    setEditingPrinter(null);
+    setPrinterNameInput("");
+    setPrinterIpInput("");
+    setPrinterTypeInput("both");
+    setShowPrinterModal(true);
+  };
+
+  const openEditPrinter = (p: PrinterConfig) => {
+    setEditingPrinter(p);
+    setPrinterNameInput(p.name);
+    setPrinterIpInput(p.ipAddress);
+    setPrinterTypeInput(p.type);
+    setShowPrinterModal(true);
+  };
+
+  const handleSavePrinter = () => {
+    if (!printerNameInput.trim()) { Alert.alert("Invalid", "Printer name is required."); return; }
+    const printers = printerSettings.printers ?? [];
+    if (editingPrinter) {
+      const updated: PrinterConfig = { ...editingPrinter, name: printerNameInput.trim(), ipAddress: printerIpInput.trim(), type: printerTypeInput };
+      setPrinterSettings({ ...printerSettings, printers: printers.map((p) => p.id === editingPrinter.id ? updated : p) });
+    } else {
+      const newPrinter: PrinterConfig = { id: Date.now().toString(36) + Math.random().toString(36).substring(2, 7), name: printerNameInput.trim(), ipAddress: printerIpInput.trim(), type: printerTypeInput };
+      setPrinterSettings({ ...printerSettings, printers: [...printers, newPrinter] });
+    }
+    setShowPrinterModal(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const handleDeletePrinter = (p: PrinterConfig) => {
+    Alert.alert("Delete Printer", `Remove "${p.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => {
+        const printers = (printerSettings.printers ?? []).filter((pr) => pr.id !== p.id);
+        const updates: Partial<PrinterSettings> = { printers };
+        if (printerSettings.defaultReceiptPrinterId === p.id) updates.defaultReceiptPrinterId = "";
+        if (printerSettings.defaultKOTPrinterId === p.id) updates.defaultKOTPrinterId = "";
+        setPrinterSettings({ ...printerSettings, ...updates });
+      }},
+    ]);
+  };
+
+  const printerList = printerSettings.printers ?? [];
+
   const renderPrinterSettings = () => (
     <View style={s.sectionContent}>
       {renderHeader("Printer Settings")}
@@ -583,6 +635,78 @@ export default function BackOfficeScreen() {
         </View>
 
         {printerSettings.printMethod === "direct" && renderField("Printer IP Address", printerSettings.printerIp, (v) => setPrinterSettings({ ...printerSettings, printerIp: v }), "192.168.1.100")}
+
+        <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 24 }]}>Configured Printers</Text>
+        <Text style={[s.hintText, { color: colors.mutedForeground }]}>Add printers to assign to products for receipt or kitchen ticket printing</Text>
+
+        {printerList.length === 0 ? (
+          <View style={{ alignItems: "center", paddingVertical: 20 }}>
+            <Feather name="printer" size={32} color={colors.mutedForeground + "50"} />
+            <Text style={{ color: colors.mutedForeground, fontSize: 13, marginTop: 8 }}>No printers configured</Text>
+          </View>
+        ) : (
+          printerList.map((p) => (
+            <TouchableOpacity key={p.id} onPress={() => openEditPrinter(p)} style={[s.listItem, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, marginBottom: 8 }]}>
+              <View style={[s.cardIconWrap, { backgroundColor: "#9B59B6" + "18", width: 36, height: 36 }]}>
+                <Feather name="printer" size={16} color="#9B59B6" />
+              </View>
+              <View style={s.listItemInfo}>
+                <Text style={[s.listItemTitle, { color: colors.foreground }]}>{p.name}</Text>
+                <Text style={[s.listItemSub, { color: colors.mutedForeground }]}>
+                  {p.ipAddress || "No IP"} · {p.type === "receipt" ? "Receipt" : p.type === "kitchen" ? "Kitchen" : "Receipt & Kitchen"}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => handleDeletePrinter(p)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Feather name="trash-2" size={16} color={colors.destructive} />
+              </TouchableOpacity>
+            </TouchableOpacity>
+          ))
+        )}
+
+        <TouchableOpacity onPress={openAddPrinter} style={[s.chip, { borderColor: colors.primary, borderStyle: "dashed", alignSelf: "flex-start", marginTop: 8, borderRadius: colors.radius, flexDirection: "row", gap: 6 }]}>
+          <Feather name="plus" size={14} color={colors.primary} />
+          <Text style={{ color: colors.primary, fontWeight: "600" }}>Add Printer</Text>
+        </TouchableOpacity>
+
+        {printerList.length > 0 && (
+          <>
+            <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 24 }]}>Default Receipt Printer</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginBottom: 8 }}>
+              <TouchableOpacity
+                onPress={() => setPrinterSettings({ ...printerSettings, defaultReceiptPrinterId: "" })}
+                style={[s.chip, { backgroundColor: !printerSettings.defaultReceiptPrinterId ? colors.primary : colors.secondary, borderColor: !printerSettings.defaultReceiptPrinterId ? colors.primary : colors.border, borderRadius: colors.radius, marginRight: 8 }]}
+              >
+                <Text style={{ color: !printerSettings.defaultReceiptPrinterId ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 13 }}>None</Text>
+              </TouchableOpacity>
+              {printerList.filter((p) => p.type === "receipt" || p.type === "both").map((p) => (
+                <TouchableOpacity key={p.id}
+                  onPress={() => setPrinterSettings({ ...printerSettings, defaultReceiptPrinterId: p.id })}
+                  style={[s.chip, { backgroundColor: printerSettings.defaultReceiptPrinterId === p.id ? colors.primary : colors.secondary, borderColor: printerSettings.defaultReceiptPrinterId === p.id ? colors.primary : colors.border, borderRadius: colors.radius, marginRight: 8 }]}
+                >
+                  <Text style={{ color: printerSettings.defaultReceiptPrinterId === p.id ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 13 }}>{p.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 16 }]}>Default KOT Printer</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}>
+              <TouchableOpacity
+                onPress={() => setPrinterSettings({ ...printerSettings, defaultKOTPrinterId: "" })}
+                style={[s.chip, { backgroundColor: !printerSettings.defaultKOTPrinterId ? colors.primary : colors.secondary, borderColor: !printerSettings.defaultKOTPrinterId ? colors.primary : colors.border, borderRadius: colors.radius, marginRight: 8 }]}
+              >
+                <Text style={{ color: !printerSettings.defaultKOTPrinterId ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 13 }}>None</Text>
+              </TouchableOpacity>
+              {printerList.filter((p) => p.type === "kitchen" || p.type === "both").map((p) => (
+                <TouchableOpacity key={p.id}
+                  onPress={() => setPrinterSettings({ ...printerSettings, defaultKOTPrinterId: p.id })}
+                  style={[s.chip, { backgroundColor: printerSettings.defaultKOTPrinterId === p.id ? colors.primary : colors.secondary, borderColor: printerSettings.defaultKOTPrinterId === p.id ? colors.primary : colors.border, borderRadius: colors.radius, marginRight: 8 }]}
+                >
+                  <Text style={{ color: printerSettings.defaultKOTPrinterId === p.id ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 13 }}>{p.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </>
+        )}
 
         <TouchableOpacity onPress={() => saveSettings(undefined, printerSettings)} style={[s.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}>
           <Feather name="save" size={16} color="#fff" />
@@ -1037,6 +1161,32 @@ export default function BackOfficeScreen() {
                 Add ingredients in the Ingredients section first.
               </Text>
             )}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal visible={showPrinterModal} animationType="slide" presentationStyle="pageSheet">
+        <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[s.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={() => setShowPrinterModal(false)}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
+            <Text style={[s.modalTitle, { color: colors.foreground }]}>{editingPrinter ? "Edit Printer" : "New Printer"}</Text>
+            <TouchableOpacity onPress={handleSavePrinter}><Text style={{ color: colors.primary, fontWeight: "700", fontSize: 16 }}>Save</Text></TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={s.formContent}>
+            {renderField("Printer Name", printerNameInput, setPrinterNameInput, "e.g. Kitchen Printer 1")}
+            {renderField("IP Address", printerIpInput, setPrinterIpInput, "192.168.1.100")}
+
+            <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 8 }]}>Printer Type</Text>
+            <View style={s.chipRow}>
+              {(["receipt", "kitchen", "both"] as const).map((pt) => (
+                <TouchableOpacity key={pt} onPress={() => setPrinterTypeInput(pt)}
+                  style={[s.chip, { backgroundColor: printerTypeInput === pt ? colors.primary : colors.secondary, borderColor: printerTypeInput === pt ? colors.primary : colors.border, borderRadius: colors.radius }]}>
+                  <Text style={{ color: printerTypeInput === pt ? "#fff" : colors.mutedForeground, fontWeight: "600", textTransform: "capitalize" }}>
+                    {pt === "both" ? "Receipt & Kitchen" : pt === "receipt" ? "Receipt Only" : "Kitchen Only"}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>

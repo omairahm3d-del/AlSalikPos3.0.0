@@ -22,14 +22,18 @@ import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
 import { EmptyState } from "@/components/EmptyState";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
-import type { Category, Product, TaxGroup } from "@/types";
+import type { Category, Ingredient, PrinterConfig, Product, TaxGroup } from "@/types";
 import { CURRENCY, PRODUCT_COLORS, formatCurrency } from "@/types";
 
 export default function ProductsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { loadProducts, createProduct, updateProduct, deleteProduct, loadTaxGroups, loadCategories } = useDatabase();
+  const {
+    loadProducts, createProduct, updateProduct, deleteProduct,
+    loadTaxGroups, loadCategories, loadBusinessSettings,
+    loadIngredients, loadRecipeIngredients, saveRecipeIngredients,
+  } = useDatabase();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [taxGroups, setTaxGroups] = useState<TaxGroup[]>([]);
@@ -51,6 +55,13 @@ export default function ProductsScreen() {
   const [lowStockThreshold, setLowStockThreshold] = useState("10");
   const [selectedTaxGroupId, setSelectedTaxGroupId] = useState<string | undefined>(undefined);
   const [imageUri, setImageUri] = useState<string | undefined>(undefined);
+  const [selectedPrinterId, setSelectedPrinterId] = useState<string | undefined>(undefined);
+
+  const [printerConfigs, setPrinterConfigs] = useState<PrinterConfig[]>([]);
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [recipeItems, setRecipeItems] = useState<{ ingredientId: string; ingredientName: string; quantity: number }[]>([]);
+  const [recipeIngId, setRecipeIngId] = useState("");
+  const [recipeIngQty, setRecipeIngQty] = useState("");
 
   const pickImage = async () => {
     try {
@@ -81,13 +92,17 @@ export default function ProductsScreen() {
   };
 
   const fetchProducts = useCallback(async () => {
-    const [data, groups, cats] = await Promise.all([loadProducts(), loadTaxGroups(), loadCategories()]);
+    const [data, groups, cats, biz, ings] = await Promise.all([
+      loadProducts(), loadTaxGroups(), loadCategories(), loadBusinessSettings(), loadIngredients(),
+    ]);
     setProducts(data);
     setTaxGroups(groups);
     const catNames = cats.length > 0 ? cats.map((c: Category) => c.name) : ["Beverages", "Food", "Snacks", "Desserts"];
     setCategoryOptions(catNames);
+    setPrinterConfigs(biz.printerSettings?.printers ?? []);
+    setIngredients(ings);
     setLoading(false);
-  }, [loadProducts, loadTaxGroups, loadCategories]);
+  }, [loadProducts, loadTaxGroups, loadCategories, loadBusinessSettings, loadIngredients]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
@@ -109,17 +124,34 @@ export default function ProductsScreen() {
     setName(""); setCategory(categoryOptions[0] ?? ""); setPrice(""); setDescription("");
     setSelectedColor(PRODUCT_COLORS[0]); setBarcode(""); setStockQty("999");
     setLowStockThreshold("10"); setSelectedTaxGroupId(undefined); setImageUri(undefined);
+    setSelectedPrinterId(undefined);
+    setRecipeItems([]); setRecipeIngId(""); setRecipeIngQty("");
     setModalVisible(true);
   };
 
-  const openEdit = (product: Product) => {
+  const openEdit = async (product: Product) => {
     setEditingProduct(product);
     setName(product.name); setCategory(product.category); setPrice(product.price.toFixed(2));
     setDescription(product.description); setSelectedColor(product.colorHex);
     setBarcode(product.barcode ?? ""); setStockQty(String(product.stockQuantity));
     setLowStockThreshold(String(product.lowStockThreshold));
     setSelectedTaxGroupId(product.taxGroupId); setImageUri(product.imageUri);
+    setSelectedPrinterId(product.printerId);
+    const items = await loadRecipeIngredients(product.id);
+    setRecipeItems(items.map((ri) => ({ ingredientId: ri.ingredientId, ingredientName: ri.ingredientName ?? "", quantity: ri.quantity })));
+    setRecipeIngId(""); setRecipeIngQty("");
     setModalVisible(true);
+  };
+
+  const handleAddRecipeItem = () => {
+    if (!recipeIngId) return;
+    const qty = parseFloat(recipeIngQty);
+    if (isNaN(qty) || qty <= 0) { Alert.alert("Invalid", "Enter a valid quantity."); return; }
+    if (recipeItems.some((r) => r.ingredientId === recipeIngId)) { Alert.alert("Duplicate", "This ingredient is already added."); return; }
+    const ing = ingredients.find((i) => i.id === recipeIngId);
+    if (!ing) return;
+    setRecipeItems((prev) => [...prev, { ingredientId: ing.id, ingredientName: ing.name, quantity: qty }]);
+    setRecipeIngId(""); setRecipeIngQty("");
   };
 
   const handleSave = async () => {
@@ -132,20 +164,31 @@ export default function ProductsScreen() {
     const threshold = parseInt(lowStockThreshold, 10) || 10;
     const barcodeVal = barcode.trim() || undefined;
 
+    let productId: string;
     if (editingProduct) {
       await updateProduct({
         ...editingProduct,
         name: name.trim(), category, price: priceNum, description: description.trim(),
         colorHex: selectedColor, barcode: barcodeVal, stockQuantity: stock,
         lowStockThreshold: threshold, taxGroupId: selectedTaxGroupId, imageUri,
+        printerId: selectedPrinterId,
       });
+      productId = editingProduct.id;
     } else {
-      await createProduct({
+      const created = await createProduct({
         name: name.trim(), category, price: priceNum, description: description.trim(),
         colorHex: selectedColor, barcode: barcodeVal, stockQuantity: stock,
         lowStockThreshold: threshold, taxGroupId: selectedTaxGroupId, imageUri,
+        printerId: selectedPrinterId,
       });
+      productId = created.id;
     }
+    await saveRecipeIngredients(productId, recipeItems.map((ri) => ({
+      productId,
+      ingredientId: ri.ingredientId,
+      ingredientName: ri.ingredientName,
+      quantity: ri.quantity,
+    })));
     setModalVisible(false);
     await fetchProducts();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -161,9 +204,15 @@ export default function ProductsScreen() {
   const numColumns = width >= 1200 ? 5 : width >= 900 ? 4 : width >= 600 ? 3 : 2;
   const topPadding = Platform.OS === "web" ? insets.top + 8 : 0;
 
+  const getPrinterName = (id?: string) => {
+    if (!id) return undefined;
+    return printerConfigs.find((p) => p.id === id)?.name;
+  };
+
   const renderProduct = ({ item }: { item: Product }) => {
     const isLow = item.stockQuantity <= item.lowStockThreshold && item.stockQuantity > 0;
     const isOut = item.stockQuantity <= 0;
+    const pName = getPrinterName(item.printerId);
     return (
       <TouchableOpacity
         onPress={() => openEdit(item)}
@@ -180,6 +229,11 @@ export default function ProductsScreen() {
           {item.barcode && (
             <View style={styles.barcodeTag}>
               <Feather name="maximize" size={9} color="rgba(255,255,255,0.8)" />
+            </View>
+          )}
+          {pName && (
+            <View style={styles.printerTag}>
+              <Feather name="printer" size={8} color="rgba(255,255,255,0.9)" />
             </View>
           )}
           {isOut && (
@@ -295,6 +349,24 @@ export default function ProductsScreen() {
               </>
             )}
 
+            {printerConfigs.length > 0 && (
+              <>
+                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Printer</Text>
+                <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 8 }}>Assign a printer for this product's orders</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips}>
+                  <TouchableOpacity onPress={() => setSelectedPrinterId(undefined)} style={[styles.chip, { backgroundColor: !selectedPrinterId ? colors.primary : colors.secondary, borderColor: !selectedPrinterId ? colors.primary : colors.border, borderRadius: colors.radius }]}>
+                    <Text style={{ color: !selectedPrinterId ? "#fff" : colors.mutedForeground, fontWeight: "600" }}>Default</Text>
+                  </TouchableOpacity>
+                  {printerConfigs.map((p) => (
+                    <TouchableOpacity key={p.id} onPress={() => setSelectedPrinterId(p.id)} style={[styles.chip, { backgroundColor: selectedPrinterId === p.id ? colors.primary : colors.secondary, borderColor: selectedPrinterId === p.id ? colors.primary : colors.border, borderRadius: colors.radius }]}>
+                      <Feather name="printer" size={12} color={selectedPrinterId === p.id ? "#fff" : colors.mutedForeground} style={{ marginRight: 4 }} />
+                      <Text style={{ color: selectedPrinterId === p.id ? "#fff" : colors.mutedForeground, fontWeight: "600" }}>{p.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            )}
+
             <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Description (optional)</Text>
             <TextInput value={description} onChangeText={setDescription} placeholder="Short description" placeholderTextColor={colors.mutedForeground} multiline numberOfLines={2} style={[styles.input, styles.textArea, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]} />
 
@@ -341,6 +413,75 @@ export default function ProductsScreen() {
                 <TouchableOpacity onPress={() => setBarcode("")} style={{ marginLeft: "auto" }}><Feather name="x" size={13} color={colors.mutedForeground} /></TouchableOpacity>
               </View>
             ) : null}
+
+            <View style={[styles.ingredientSection, { borderColor: colors.border, borderRadius: colors.radius, marginTop: 24 }]}>
+              <View style={styles.ingredientHeader}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <View style={[styles.ingredientIconWrap, { backgroundColor: "#8E44AD" + "18" }]}>
+                    <Feather name="book-open" size={14} color="#8E44AD" />
+                  </View>
+                  <Text style={[styles.ingredientTitle, { color: colors.foreground }]}>Ingredients</Text>
+                </View>
+                <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{recipeItems.length} item{recipeItems.length !== 1 ? "s" : ""}</Text>
+              </View>
+
+              {recipeItems.length > 0 && (
+                <View style={{ paddingHorizontal: 12 }}>
+                  {recipeItems.map((ri, idx) => (
+                    <View key={ri.ingredientId} style={[styles.recipeItemRow, { borderColor: colors.border }]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: "600" }}>{ri.ingredientName}</Text>
+                        <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>
+                          {ri.quantity} {ingredients.find((i) => i.id === ri.ingredientId)?.unit ?? ""}
+                        </Text>
+                      </View>
+                      <TouchableOpacity onPress={() => setRecipeItems((prev) => prev.filter((_, i) => i !== idx))} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                        <Feather name="x-circle" size={16} color={colors.destructive} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {ingredients.length > 0 ? (
+                <View style={{ padding: 12 }}>
+                  <Text style={{ color: colors.mutedForeground, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Add Ingredient</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                    {ingredients.filter((i) => !recipeItems.some((r) => r.ingredientId === i.id)).map((ing) => (
+                      <TouchableOpacity
+                        key={ing.id}
+                        onPress={() => setRecipeIngId(ing.id)}
+                        style={[styles.chip, { borderColor: recipeIngId === ing.id ? colors.primary : colors.border, backgroundColor: recipeIngId === ing.id ? colors.primary + "18" : "transparent", borderRadius: colors.radius, marginRight: 6 }]}
+                      >
+                        <Text style={{ color: recipeIngId === ing.id ? colors.primary : colors.mutedForeground, fontSize: 11, fontWeight: "600" }}>{ing.name} ({ing.unit})</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                  {recipeIngId !== "" && (
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      <TextInput
+                        value={recipeIngQty}
+                        onChangeText={setRecipeIngQty}
+                        placeholder="Qty"
+                        placeholderTextColor={colors.mutedForeground}
+                        keyboardType="decimal-pad"
+                        style={[styles.input, { flex: 1, backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius, paddingVertical: 10 }]}
+                      />
+                      <TouchableOpacity onPress={handleAddRecipeItem} style={[styles.addIngBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}>
+                        <Feather name="plus" size={14} color="#fff" />
+                        <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>Add</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              ) : (
+                <View style={{ padding: 12, alignItems: "center" }}>
+                  <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>
+                    Add ingredients in Back Office first
+                  </Text>
+                </View>
+              )}
+            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
@@ -365,6 +506,7 @@ const styles = StyleSheet.create({
   productImage: { width: "100%", height: "100%", position: "absolute" },
   productInitial: { fontSize: 28, fontWeight: "700", color: "rgba(255,255,255,0.9)", fontFamily: "Inter_700Bold" },
   barcodeTag: { position: "absolute", top: 6, right: 6, backgroundColor: "rgba(0,0,0,0.35)", borderRadius: 4, padding: 3 },
+  printerTag: { position: "absolute", top: 6, left: 6, backgroundColor: "rgba(155,89,182,0.5)", borderRadius: 4, padding: 3 },
   outBadge: { position: "absolute", bottom: 6, right: 6, backgroundColor: "#E74C3C", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
   outBadgeText: { color: "#fff", fontSize: 9, fontWeight: "700", letterSpacing: 0.5 },
   productInfo: { padding: 10 },
@@ -382,7 +524,7 @@ const styles = StyleSheet.create({
   input: { paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, borderWidth: 1 },
   textArea: { minHeight: 70, paddingTop: 12, textAlignVertical: "top" },
   chips: { flexGrow: 0 },
-  chip: { paddingHorizontal: 16, paddingVertical: 9, borderWidth: 1, marginRight: 8 },
+  chip: { paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, marginRight: 8, flexDirection: "row", alignItems: "center" },
   row: { flexDirection: "row", gap: 12 },
   colorRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   colorSwatch: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
@@ -396,4 +538,10 @@ const styles = StyleSheet.create({
   imagePreview: { width: "100%", height: "100%" },
   imagePickerPlaceholder: { alignItems: "center", justifyContent: "center" },
   removeImageBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1 },
+  ingredientSection: { borderWidth: 1, overflow: "hidden" },
+  ingredientHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 0 },
+  ingredientIconWrap: { width: 28, height: 28, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  ingredientTitle: { fontSize: 14, fontWeight: "700" },
+  recipeItemRow: { flexDirection: "row", alignItems: "center", paddingVertical: 8, borderBottomWidth: 0.5, gap: 8 },
+  addIngBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingHorizontal: 16, gap: 4 },
 });

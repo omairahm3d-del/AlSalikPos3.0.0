@@ -20,23 +20,23 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       description: r.description ?? "", colorHex: r.color_hex ?? "#4F8EF7",
       barcode: r.barcode ?? undefined, stockQuantity: r.stock_quantity ?? 999,
       taxGroupId: r.tax_group_id ?? undefined, lowStockThreshold: r.low_stock_threshold ?? 10,
-      imageUri: r.image_uri ?? undefined,
+      imageUri: r.image_uri ?? undefined, printerId: r.printer_id ?? undefined,
     }));
   }, [db]);
 
   const createProduct = useCallback(async (product: Omit<Product, "id">): Promise<Product> => {
     const id = generateId();
     await db.runAsync(
-      "INSERT INTO products (id, name, category, price, description, color_hex, barcode, stock_quantity, tax_group_id, low_stock_threshold, image_uri) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [id, product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null]
+      "INSERT INTO products (id, name, category, price, description, color_hex, barcode, stock_quantity, tax_group_id, low_stock_threshold, image_uri, printer_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [id, product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null]
     );
     return { ...product, id };
   }, [db]);
 
   const updateProduct = useCallback(async (product: Product): Promise<void> => {
     await db.runAsync(
-      "UPDATE products SET name=?, category=?, price=?, description=?, color_hex=?, barcode=?, stock_quantity=?, tax_group_id=?, low_stock_threshold=?, image_uri=? WHERE id=?",
-      [product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.id]
+      "UPDATE products SET name=?, category=?, price=?, description=?, color_hex=?, barcode=?, stock_quantity=?, tax_group_id=?, low_stock_threshold=?, image_uri=?, printer_id=? WHERE id=?",
+      [product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, product.id]
     );
   }, [db]);
 

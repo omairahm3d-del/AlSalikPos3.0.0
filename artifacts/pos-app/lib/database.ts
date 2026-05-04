@@ -222,6 +222,7 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     "ALTER TABLE sales ADD COLUMN order_type TEXT DEFAULT NULL",
     "ALTER TABLE sales ADD COLUMN rider_id TEXT DEFAULT NULL",
     "ALTER TABLE sales ADD COLUMN rider_name TEXT DEFAULT NULL",
+    "ALTER TABLE products ADD COLUMN printer_id TEXT DEFAULT NULL",
   ];
 
   for (const sql of migrations) {
