@@ -1,0 +1,271 @@
+import React, { useCallback, useState } from "react";
+import {
+  Alert,
+  FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from "react-native";
+import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
+import { useFocusEffect } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useDatabase } from "@/context/DatabaseCore";
+import { useColors } from "@/hooks/useColors";
+import type { PosTable } from "@/types";
+
+const STATUS_COLORS: Record<string, { bg: string; fg: string; label: string }> = {
+  available: { bg: "#2ECC71", fg: "#fff", label: "Available" },
+  occupied: { bg: "#E74C3C", fg: "#fff", label: "Occupied" },
+  reserved: { bg: "#F39C12", fg: "#fff", label: "Reserved" },
+};
+
+export default function TablesScreen() {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const { loadTables, createTable, updateTable, deleteTable, setTableStatus } = useDatabase();
+
+  const [tables, setTables] = useState<PosTable[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showEditor, setShowEditor] = useState(false);
+  const [editingTable, setEditingTable] = useState<PosTable | null>(null);
+  const [tableName, setTableName] = useState("");
+  const [capacity, setCapacity] = useState("4");
+
+  const topPadding = Platform.OS === "web" ? insets.top + 8 : 0;
+  const numColumns = width >= 1200 ? 6 : width >= 900 ? 5 : width >= 600 ? 4 : 3;
+
+  const fetchTables = useCallback(async () => {
+    const data = await loadTables();
+    setTables(data);
+    setLoading(false);
+  }, [loadTables]);
+
+  useFocusEffect(useCallback(() => { fetchTables(); }, [fetchTables]));
+
+  const stats = {
+    total: tables.length,
+    available: tables.filter((t) => t.status === "available").length,
+    occupied: tables.filter((t) => t.status === "occupied").length,
+    reserved: tables.filter((t) => t.status === "reserved").length,
+  };
+
+  const openAdd = () => {
+    setEditingTable(null);
+    setTableName("");
+    setCapacity("4");
+    setShowEditor(true);
+  };
+
+  const openEdit = (table: PosTable) => {
+    setEditingTable(table);
+    setTableName(table.name);
+    setCapacity(String(table.capacity));
+    setShowEditor(true);
+  };
+
+  const handleSave = async () => {
+    if (!tableName.trim()) {
+      Alert.alert("Required", "Table name is required.");
+      return;
+    }
+    const cap = parseInt(capacity, 10) || 4;
+    if (editingTable) {
+      await updateTable({ ...editingTable, name: tableName.trim(), capacity: cap });
+    } else {
+      await createTable({ name: tableName.trim(), capacity: cap });
+    }
+    setShowEditor(false);
+    await fetchTables();
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const handleDelete = (table: PosTable) => {
+    if (table.status === "occupied") {
+      Alert.alert("Cannot Delete", "Table is currently occupied.");
+      return;
+    }
+    Alert.alert("Delete Table", `Delete "${table.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete", style: "destructive",
+        onPress: async () => { await deleteTable(table.id); await fetchTables(); },
+      },
+    ]);
+  };
+
+  const cycleStatus = async (table: PosTable) => {
+    const next: Record<string, PosTable["status"]> = {
+      available: "reserved",
+      reserved: "available",
+      occupied: "available",
+    };
+    const newStatus = next[table.status] || "available";
+    await setTableStatus(table.id, newStatus);
+    await fetchTables();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const renderTable = ({ item }: { item: PosTable }) => {
+    const sc = STATUS_COLORS[item.status] || STATUS_COLORS.available;
+    return (
+      <TouchableOpacity
+        onPress={() => cycleStatus(item)}
+        onLongPress={() => openEdit(item)}
+        activeOpacity={0.8}
+        style={[styles.tableCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
+      >
+        <View style={[styles.statusDot, { backgroundColor: sc.bg }]} />
+        <Text style={[styles.tableIcon, { color: colors.foreground }]}>
+          <Feather name="layout" size={28} color={sc.bg} />
+        </Text>
+        <Text style={[styles.tableName, { color: colors.foreground }]} numberOfLines={1}>
+          {item.name}
+        </Text>
+        <Text style={[styles.tableCapacity, { color: colors.mutedForeground }]}>
+          {item.capacity} seats
+        </Text>
+        <View style={[styles.statusBadge, { backgroundColor: sc.bg + "20" }]}>
+          <Text style={[styles.statusText, { color: sc.bg }]}>{sc.label}</Text>
+        </View>
+        <View style={styles.tableActions}>
+          <TouchableOpacity onPress={() => handleDelete(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Feather name="trash-2" size={14} color={colors.mutedForeground} />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <View style={[styles.root, { backgroundColor: colors.background, paddingTop: topPadding }]}>
+      <View style={styles.statsRow}>
+        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+          <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Total</Text>
+          <Text style={[styles.statValue, { color: colors.foreground }]}>{stats.total}</Text>
+        </View>
+        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+          <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Available</Text>
+          <Text style={[styles.statValue, { color: "#2ECC71" }]}>{stats.available}</Text>
+        </View>
+        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+          <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Occupied</Text>
+          <Text style={[styles.statValue, { color: "#E74C3C" }]}>{stats.occupied}</Text>
+        </View>
+        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+          <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Reserved</Text>
+          <Text style={[styles.statValue, { color: "#F39C12" }]}>{stats.reserved}</Text>
+        </View>
+      </View>
+
+      {!loading && tables.length === 0 ? (
+        <View style={styles.empty}>
+          <Feather name="grid" size={40} color={colors.mutedForeground} style={{ opacity: 0.4 }} />
+          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No tables yet</Text>
+          <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>Tap + to add your first table</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={tables}
+          renderItem={renderTable}
+          keyExtractor={(item) => item.id}
+          numColumns={numColumns}
+          key={String(numColumns)}
+          contentContainerStyle={styles.grid}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+
+      <TouchableOpacity
+        onPress={openAdd}
+        style={[styles.fab, { backgroundColor: colors.primary, borderRadius: 28, bottom: insets.bottom + 20 }]}
+      >
+        <Feather name="plus" size={24} color="#fff" />
+      </TouchableOpacity>
+
+      <Modal visible={showEditor} animationType="slide" presentationStyle="pageSheet">
+        <KeyboardAvoidingView
+          style={[styles.modalRoot, { backgroundColor: colors.background }]}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <View style={[styles.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={() => setShowEditor(false)}>
+              <Feather name="x" size={22} color={colors.foreground} />
+            </TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>
+              {editingTable ? "Edit Table" : "New Table"}
+            </Text>
+            <TouchableOpacity onPress={handleSave}>
+              <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 16 }}>Save</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Table Name *</Text>
+            <TextInput
+              value={tableName}
+              onChangeText={setTableName}
+              placeholder="e.g. Table 1, Patio A"
+              placeholderTextColor={colors.mutedForeground}
+              style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
+            />
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Capacity (seats)</Text>
+            <TextInput
+              value={capacity}
+              onChangeText={setCapacity}
+              placeholder="4"
+              placeholderTextColor={colors.mutedForeground}
+              keyboardType="number-pad"
+              style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
+            />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+  statsRow: { flexDirection: "row", padding: 16, paddingBottom: 8, gap: 8 },
+  statCard: { flex: 1, padding: 12, borderWidth: 1, alignItems: "center" },
+  statLabel: { fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
+  statValue: { fontSize: 20, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  grid: { padding: 10, paddingBottom: 100 },
+  tableCard: {
+    flex: 1, margin: 5, padding: 16, borderWidth: 1,
+    alignItems: "center", minWidth: 100, minHeight: 140,
+  },
+  statusDot: { position: "absolute", top: 10, right: 10, width: 10, height: 10, borderRadius: 5 },
+  tableIcon: { marginBottom: 8, marginTop: 4 },
+  tableName: { fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold", textAlign: "center" },
+  tableCapacity: { fontSize: 11, marginTop: 2 },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8, marginTop: 8 },
+  statusText: { fontSize: 10, fontWeight: "700", textTransform: "uppercase" },
+  tableActions: { position: "absolute", top: 8, left: 8 },
+  empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10 },
+  emptyTitle: { fontSize: 17, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  emptySub: { fontSize: 13 },
+  fab: {
+    position: "absolute", right: 20, width: 56, height: 56,
+    alignItems: "center", justifyContent: "center",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 8, elevation: 8,
+  },
+  modalRoot: { flex: 1 },
+  modalHeader: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1,
+  },
+  modalTitle: { fontSize: 18, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  form: { padding: 20, paddingBottom: 60 },
+  fieldLabel: { fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8, marginTop: 20 },
+  input: { paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, borderWidth: 1 },
+});

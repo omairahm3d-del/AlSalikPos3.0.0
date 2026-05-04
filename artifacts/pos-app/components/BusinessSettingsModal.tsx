@@ -33,6 +33,8 @@ export function BusinessSettingsModal({ visible, onClose }: Props) {
   const [address, setAddress] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [loyaltyPointsPerAed, setLoyaltyPointsPerAed] = useState("1");
+  const [loyaltyRedemptionRate, setLoyaltyRedemptionRate] = useState("0.01");
 
   const load = useCallback(async () => {
     const s = await loadBusinessSettings();
@@ -41,19 +43,16 @@ export function BusinessSettingsModal({ visible, onClose }: Props) {
     setAddress(s.address);
     setPhone(s.phone);
     setEmail(s.email);
+    setLoyaltyPointsPerAed(String(s.loyaltyPointsPerAed ?? 1));
+    setLoyaltyRedemptionRate(String(s.loyaltyRedemptionRate ?? 0.01));
   }, [loadBusinessSettings]);
 
-  useEffect(() => {
-    if (visible) load();
-  }, [visible, load]);
+  useEffect(() => { if (visible) load(); }, [visible, load]);
 
   const handleSave = async () => {
     const trimmedTrn = trn.trim();
     if (trimmedTrn && !/^\d{15}$/.test(trimmedTrn)) {
-      Alert.alert(
-        "Invalid TRN",
-        "UAE Tax Registration Number must be exactly 15 digits. Leave empty if you don't have one yet."
-      );
+      Alert.alert("Invalid TRN", "UAE Tax Registration Number must be exactly 15 digits.");
       return;
     }
     const settings: BusinessSettings = {
@@ -62,6 +61,8 @@ export function BusinessSettingsModal({ visible, onClose }: Props) {
       address: address.trim(),
       phone: phone.trim(),
       email: email.trim(),
+      loyaltyPointsPerAed: parseFloat(loyaltyPointsPerAed) || 1,
+      loyaltyRedemptionRate: parseFloat(loyaltyRedemptionRate) || 0.01,
     };
     await saveBusinessSettings(settings);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -69,103 +70,49 @@ export function BusinessSettingsModal({ visible, onClose }: Props) {
   };
 
   const renderField = (
-    label: string,
-    value: string,
-    onChange: (v: string) => void,
-    placeholder: string,
-    hint?: string,
-    keyboardType?: "default" | "phone-pad" | "email-address"
+    label: string, value: string, onChange: (v: string) => void,
+    placeholder: string, hint?: string, keyboardType?: "default" | "phone-pad" | "email-address" | "decimal-pad"
   ) => (
     <>
       <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>{label}</Text>
       {hint && <Text style={[styles.hint, { color: colors.mutedForeground }]}>{hint}</Text>}
       <TextInput
-        value={value}
-        onChangeText={onChange}
-        placeholder={placeholder}
-        placeholderTextColor={colors.mutedForeground}
-        keyboardType={keyboardType}
-        style={[
-          styles.input,
-          {
-            backgroundColor: colors.secondary,
-            borderColor: colors.border,
-            color: colors.foreground,
-            borderRadius: colors.radius,
-          },
-        ]}
+        value={value} onChangeText={onChange} placeholder={placeholder}
+        placeholderTextColor={colors.mutedForeground} keyboardType={keyboardType}
+        style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
       />
     </>
   );
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
-      <KeyboardAvoidingView
-        style={[styles.root, { backgroundColor: colors.background }]}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <View
-          style={[
-            styles.header,
-            { paddingTop: insets.top + 16, borderBottomColor: colors.border },
-          ]}
-        >
-          <TouchableOpacity onPress={onClose}>
-            <Feather name="x" size={22} color={colors.foreground} />
-          </TouchableOpacity>
+      <KeyboardAvoidingView style={[styles.root, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <View style={[styles.header, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
+          <TouchableOpacity onPress={onClose}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
           <Text style={[styles.title, { color: colors.foreground }]}>Business Settings</Text>
-          <TouchableOpacity onPress={handleSave}>
-            <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 16 }}>Save</Text>
-          </TouchableOpacity>
+          <TouchableOpacity onPress={handleSave}><Text style={{ color: colors.primary, fontWeight: "700", fontSize: 16 }}>Save</Text></TouchableOpacity>
         </View>
-
-        <ScrollView
-          contentContainerStyle={styles.form}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+        <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={[styles.notice, { backgroundColor: colors.primary + "15", borderRadius: colors.radius }]}>
             <Feather name="info" size={14} color={colors.primary} />
-            <Text style={[styles.noticeText, { color: colors.primary }]}>
-              Configure your business details for UAE VAT-compliant tax invoices and receipts.
-            </Text>
+            <Text style={[styles.noticeText, { color: colors.primary }]}>Configure your business details for UAE VAT-compliant tax invoices and receipts.</Text>
           </View>
 
-          {renderField(
-            "Business Name",
-            businessName,
-            setBusinessName,
-            "e.g. Al Baraka Café LLC"
-          )}
-          {renderField(
-            "TRN (Tax Registration Number)",
-            trn,
-            setTrn,
-            "e.g. 100123456700003",
-            "15-digit UAE Tax Registration Number issued by FTA"
-          )}
-          {renderField(
-            "Address",
-            address,
-            setAddress,
-            "e.g. Shop 5, Al Wahda Mall, Abu Dhabi"
-          )}
-          {renderField(
-            "Phone",
-            phone,
-            setPhone,
-            "e.g. +971 2 123 4567",
-            undefined,
-            "phone-pad"
-          )}
-          {renderField(
-            "Email",
-            email,
-            setEmail,
-            "e.g. info@albaraka.ae",
-            undefined,
-            "email-address"
-          )}
+          {renderField("Business Name", businessName, setBusinessName, "e.g. Al Baraka Cafe LLC")}
+          {renderField("TRN (Tax Registration Number)", trn, setTrn, "e.g. 100123456700003", "15-digit UAE Tax Registration Number issued by FTA")}
+          {renderField("Address", address, setAddress, "e.g. Shop 5, Al Wahda Mall, Abu Dhabi")}
+          {renderField("Phone", phone, setPhone, "e.g. +971 2 123 4567", undefined, "phone-pad")}
+          {renderField("Email", email, setEmail, "e.g. info@albaraka.ae", undefined, "email-address")}
+
+          <View style={[styles.sectionDivider, { borderBottomColor: colors.border }]} />
+
+          <View style={[styles.notice, { backgroundColor: "#F39C12" + "15", borderRadius: colors.radius }]}>
+            <Feather name="star" size={14} color="#F39C12" />
+            <Text style={[styles.noticeText, { color: "#F39C12" }]}>Configure how customers earn and redeem loyalty points.</Text>
+          </View>
+
+          {renderField("Points Earned per AED Spent", loyaltyPointsPerAed, setLoyaltyPointsPerAed, "1", "e.g. 1 = earn 1 point for every AED 1 spent", "decimal-pad")}
+          {renderField("Point Redemption Value (AED)", loyaltyRedemptionRate, setLoyaltyRedemptionRate, "0.01", "e.g. 0.01 = each point is worth AED 0.01", "decimal-pad")}
         </ScrollView>
       </KeyboardAvoidingView>
     </Modal>
@@ -174,48 +121,13 @@ export function BusinessSettingsModal({ visible, onClose }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingBottom: 14,
-    borderBottomWidth: 1,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: "700",
-    fontFamily: "Inter_700Bold",
-  },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1 },
+  title: { fontSize: 18, fontWeight: "700", fontFamily: "Inter_700Bold" },
   form: { padding: 20, paddingBottom: 60 },
-  notice: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    padding: 14,
-    gap: 10,
-    marginBottom: 10,
-  },
-  noticeText: {
-    fontSize: 13,
-    lineHeight: 18,
-    flex: 1,
-  },
-  fieldLabel: {
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-    marginBottom: 8,
-    marginTop: 20,
-  },
-  hint: {
-    fontSize: 11,
-    marginBottom: 6,
-    marginTop: -4,
-  },
-  input: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    borderWidth: 1,
-  },
+  notice: { flexDirection: "row", alignItems: "flex-start", padding: 14, gap: 10, marginBottom: 10 },
+  noticeText: { fontSize: 13, lineHeight: 18, flex: 1 },
+  fieldLabel: { fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8, marginTop: 20 },
+  hint: { fontSize: 11, marginBottom: 6, marginTop: -4 },
+  input: { paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, borderWidth: 1 },
+  sectionDivider: { borderBottomWidth: 1, marginVertical: 20 },
 });

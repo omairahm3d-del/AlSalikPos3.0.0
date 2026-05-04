@@ -1,0 +1,21 @@
+{
+  "name": "pos-desktop",
+  "version": "1.0.0",
+  "description": "POS System - Desktop Application for Windows 8.1+",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build:web": "cd ../artifacts/pos-app && npx expo export --platform web --output-dir ../../desktop-app/web-build",
+    "build:win": "electron-builder --win --config electron-builder.yml",
+    "build:win-portable": "electron-builder --win portable --config electron-builder.yml",
+    "build": "npm run build:web && npm run build:win",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "devDependencies": {
+    "electron": "22.3.27",
+    "electron-builder": "24.13.3"
+  },
+  "author": "POS System",
+  "license": "MIT"
+}

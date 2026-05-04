@@ -14,6 +14,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "cart", selected: "cart.fill" }} />
         <Label>Register</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="tables">
+        <Icon sf={{ default: "tablecells", selected: "tablecells.fill" }} />
+        <Label>Tables</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="history">
         <Icon sf={{ default: "clock", selected: "clock.fill" }} />
         <Label>History</Label>
@@ -62,6 +66,18 @@ function ClassicTabLayout() {
               <SymbolView name="cart" tintColor={color} size={24} />
             ) : (
               <Feather name="shopping-cart" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="tables"
+        options={{
+          title: "Tables",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="tablecells" tintColor={color} size={24} />
+            ) : (
+              <Feather name="grid" size={22} color={color} />
             ),
         }}
       />

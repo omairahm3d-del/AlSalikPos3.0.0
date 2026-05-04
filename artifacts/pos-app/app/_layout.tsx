@@ -15,12 +15,20 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { CartProvider } from "@/context/CartContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { DatabaseProvider } from "@/context/DatabaseProvider";
+import { StaffProvider, useStaff } from "@/context/StaffContext";
+import { LockScreen } from "@/components/LockScreen";
 
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
-function RootLayoutNav() {
+function AppContent() {
+  const { currentStaff, staffRequired } = useStaff();
+
+  if (staffRequired && !currentStaff) {
+    return <LockScreen />;
+  }
+
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -52,7 +60,9 @@ export default function RootLayout() {
             <KeyboardProvider>
               <DatabaseProvider>
                 <CartProvider>
-                  <RootLayoutNav />
+                  <StaffProvider>
+                    <AppContent />
+                  </StaffProvider>
                 </CartProvider>
               </DatabaseProvider>
             </KeyboardProvider>

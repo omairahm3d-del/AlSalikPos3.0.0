@@ -12,7 +12,10 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
       price REAL NOT NULL,
       description TEXT DEFAULT '',
       color_hex TEXT DEFAULT '#4F8EF7',
-      barcode TEXT DEFAULT NULL
+      barcode TEXT DEFAULT NULL,
+      stock_quantity INTEGER NOT NULL DEFAULT 999,
+      tax_group_id TEXT DEFAULT NULL,
+      low_stock_threshold INTEGER NOT NULL DEFAULT 10
     );
 
     CREATE TABLE IF NOT EXISTS sales (
@@ -23,7 +26,20 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
       vat_rate REAL NOT NULL,
       vat_amount REAL NOT NULL,
       total REAL NOT NULL,
-      payment_method TEXT NOT NULL
+      payment_method TEXT NOT NULL,
+      customer_id TEXT DEFAULT NULL,
+      customer_name TEXT DEFAULT NULL,
+      staff_id TEXT DEFAULT NULL,
+      staff_name TEXT DEFAULT NULL,
+      table_id TEXT DEFAULT NULL,
+      table_name TEXT DEFAULT NULL,
+      discount_type TEXT DEFAULT NULL,
+      discount_value REAL DEFAULT NULL,
+      discount_amount REAL DEFAULT 0,
+      is_refund INTEGER DEFAULT 0,
+      original_sale_id TEXT DEFAULT NULL,
+      loyalty_points_earned INTEGER DEFAULT 0,
+      loyalty_points_redeemed INTEGER DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS invoice_counter (
@@ -40,7 +56,8 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
       product_name TEXT NOT NULL,
       product_price REAL NOT NULL,
       quantity INTEGER NOT NULL,
-      line_total REAL NOT NULL
+      line_total REAL NOT NULL,
+      discount_amount REAL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS settings (
@@ -55,6 +72,7 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
       email TEXT DEFAULT '',
       company TEXT DEFAULT '',
       credit_balance REAL NOT NULL DEFAULT 0,
+      loyalty_points INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL
     );
 
@@ -65,30 +83,88 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
       note TEXT DEFAULT '',
       created_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS staff (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'cashier',
+      pin TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS pos_tables (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      capacity INTEGER NOT NULL DEFAULT 4,
+      status TEXT NOT NULL DEFAULT 'available',
+      current_order_id TEXT DEFAULT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS tax_groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      rate REAL NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS split_payments (
+      id TEXT PRIMARY KEY,
+      sale_id TEXT NOT NULL,
+      method TEXT NOT NULL,
+      amount REAL NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS z_reports (
+      id TEXT PRIMARY KEY,
+      report_date TEXT NOT NULL,
+      opened_at INTEGER NOT NULL,
+      closed_at INTEGER NOT NULL,
+      opening_cash REAL NOT NULL DEFAULT 0,
+      closing_cash REAL NOT NULL DEFAULT 0,
+      total_sales REAL NOT NULL DEFAULT 0,
+      total_refunds REAL NOT NULL DEFAULT 0,
+      net_sales REAL NOT NULL DEFAULT 0,
+      total_vat REAL NOT NULL DEFAULT 0,
+      total_discount REAL NOT NULL DEFAULT 0,
+      transaction_count INTEGER NOT NULL DEFAULT 0,
+      refund_count INTEGER NOT NULL DEFAULT 0,
+      data_json TEXT DEFAULT '{}'
+    );
   `);
 
-  try {
-    await db.execAsync("ALTER TABLE products ADD COLUMN barcode TEXT DEFAULT NULL");
-  } catch {
-  }
+  const migrations: string[] = [
+    "ALTER TABLE products ADD COLUMN barcode TEXT DEFAULT NULL",
+    "ALTER TABLE sales ADD COLUMN invoice_number TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE sales ADD COLUMN customer_id TEXT DEFAULT NULL",
+    "ALTER TABLE sales ADD COLUMN customer_name TEXT DEFAULT NULL",
+    "ALTER TABLE sales ADD COLUMN staff_id TEXT DEFAULT NULL",
+    "ALTER TABLE sales ADD COLUMN staff_name TEXT DEFAULT NULL",
+    "ALTER TABLE sales ADD COLUMN table_id TEXT DEFAULT NULL",
+    "ALTER TABLE sales ADD COLUMN table_name TEXT DEFAULT NULL",
+    "ALTER TABLE sales ADD COLUMN discount_type TEXT DEFAULT NULL",
+    "ALTER TABLE sales ADD COLUMN discount_value REAL DEFAULT NULL",
+    "ALTER TABLE sales ADD COLUMN discount_amount REAL DEFAULT 0",
+    "ALTER TABLE sales ADD COLUMN is_refund INTEGER DEFAULT 0",
+    "ALTER TABLE sales ADD COLUMN original_sale_id TEXT DEFAULT NULL",
+    "ALTER TABLE sales ADD COLUMN loyalty_points_earned INTEGER DEFAULT 0",
+    "ALTER TABLE sales ADD COLUMN loyalty_points_redeemed INTEGER DEFAULT 0",
+    "ALTER TABLE products ADD COLUMN stock_quantity INTEGER NOT NULL DEFAULT 999",
+    "ALTER TABLE products ADD COLUMN tax_group_id TEXT DEFAULT NULL",
+    "ALTER TABLE products ADD COLUMN low_stock_threshold INTEGER NOT NULL DEFAULT 10",
+    "ALTER TABLE customers ADD COLUMN loyalty_points INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE sale_items ADD COLUMN discount_amount REAL DEFAULT 0",
+  ];
 
-  try {
-    await db.execAsync("ALTER TABLE sales ADD COLUMN invoice_number TEXT NOT NULL DEFAULT ''");
-  } catch {
+  for (const sql of migrations) {
+    try {
+      await db.execAsync(sql);
+    } catch {
+    }
   }
 
   try {
     await db.execAsync("CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_invoice_number ON sales(invoice_number) WHERE invoice_number != ''");
-  } catch {
-  }
-
-  try {
-    await db.execAsync("ALTER TABLE sales ADD COLUMN customer_id TEXT DEFAULT NULL");
-  } catch {
-  }
-
-  try {
-    await db.execAsync("ALTER TABLE sales ADD COLUMN customer_name TEXT DEFAULT NULL");
   } catch {
   }
 
@@ -111,10 +187,20 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
   if (!row || row.count === 0) {
     for (const p of SEED_PRODUCTS) {
       await db.runAsync(
-        "INSERT INTO products (id, name, category, price, description, color_hex, barcode) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [p.id, p.name, p.category, p.price, p.description, p.colorHex, p.barcode ?? null]
+        "INSERT INTO products (id, name, category, price, description, color_hex, barcode, stock_quantity, tax_group_id, low_stock_threshold) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [p.id, p.name, p.category, p.price, p.description, p.colorHex, p.barcode ?? null, p.stockQuantity, p.taxGroupId ?? null, p.lowStockThreshold]
       );
     }
+  }
+
+  const defaultTax = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM tax_groups"
+  );
+  if (!defaultTax || defaultTax.count === 0) {
+    await db.runAsync(
+      "INSERT INTO tax_groups (id, name, rate) VALUES (?, ?, ?)",
+      ["tg_default", "Standard VAT (5%)", 0.05]
+    );
   }
 }
 

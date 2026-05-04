@@ -1,0 +1,48 @@
+appId: com.pos.desktop
+productName: "POS System"
+copyright: "Copyright © 2024 POS System"
+
+directories:
+  output: dist
+  buildResources: build-resources
+
+files:
+  - main.js
+  - package.json
+
+extraResources:
+  - from: web-build
+    to: web-build
+    filter:
+      - "**/*"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - ia32
+  icon: build-resources/icon.ico
+  artifactName: "POS-System-${version}-Setup-${arch}.${ext}"
+  publisherName: "POS System"
+  legalTrademarks: ""
+
+nsis:
+  oneClick: false
+  perMachine: true
+  allowToChangeInstallationDirectory: true
+  installerIcon: build-resources/icon.ico
+  uninstallerIcon: build-resources/icon.ico
+  installerHeaderIcon: build-resources/icon.ico
+  shortcutName: "POS System"
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  menuCategory: "Business"
+  license: null
+  installerSidebar: null
+
+portable:
+  artifactName: "POS-System-${version}-Portable-${arch}.${ext}"
+
+compression: normal
+removePackageScripts: true
