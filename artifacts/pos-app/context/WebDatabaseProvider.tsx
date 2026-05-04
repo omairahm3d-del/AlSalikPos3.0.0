@@ -1,13 +1,15 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback } from "react";
-import type { CartItem, Product, Sale, SaleItem } from "@/types";
-import { SEED_PRODUCTS, VAT_RATE } from "@/types";
-import { generateId } from "@/lib/database";
+import type { BusinessSettings, CartItem, Product, Sale, SaleItem } from "@/types";
+import { DEFAULT_BUSINESS_SETTINGS, SEED_PRODUCTS, VAT_RATE } from "@/types";
+import { generateId, generateInvoiceNumber } from "@/lib/database";
 import { DatabaseContext } from "./DatabaseCore";
 
 const PRODUCTS_KEY = "@pos_products";
 const SALES_KEY = "@pos_sales";
 const SALE_ITEMS_KEY = "@pos_sale_items";
+const SETTINGS_KEY = "@pos_settings";
+const COUNTER_KEY = "@pos_invoice_counter";
 
 async function getProducts(): Promise<Product[]> {
   const raw = await AsyncStorage.getItem(PRODUCTS_KEY);
@@ -65,8 +67,15 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       const saleId = generateId();
       const createdAt = Date.now();
 
+      const existing = await getAllSales();
+      const raw = await AsyncStorage.getItem(COUNTER_KEY);
+      const seq = raw ? parseInt(raw, 10) : existing.length + 1;
+      const invoiceNumber = generateInvoiceNumber(seq - 1);
+      await AsyncStorage.setItem(COUNTER_KEY, String(seq + 1));
+
       const sale: Sale = {
         id: saleId,
+        invoiceNumber,
         createdAt,
         subtotal,
         vatRate: VAT_RATE,
@@ -85,7 +94,6 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
         lineTotal: item.product.price * item.quantity,
       }));
 
-      const existing = await getAllSales();
       await AsyncStorage.setItem(SALES_KEY, JSON.stringify([sale, ...existing]));
 
       const existingItems = await getAllSaleItems();
@@ -124,17 +132,22 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     []
   );
 
+  const loadBusinessSettings = useCallback(async (): Promise<BusinessSettings> => {
+    const raw = await AsyncStorage.getItem(SETTINGS_KEY);
+    if (!raw) return { ...DEFAULT_BUSINESS_SETTINGS };
+    return JSON.parse(raw) as BusinessSettings;
+  }, []);
+
+  const saveBusinessSettings = useCallback(async (settings: BusinessSettings): Promise<void> => {
+    await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  }, []);
+
   return (
     <DatabaseContext.Provider
       value={{
-        loadProducts,
-        createProduct,
-        updateProduct,
-        deleteProduct,
-        saveSale,
-        loadSales,
-        loadSaleWithItems,
-        loadSalesWithItemsByDateRange,
+        loadProducts, createProduct, updateProduct, deleteProduct,
+        saveSale, loadSales, loadSaleWithItems, loadSalesWithItemsByDateRange,
+        loadBusinessSettings, saveBusinessSettings,
       }}
     >
       {children}

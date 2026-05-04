@@ -1,8 +1,8 @@
 import React, { useCallback } from "react";
 import { useSQLiteContext } from "expo-sqlite";
-import type { CartItem, Product, Sale, SaleItem } from "@/types";
-import { VAT_RATE } from "@/types";
-import { generateId } from "@/lib/database";
+import type { BusinessSettings, CartItem, Product, Sale, SaleItem } from "@/types";
+import { DEFAULT_BUSINESS_SETTINGS, VAT_RATE } from "@/types";
+import { generateId, generateInvoiceNumber } from "@/lib/database";
 import { DatabaseContext } from "./DatabaseCore";
 
 export function NativeDatabaseProvider({ children }: { children: React.ReactNode }) {
@@ -69,9 +69,18 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       const saleId = generateId();
       const createdAt = Date.now();
 
+      const counterRow = await db.getFirstAsync<{ next_value: number }>(
+        "SELECT next_value FROM invoice_counter WHERE id = 1"
+      );
+      const seq = counterRow?.next_value ?? 1;
+      const invoiceNumber = generateInvoiceNumber(seq - 1);
       await db.runAsync(
-        "INSERT INTO sales (id, created_at, subtotal, vat_rate, vat_amount, total, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [saleId, createdAt, subtotal, VAT_RATE, vatAmount, total, paymentMethod]
+        "UPDATE invoice_counter SET next_value = next_value + 1 WHERE id = 1"
+      );
+
+      await db.runAsync(
+        "INSERT INTO sales (id, invoice_number, created_at, subtotal, vat_rate, vat_amount, total, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [saleId, invoiceNumber, createdAt, subtotal, VAT_RATE, vatAmount, total, paymentMethod]
       );
 
       for (const item of items) {
@@ -83,7 +92,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         );
       }
 
-      return { id: saleId, createdAt, subtotal, vatRate: VAT_RATE, vatAmount, total, paymentMethod };
+      return { id: saleId, invoiceNumber, createdAt, subtotal, vatRate: VAT_RATE, vatAmount, total, paymentMethod };
     },
     [db]
   );
@@ -91,6 +100,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
   const loadSales = useCallback(async (): Promise<Sale[]> => {
     const rows = await db.getAllAsync<{
       id: string;
+      invoice_number: string;
       created_at: number;
       subtotal: number;
       vat_rate: number;
@@ -100,6 +110,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     }>("SELECT * FROM sales ORDER BY created_at DESC");
     return rows.map((r) => ({
       id: r.id,
+      invoiceNumber: r.invoice_number ?? "",
       createdAt: r.created_at,
       subtotal: r.subtotal,
       vatRate: r.vat_rate,
@@ -113,6 +124,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     async (saleId: string): Promise<Sale | null> => {
       const sale = await db.getFirstAsync<{
         id: string;
+        invoice_number: string;
         created_at: number;
         subtotal: number;
         vat_rate: number;
@@ -144,6 +156,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
 
       return {
         id: sale.id,
+        invoiceNumber: sale.invoice_number ?? "",
         createdAt: sale.created_at,
         subtotal: sale.subtotal,
         vatRate: sale.vat_rate,
@@ -160,6 +173,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     async (startMs: number, endMs: number): Promise<{ sales: Sale[]; items: SaleItem[] }> => {
       const saleRows = await db.getAllAsync<{
         id: string;
+        invoice_number: string;
         created_at: number;
         subtotal: number;
         vat_rate: number;
@@ -170,6 +184,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
 
       const sales: Sale[] = saleRows.map((r) => ({
         id: r.id,
+        invoiceNumber: r.invoice_number ?? "",
         createdAt: r.created_at,
         subtotal: r.subtotal,
         vatRate: r.vat_rate,
@@ -207,9 +222,41 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     [db]
   );
 
+  const loadBusinessSettings = useCallback(async (): Promise<BusinessSettings> => {
+    const rows = await db.getAllAsync<{ key: string; value: string }>(
+      "SELECT key, value FROM settings WHERE key IN ('businessName', 'trn', 'address', 'phone', 'email')"
+    );
+    const map: Record<string, string> = {};
+    rows.forEach((r) => { map[r.key] = r.value; });
+    return {
+      businessName: map.businessName ?? "",
+      trn: map.trn ?? "",
+      address: map.address ?? "",
+      phone: map.phone ?? "",
+      email: map.email ?? "",
+    };
+  }, [db]);
+
+  const saveBusinessSettings = useCallback(
+    async (settings: BusinessSettings): Promise<void> => {
+      const entries = Object.entries(settings) as [string, string][];
+      for (const [key, value] of entries) {
+        await db.runAsync(
+          "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+          [key, value]
+        );
+      }
+    },
+    [db]
+  );
+
   return (
     <DatabaseContext.Provider
-      value={{ loadProducts, createProduct, updateProduct, deleteProduct, saveSale, loadSales, loadSaleWithItems, loadSalesWithItemsByDateRange }}
+      value={{
+        loadProducts, createProduct, updateProduct, deleteProduct,
+        saveSale, loadSales, loadSaleWithItems, loadSalesWithItemsByDateRange,
+        loadBusinessSettings, saveBusinessSettings,
+      }}
     >
       {children}
     </DatabaseContext.Provider>

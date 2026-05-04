@@ -21,7 +21,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
 import type { Product } from "@/types";
-import { CATEGORIES, PRODUCT_COLORS } from "@/types";
+import { CATEGORIES, CURRENCY, PRODUCT_COLORS, formatCurrency } from "@/types";
 
 const CATEGORY_OPTIONS = CATEGORIES.filter((c) => c !== "All");
 
@@ -155,7 +155,7 @@ export default function ProductsScreen() {
           {item.category}
         </Text>
         <Text style={[styles.productPrice, { color: colors.primary }]}>
-          €{item.price.toFixed(2)}
+          {formatCurrency(item.price)}
         </Text>
       </View>
       <View style={styles.productActions}>
@@ -257,7 +257,7 @@ export default function ProductsScreen() {
               ]}
             />
 
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Price (€)</Text>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Price ({CURRENCY})</Text>
             <TextInput
               value={price}
               onChangeText={setPrice}

@@ -7,6 +7,7 @@ import {
   Platform,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
   useWindowDimensions,
@@ -19,11 +20,12 @@ import { CartItemRow } from "@/components/CartItemRow";
 import { CategoryFilter } from "@/components/CategoryFilter";
 import { EmptyState } from "@/components/EmptyState";
 import { ProductCard } from "@/components/ProductCard";
+import { ReceiptModal } from "@/components/ReceiptModal";
 import { useCart } from "@/context/CartContext";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
-import type { Product } from "@/types";
-import { CATEGORIES, VAT_RATE } from "@/types";
+import type { Product, Sale } from "@/types";
+import { CATEGORIES, VAT_RATE, formatCurrency } from "@/types";
 
 type PaymentMethod = "Card" | "Cash";
 
@@ -46,11 +48,13 @@ export default function POSScreen() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [showCart, setShowCart] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Card");
+  const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
 
   const fetchProducts = useCallback(async () => {
     const data = await loadProducts();
@@ -63,18 +67,30 @@ export default function POSScreen() {
   }, [fetchProducts]);
 
   const filteredProducts = useMemo(() => {
-    if (selectedCategory === "All") return products;
-    return products.filter((p) => p.category === selectedCategory);
-  }, [products, selectedCategory]);
+    let list = products;
+    if (selectedCategory !== "All") {
+      list = list.filter((p) => p.category === selectedCategory);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.barcode?.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [products, selectedCategory, searchQuery]);
 
   const numColumns = width >= 1200 ? 5 : width >= 960 ? 4 : width >= 768 ? 3 : 2;
 
   const handleChargeSale = async () => {
     if (cartItems.length === 0) return;
-    await saveSale(cartItems, paymentMethod);
+    const sale = await saveSale(cartItems, paymentMethod);
     clearCart();
     setShowPayment(false);
     setShowCart(false);
+    setReceiptSale(sale);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
@@ -92,6 +108,24 @@ export default function POSScreen() {
       [{ text: "OK" }]
     );
   };
+
+  const SearchBar = (
+    <View style={[styles.searchWrap, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius }]}>
+      <Feather name="search" size={16} color={colors.mutedForeground} />
+      <TextInput
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        placeholder="Search products..."
+        placeholderTextColor={colors.mutedForeground}
+        style={[styles.searchInput, { color: colors.foreground }]}
+      />
+      {searchQuery.length > 0 && (
+        <TouchableOpacity onPress={() => setSearchQuery("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Feather name="x" size={16} color={colors.mutedForeground} />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
 
   const ScanButton = (
     <TouchableOpacity
@@ -135,7 +169,7 @@ export default function POSScreen() {
           <View style={styles.totalsRow}>
             <Text style={[styles.totalLabel, { color: colors.mutedForeground }]}>Subtotal</Text>
             <Text style={[styles.totalValue, { color: colors.foreground }]}>
-              €{subtotal.toFixed(2)}
+              {formatCurrency(subtotal)}
             </Text>
           </View>
           <View style={styles.totalsRow}>
@@ -143,14 +177,14 @@ export default function POSScreen() {
               VAT ({Math.round(VAT_RATE * 100)}%)
             </Text>
             <Text style={[styles.totalValue, { color: colors.foreground }]}>
-              €{vatAmount.toFixed(2)}
+              {formatCurrency(vatAmount)}
             </Text>
           </View>
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <View style={[styles.totalsRow, styles.grandTotal]}>
             <Text style={[styles.grandTotalLabel, { color: colors.foreground }]}>Total</Text>
             <Text style={[styles.grandTotalValue, { color: colors.foreground }]}>
-              €{total.toFixed(2)}
+              {formatCurrency(total)}
             </Text>
           </View>
           <TouchableOpacity
@@ -158,7 +192,7 @@ export default function POSScreen() {
             style={[styles.chargeBtn, { backgroundColor: colors.success, borderRadius: colors.radius }]}
           >
             <Feather name="credit-card" size={18} color="#fff" />
-            <Text style={styles.chargeBtnText}>Charge €{total.toFixed(2)}</Text>
+            <Text style={styles.chargeBtnText}>Charge {formatCurrency(total)}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -186,6 +220,7 @@ export default function POSScreen() {
               />
               {ScanButton}
             </View>
+            {SearchBar}
             {loading ? (
               <ActivityIndicator style={styles.loader} color={colors.primary} />
             ) : (
@@ -218,6 +253,7 @@ export default function POSScreen() {
               />
               {ScanButton}
             </View>
+            {SearchBar}
             {loading ? (
               <ActivityIndicator style={styles.loader} color={colors.primary} />
             ) : (
@@ -252,7 +288,7 @@ export default function POSScreen() {
                 </View>
                 <Text style={styles.cartBarText}>View Order</Text>
               </View>
-              <Text style={styles.cartBarTotal}>€{total.toFixed(2)}</Text>
+              <Text style={styles.cartBarTotal}>{formatCurrency(total)}</Text>
             </TouchableOpacity>
           )}
 
@@ -321,19 +357,19 @@ export default function POSScreen() {
             <View style={[styles.summaryBox, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}>
               <View style={styles.summaryRow}>
                 <Text style={{ color: colors.mutedForeground }}>Subtotal</Text>
-                <Text style={{ color: colors.foreground }}>€{subtotal.toFixed(2)}</Text>
+                <Text style={{ color: colors.foreground }}>{formatCurrency(subtotal)}</Text>
               </View>
               <View style={styles.summaryRow}>
                 <Text style={{ color: colors.mutedForeground }}>
                   VAT ({Math.round(VAT_RATE * 100)}%)
                 </Text>
-                <Text style={{ color: colors.foreground }}>€{vatAmount.toFixed(2)}</Text>
+                <Text style={{ color: colors.foreground }}>{formatCurrency(vatAmount)}</Text>
               </View>
               <View style={[styles.divider, { backgroundColor: colors.border, marginVertical: 10 }]} />
               <View style={styles.summaryRow}>
                 <Text style={[styles.grandTotalLabel, { color: colors.foreground }]}>Total</Text>
                 <Text style={[styles.grandTotalValue, { color: colors.foreground }]}>
-                  €{total.toFixed(2)}
+                  {formatCurrency(total)}
                 </Text>
               </View>
             </View>
@@ -363,6 +399,12 @@ export default function POSScreen() {
         </View>
       </Modal>
 
+      <ReceiptModal
+        visible={!!receiptSale}
+        sale={receiptSale}
+        onClose={() => setReceiptSale(null)}
+      />
+
       <BarcodeScannerModal
         visible={showScanner}
         products={products}
@@ -388,6 +430,22 @@ const styles = StyleSheet.create({
   mobileContent: { flex: 1 },
   grid: { padding: 10, paddingTop: 4 },
   loader: { flex: 1 },
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 12,
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    paddingVertical: 2,
+  },
   scanBtn: {
     padding: 10,
     marginLeft: 4,

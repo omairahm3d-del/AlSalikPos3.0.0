@@ -10,10 +10,12 @@ import {
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { BusinessSettingsModal } from "@/components/BusinessSettingsModal";
 import { EmptyState } from "@/components/EmptyState";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
 import type { Sale, SaleItem } from "@/types";
+import { formatCurrency } from "@/types";
 
 function getStartOfDay(date: Date): number {
   const d = new Date(date);
@@ -66,6 +68,7 @@ export default function ReportsScreen() {
   const [items, setItems] = useState<SaleItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [productCategories, setProductCategories] = useState<Record<string, string>>({});
+  const [showSettings, setShowSettings] = useState(false);
 
   const topPadding = Platform.OS === "web" ? insets.top + 8 : 0;
   const isToday = selectedDate.toDateString() === new Date().toDateString();
@@ -213,13 +216,18 @@ export default function ReportsScreen() {
             {formatDate(selectedDate)}
           </Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          onPress={goToNextDay}
-          style={[styles.dateArrow, isToday && { opacity: 0.25 }]}
-          disabled={isToday}
-        >
-          <Feather name="chevron-right" size={22} color={colors.foreground} />
-        </TouchableOpacity>
+        <View style={styles.dateRightActions}>
+          <TouchableOpacity
+            onPress={goToNextDay}
+            style={[styles.dateArrow, isToday && { opacity: 0.25 }]}
+            disabled={isToday}
+          >
+            <Feather name="chevron-right" size={22} color={colors.foreground} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowSettings(true)} style={styles.settingsBtn}>
+            <Feather name="settings" size={18} color={colors.mutedForeground} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {loading ? null : sales.length === 0 ? (
@@ -238,7 +246,7 @@ export default function ReportsScreen() {
             <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
               <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Revenue</Text>
               <Text style={[styles.statValue, { color: colors.success }]}>
-                €{stats.revenue.toFixed(2)}
+                {formatCurrency(stats.revenue)}
               </Text>
             </View>
             <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
@@ -250,13 +258,13 @@ export default function ReportsScreen() {
             <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
               <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Avg Order</Text>
               <Text style={[styles.statValue, { color: colors.primary }]}>
-                €{stats.avgOrder.toFixed(2)}
+                {formatCurrency(stats.avgOrder)}
               </Text>
             </View>
             <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
               <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>VAT Collected</Text>
               <Text style={[styles.statValue, { color: colors.foreground }]}>
-                €{stats.vatCollected.toFixed(2)}
+                {formatCurrency(stats.vatCollected)}
               </Text>
             </View>
           </View>
@@ -275,7 +283,7 @@ export default function ReportsScreen() {
                   </Text>
                 </View>
                 <Text style={[styles.paymentAmount, { color: colors.foreground }]}>
-                  €{stats.cardRevenue.toFixed(2)}
+                  {formatCurrency(stats.cardRevenue)}
                 </Text>
               </View>
               <View style={[styles.paymentDivider, { backgroundColor: colors.border }]} />
@@ -290,7 +298,7 @@ export default function ReportsScreen() {
                   </Text>
                 </View>
                 <Text style={[styles.paymentAmount, { color: colors.foreground }]}>
-                  €{stats.cashRevenue.toFixed(2)}
+                  {formatCurrency(stats.cashRevenue)}
                 </Text>
               </View>
             </View>
@@ -300,7 +308,7 @@ export default function ReportsScreen() {
             <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
               <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Hourly Sales</Text>
               <Text style={[styles.peakText, { color: colors.mutedForeground }]}>
-                Peak hour: {peakHour.label} (€{peakHour.value.toFixed(2)})
+                Peak hour: {peakHour.label} ({formatCurrency(peakHour.value)})
               </Text>
               <View style={styles.chartWrap}>
                 {hourlyData.filter((h) => h.value > 0 || (h.hour >= 6 && h.hour <= 23)).map((h) => (
@@ -354,10 +362,10 @@ export default function ReportsScreen() {
                 </View>
                 <View style={styles.topProductStats}>
                   <Text style={[styles.topProductQty, { color: colors.foreground }]}>
-                    ×{tp.totalQty}
+                    x{tp.totalQty}
                   </Text>
                   <Text style={[styles.topProductRev, { color: colors.mutedForeground }]}>
-                    €{tp.totalRevenue.toFixed(2)}
+                    {formatCurrency(tp.totalRevenue)}
                   </Text>
                 </View>
               </View>
@@ -390,7 +398,7 @@ export default function ReportsScreen() {
                       />
                     </View>
                     <Text style={[styles.catRevenue, { color: colors.foreground }]}>
-                      €{cat.revenue.toFixed(2)}
+                      {formatCurrency(cat.revenue)}
                     </Text>
                   </View>
                 );
@@ -399,6 +407,11 @@ export default function ReportsScreen() {
           )}
         </ScrollView>
       )}
+
+      <BusinessSettingsModal
+        visible={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
     </View>
   );
 }
@@ -420,6 +433,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontFamily: "Inter_700Bold",
   },
+  dateRightActions: { flexDirection: "row", alignItems: "center", gap: 4 },
+  settingsBtn: { padding: 6 },
   scroll: { flex: 1 },
   scrollContent: { padding: 16 },
   statsGrid: {

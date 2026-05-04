@@ -4,6 +4,7 @@ import { Feather } from "@expo/vector-icons";
 import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
 import type { CartItem } from "@/types";
+import { formatCurrency } from "@/types";
 
 interface Props {
   item: CartItem;
@@ -27,7 +28,7 @@ export function CartItemRow({ item }: Props) {
           {item.product.name}
         </Text>
         <Text style={[styles.unitPrice, { color: colors.mutedForeground }]}>
-          €{item.product.price.toFixed(2)} each
+          {formatCurrency(item.product.price)} each
         </Text>
       </View>
 
@@ -50,7 +51,7 @@ export function CartItemRow({ item }: Props) {
       </View>
 
       <Text style={[styles.lineTotal, { color: colors.foreground }]}>
-        €{(item.product.price * item.quantity).toFixed(2)}
+        {formatCurrency(item.product.price * item.quantity)}
       </Text>
 
       <TouchableOpacity
@@ -114,7 +115,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     fontFamily: "Inter_600SemiBold",
-    width: 60,
+    width: 70,
     textAlign: "right",
   },
   deleteBtn: {

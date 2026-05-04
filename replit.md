@@ -28,35 +28,50 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 
 ## POS App (`artifacts/pos-app`)
 
-Mobile-first Point of Sale app built with Expo (SDK 54) and React Native.
+Mobile-first Point of Sale app built with Expo (SDK 54) and React Native, configured for UAE standards.
+
+### UAE Compliance
+- **VAT Rate**: 5% (UAE Federal Tax Authority standard)
+- **Currency**: AED (UAE Dirham), formatted as `AED XX.XX` via `formatCurrency()` helper
+- **Tax Invoices**: UAE-compliant Simplified Tax Invoice format with bilingual header (Arabic/English)
+- **TRN**: Tax Registration Number field (15-digit FTA format) with validation
+- **Invoice Numbering**: Sequential atomic counter (format: `INV-YYYYMMDD-XXXX`) with unique constraint
+- **Receipt Printing**: expo-print for thermal/PDF output; expo-sharing for PDF export
 
 ### Features
 - **Offline SQLite database** (expo-sqlite ~16.0.10) on native; AsyncStorage fallback on web
-- **Product catalog** — 18 seed products across 4 categories (Beverages, Food, Snacks, Desserts)
+- **Product catalog** — 18 seed products across 4 categories (Beverages, Food, Snacks, Desserts) with AED prices
+- **Product search bar** — real-time text filter on Register screen by product name or barcode
 - **Barcode scanner** — uses expo-camera ~17.0.10; scans EAN-13/8, UPC-A/E, QR, Code128/39
   - Register screen: scan to instantly add product to cart
   - Products screen: assign mode to link a barcode to any product
-- **Shopping cart** with 20% VAT calculation, subtotal, grand total
-- **Sales history** with per-day grouping and stats
+- **Shopping cart** with 5% VAT calculation, subtotal, grand total in AED
+- **Sales history** with per-day grouping, stats, and receipt printing from any past sale
 - **Daily sales report** — date-navigable report with revenue, transactions, avg order, VAT, hourly sales chart, top-selling products, revenue by category, payment method breakdown
+- **Business settings** — accessible via gear icon on Reports screen; stores business name, TRN, address, phone, email
+- **UAE tax invoice receipts** — print/share receipts with Arabic header "فاتورة ضريبية مبسطة", TRN, invoice number, itemized VAT
 - **Dark UI theme** (`#0F1117` background) — designed for 10-inch tablets
 - **Split-panel layout** on screens ≥768px wide; single-panel + bottom cart bar on mobile
 
 ### Tabs
-1. **Register** (`index.tsx`) — POS grid + cart + barcode scan
-2. **History** (`history.tsx`) — transaction list with today's stats
-3. **Reports** (`reports.tsx`) — daily sales report with date navigation
+1. **Register** (`index.tsx`) — POS grid + search bar + cart + barcode scan + receipt after sale
+2. **History** (`history.tsx`) — transaction list with today's stats + print receipt from any sale
+3. **Reports** (`reports.tsx`) — daily sales report + settings gear icon for business config
 4. **Products** (`products.tsx`) — CRUD product management + barcode assignment
 
 ### Key Files
-- `types/index.ts` — Product (includes optional `barcode`), CartItem, Sale, SaleItem interfaces
-- `lib/database.ts` — SQLite init + barcode column migration
-- `context/DatabaseCore.ts` — shared context + `useDatabase()` hook (includes `loadSalesWithItemsByDateRange`)
-- `context/DatabaseContext.tsx` — SQLite (native) provider: `NativeDatabaseProvider`
-- `context/WebDatabaseProvider.tsx` — AsyncStorage (web) provider
+- `types/index.ts` — Product, CartItem, Sale (with invoiceNumber), SaleItem, BusinessSettings interfaces; VAT_RATE=0.05, CURRENCY="AED", formatCurrency()
+- `lib/database.ts` — SQLite init with settings table, invoice_counter table, unique index on invoice_number
+- `lib/receiptTemplate.ts` — HTML receipt generator for UAE Simplified Tax Invoice (80mm thermal format)
+- `context/DatabaseCore.ts` — shared context with loadBusinessSettings, saveBusinessSettings, loadSaleWithItems
+- `context/DatabaseContext.tsx` — SQLite (native) provider with atomic invoice counter
+- `context/WebDatabaseProvider.tsx` — AsyncStorage (web) provider with counter key
 - `context/DatabaseProvider.native.tsx` / `.web.tsx` — platform dispatch
-- `context/CartContext.tsx` — cart reducer with VAT
+- `context/CartContext.tsx` — cart reducer with 5% VAT
+- `components/ReceiptModal.tsx` — UAE tax invoice preview with print/share buttons and TRN warning
+- `components/BusinessSettingsModal.tsx` — TRN validation (15-digit), business info editor
 - `components/BarcodeScannerModal.tsx` — full-screen camera scanner with viewfinder UI
+- `components/SaleCard.tsx` — sale display with invoice number and "View Receipt" button
 
 ### APK Build (Android)
 - EAS CLI installed (`eas-cli` in devDependencies)
@@ -69,3 +84,4 @@ Mobile-first Point of Sale app built with Expo (SDK 54) and React Native.
 - Web preview shows "Camera unavailable" fallback in the scanner modal
 - `metro.config.js` blocks `_tmp_` dirs to prevent Metro watcher crash
 - Tab bar uses normal flow positioning (not absolute) to avoid content overlap
+- Receipt printing on web opens a new print window; on native uses expo-print

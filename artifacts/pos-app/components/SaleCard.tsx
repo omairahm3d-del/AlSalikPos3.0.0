@@ -3,12 +3,14 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import type { Sale, SaleItem } from "@/types";
+import { formatCurrency } from "@/types";
 
 interface Props {
   sale: Sale;
   expanded: boolean;
   items?: SaleItem[];
   onPress: () => void;
+  onPrintReceipt?: () => void;
 }
 
 function formatDate(ts: number): string {
@@ -22,7 +24,7 @@ function formatDate(ts: number): string {
   });
 }
 
-export function SaleCard({ sale, expanded, items, onPress }: Props) {
+export function SaleCard({ sale, expanded, items, onPress, onPrintReceipt }: Props) {
   const colors = useColors();
   const isCard = sale.paymentMethod === "Card";
 
@@ -43,11 +45,16 @@ export function SaleCard({ sale, expanded, items, onPress }: Props) {
       <View style={styles.header}>
         <View>
           <Text style={[styles.total, { color: colors.foreground }]}>
-            €{sale.total.toFixed(2)}
+            {formatCurrency(sale.total)}
           </Text>
           <Text style={[styles.date, { color: colors.mutedForeground }]}>
             {formatDate(sale.createdAt)}
           </Text>
+          {sale.invoiceNumber ? (
+            <Text style={[styles.invoiceNum, { color: colors.mutedForeground }]}>
+              {sale.invoiceNumber}
+            </Text>
+          ) : null}
         </View>
         <View style={styles.rightCol}>
           <View
@@ -79,10 +86,10 @@ export function SaleCard({ sale, expanded, items, onPress }: Props) {
 
       <View style={styles.vatRow}>
         <Text style={[styles.meta, { color: colors.mutedForeground }]}>
-          Subtotal: €{sale.subtotal.toFixed(2)}
+          Subtotal: {formatCurrency(sale.subtotal)}
         </Text>
         <Text style={[styles.meta, { color: colors.mutedForeground }]}>
-          VAT ({Math.round(sale.vatRate * 100)}%): €{sale.vatAmount.toFixed(2)}
+          VAT ({Math.round(sale.vatRate * 100)}%): {formatCurrency(sale.vatAmount)}
         </Text>
       </View>
 
@@ -94,10 +101,19 @@ export function SaleCard({ sale, expanded, items, onPress }: Props) {
                 {item.productName} × {item.quantity}
               </Text>
               <Text style={[styles.itemTotal, { color: colors.foreground }]}>
-                €{item.lineTotal.toFixed(2)}
+                {formatCurrency(item.lineTotal)}
               </Text>
             </View>
           ))}
+          {onPrintReceipt && (
+            <TouchableOpacity
+              onPress={onPrintReceipt}
+              style={[styles.printBtn, { borderColor: colors.border, borderRadius: colors.radius }]}
+            >
+              <Feather name="printer" size={14} color={colors.primary} />
+              <Text style={[styles.printBtnText, { color: colors.primary }]}>View Receipt</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </TouchableOpacity>
@@ -125,6 +141,10 @@ const styles = StyleSheet.create({
   date: {
     fontSize: 12,
     marginTop: 3,
+  },
+  invoiceNum: {
+    fontSize: 11,
+    marginTop: 2,
   },
   rightCol: {
     alignItems: "flex-end",
@@ -163,6 +183,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   itemTotal: {
+    fontSize: 13,
+    fontWeight: "600",
+    fontFamily: "Inter_600SemiBold",
+  },
+  printBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    marginTop: 8,
+    borderWidth: 1,
+    gap: 6,
+  },
+  printBtnText: {
     fontSize: 13,
     fontWeight: "600",
     fontFamily: "Inter_600SemiBold",

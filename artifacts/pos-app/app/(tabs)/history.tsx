@@ -2,10 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, Platform, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { EmptyState } from "@/components/EmptyState";
+import { ReceiptModal } from "@/components/ReceiptModal";
 import { SaleCard } from "@/components/SaleCard";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
 import type { Sale, SaleItem } from "@/types";
+import { formatCurrency } from "@/types";
 
 export default function HistoryScreen() {
   const colors = useColors();
@@ -16,6 +18,7 @@ export default function HistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedItems, setExpandedItems] = useState<Record<string, SaleItem[]>>({});
+  const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
 
   const fetchSales = useCallback(async () => {
     const data = await loadSales();
@@ -78,7 +81,7 @@ export default function HistoryScreen() {
         >
           <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Today's Revenue</Text>
           <Text style={[styles.statValue, { color: colors.foreground }]}>
-            €{todayStats.revenue.toFixed(2)}
+            {formatCurrency(todayStats.revenue)}
           </Text>
           <Text style={[styles.statSub, { color: colors.mutedForeground }]}>
             {todayStats.count} transaction{todayStats.count !== 1 ? "s" : ""}
@@ -93,9 +96,9 @@ export default function HistoryScreen() {
         >
           <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>VAT Collected</Text>
           <Text style={[styles.statValue, { color: colors.primary }]}>
-            €{todayStats.vatCollected.toFixed(2)}
+            {formatCurrency(todayStats.vatCollected)}
           </Text>
-          <Text style={[styles.statSub, { color: colors.mutedForeground }]}>Today (20%)</Text>
+          <Text style={[styles.statSub, { color: colors.mutedForeground }]}>Today (5%)</Text>
         </View>
       </View>
 
@@ -119,12 +122,19 @@ export default function HistoryScreen() {
               expanded={expandedId === item.id}
               items={expandedItems[item.id]}
               onPress={() => handleExpand(item.id)}
+              onPrintReceipt={() => setReceiptSale(item)}
             />
           )}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 20 }}
         />
       )}
+
+      <ReceiptModal
+        visible={!!receiptSale}
+        sale={receiptSale}
+        onClose={() => setReceiptSale(null)}
+      />
     </View>
   );
 }

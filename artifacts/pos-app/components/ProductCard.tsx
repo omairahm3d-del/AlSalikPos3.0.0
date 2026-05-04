@@ -4,6 +4,7 @@ import * as Haptics from "expo-haptics";
 import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
 import type { Product } from "@/types";
+import { formatCurrency } from "@/types";
 
 interface Props {
   product: Product;
@@ -49,7 +50,7 @@ export function ProductCard({ product, onPress }: Props) {
             {product.name}
           </Text>
           <Text style={[styles.price, { color: colors.primary }]}>
-            €{product.price.toFixed(2)}
+            {formatCurrency(product.price)}
           </Text>
         </View>
 
