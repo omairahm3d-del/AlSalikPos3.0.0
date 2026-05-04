@@ -64,6 +64,14 @@ Mobile-first Point of Sale app built with Expo (SDK 54) and React Native, config
 - **Dark UI theme** (`#0F1117` background) — designed for 10-inch tablets
 - **Split-panel layout** on screens ≥768px wide; single-panel + bottom cart bar on mobile
 
+### Performance Optimizations (Register/Homepage)
+- **React.memo** on ProductCard, CartItemRow, CategoryFilter — prevents unnecessary re-renders
+- **Stable callbacks** — ProductCard uses `onAdd(productId)` (stable ref) instead of `onPress={() => ...}` (new closure per render); CartItemRow receives `updateQuantity`/`removeItem` as props instead of consuming context directly
+- **CartContext memoization** — all dispatch actions wrapped in `useCallback`, provider value wrapped in `useMemo`, `quantityMap` (Record<id, qty>) for O(1) lookups
+- **FlatList tuning** — `initialNumToRender`, `maxToRenderPerBatch`, `windowSize`, `removeClippedSubviews` (native only), `getItemLayout` on tablet grid
+- **Memoized derived values** — `availableTables`, `filteredProducts`, `SearchBar`, `ScanButton` all wrapped in `useMemo`; all handlers use `useCallback`
+- **Visual stock indicators** — out-of-stock products show dark overlay with "OUT OF STOCK" text + dimmed opacity; low-stock products show amber "X left" badge
+
 ### Tabs (6 total)
 1. **Register** (`index.tsx`) — POS grid + search + cart + barcode scan + payment modal (Card/Cash/Credit/Split) + per-item discounts + order discount + table/staff/customer selection + receipt
 2. **Tables** (`tables.tsx`) — table grid with status badges, create/edit/delete, capacity, status cycling

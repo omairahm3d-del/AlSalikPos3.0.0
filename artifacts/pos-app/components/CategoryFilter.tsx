@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity } from "react-native";
 import { useColors } from "@/hooks/useColors";
 
@@ -8,7 +8,7 @@ interface Props {
   onSelect: (cat: string) => void;
 }
 
-export function CategoryFilter({ categories, selected, onSelect }: Props) {
+function CategoryFilterInner({ categories, selected, onSelect }: Props) {
   const colors = useColors();
 
   return (
@@ -50,6 +50,8 @@ export function CategoryFilter({ categories, selected, onSelect }: Props) {
     </ScrollView>
   );
 }
+
+export const CategoryFilter = React.memo(CategoryFilterInner);
 
 const styles = StyleSheet.create({
   scroll: {

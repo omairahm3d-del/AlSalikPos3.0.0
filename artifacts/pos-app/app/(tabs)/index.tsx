@@ -34,6 +34,8 @@ import { CATEGORIES, VAT_RATE, formatCurrency } from "@/types";
 
 type PaymentMethod = "Card" | "Cash" | "Credit" | "Split";
 
+const PRODUCT_ITEM_HEIGHT = 148;
+
 export default function POSScreen() {
   const colors = useColors();
   const { width } = useWindowDimensions();
@@ -50,7 +52,10 @@ export default function POSScreen() {
     effectiveSubtotal,
     vatAmount,
     total,
+    quantityMap,
     addItem,
+    removeItem,
+    updateQuantity,
     setItemDiscount,
     clearCart,
   } = useCart();
@@ -143,9 +148,20 @@ export default function POSScreen() {
   }, [products, selectedCategory, searchQuery]);
 
   const numColumns = width >= 1200 ? 5 : width >= 960 ? 4 : width >= 768 ? 3 : 2;
-  const availableTables = tables.filter((t) => t.status === "available" || t.status === "reserved");
+  const availableTables = useMemo(
+    () => tables.filter((t) => t.status === "available" || t.status === "reserved"),
+    [tables]
+  );
 
-  const handleAddItem = (product: Product) => {
+  const productById = useMemo(() => {
+    const map: Record<string, Product> = {};
+    for (const p of products) map[p.id] = p;
+    return map;
+  }, [products]);
+
+  const handleAddById = useCallback((productId: string) => {
+    const product = productById[productId];
+    if (!product) return;
     if (product.stockQuantity <= 0) {
       Alert.alert("Out of Stock", `${product.name} is out of stock.`);
       return;
@@ -153,9 +169,13 @@ export default function POSScreen() {
     const rate = product.taxGroupId ? (taxGroupMap[product.taxGroupId] ?? VAT_RATE) : VAT_RATE;
     addItem(product, rate);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  };
+  }, [productById, taxGroupMap, addItem]);
 
-  const handleChargeSale = async () => {
+  const handleAddItem = useCallback((product: Product) => {
+    handleAddById(product.id);
+  }, [handleAddById]);
+
+  const handleChargeSale = useCallback(async () => {
     if (cartItems.length === 0) return;
     if (paymentMethod === "Credit" && !selectedCustomer) {
       setShowCustomerSelect(true);
@@ -216,18 +236,20 @@ export default function POSScreen() {
     } catch (e: any) {
       Alert.alert("Error", e.message || "Failed to save sale");
     }
-  };
+  }, [cartItems, paymentMethod, selectedCustomer, splitRemaining, orderDiscAmt, loyaltyRedeemAmount,
+    saveSale, currentStaff, selectedTable, orderDiscountType, orderDiscountValue,
+    loyaltyRedeemPtsActual, splitEntries, clearCart, fetchData]);
 
-  const handleAddSplit = () => {
+  const handleAddSplit = useCallback(() => {
     const amt = parseFloat(splitAmount);
     if (isNaN(amt) || amt <= 0) return;
     const capped = Math.min(amt, splitRemaining);
     if (capped <= 0) return;
-    setSplitEntries([...splitEntries, { method: splitMethod, amount: capped }]);
+    setSplitEntries((prev) => [...prev, { method: splitMethod, amount: capped }]);
     setSplitAmount("");
-  };
+  }, [splitAmount, splitRemaining, splitMethod]);
 
-  const handleApplyItemDiscount = (productId: string) => {
+  const handleApplyItemDiscount = useCallback((productId: string) => {
     const val = parseFloat(itemDiscValue);
     if (isNaN(val) || val <= 0) {
       setItemDiscount(productId, undefined, undefined);
@@ -236,19 +258,19 @@ export default function POSScreen() {
     }
     setShowItemDiscount(null);
     setItemDiscValue("");
-  };
+  }, [itemDiscValue, itemDiscType, setItemDiscount]);
 
-  const handleScanFound = (product: Product) => {
+  const handleScanFound = useCallback((product: Product) => {
     handleAddItem(product);
     setShowScanner(false);
-  };
+  }, [handleAddItem]);
 
-  const handleScanNotFound = (barcode: string) => {
+  const handleScanNotFound = useCallback((barcode: string) => {
     setShowScanner(false);
     Alert.alert("Product not found", `No product linked to barcode: ${barcode}`);
-  };
+  }, []);
 
-  const openPayment = () => {
+  const openPayment = useCallback(() => {
     setPaymentMethod("Card");
     setSelectedCustomer(null);
     setOrderDiscountValue("");
@@ -256,9 +278,51 @@ export default function POSScreen() {
     setSplitEntries([]);
     setLoyaltyRedeemPts("");
     setShowPayment(true);
-  };
+  }, []);
 
-  const SearchBar = (
+  const openScanner = useCallback(() => setShowScanner(true), []);
+  const closeCart = useCallback(() => setShowCart(false), []);
+  const openCart = useCallback(() => setShowCart(true), []);
+  const closePayment = useCallback(() => setShowPayment(false), []);
+  const closeReceipt = useCallback(() => setReceiptSale(null), []);
+  const clearSearch = useCallback(() => setSearchQuery(""), []);
+  const toggleDiscount = useCallback(() => setShowDiscountInput((p) => !p), []);
+
+  const renderProductItem = useCallback(({ item }: { item: Product }) => (
+    <ProductCard product={item} onAdd={handleAddById} quantity={quantityMap[item.id] ?? 0} />
+  ), [handleAddById, quantityMap]);
+
+  const productKeyExtractor = useCallback((item: Product) => item.id, []);
+
+  const renderCartItem = useCallback(({ item }: { item: import("@/types").CartItem }) => (
+    <View>
+      <CartItemRow item={item} onUpdateQuantity={updateQuantity} onRemoveItem={removeItem} />
+      {item.discountAmount && item.discountAmount > 0 ? (
+        <View style={styles.itemDiscRow}>
+          <Text style={{ color: colors.success, fontSize: 11 }}>
+            Discount: -{formatCurrency(item.discountAmount)}
+          </Text>
+          <TouchableOpacity onPress={() => setItemDiscount(item.product.id, undefined, undefined)}>
+            <Feather name="x" size={12} color={colors.mutedForeground} />
+          </TouchableOpacity>
+        </View>
+      ) : null}
+      <TouchableOpacity
+        onPress={() => {
+          setShowItemDiscount(item.product.id);
+          setItemDiscType(item.discountType || "percentage");
+          setItemDiscValue(item.discountValue ? String(item.discountValue) : "");
+        }}
+        style={styles.itemDiscBtn}
+      >
+        <Feather name="percent" size={10} color={colors.primary} />
+      </TouchableOpacity>
+    </View>
+  ), [colors, setItemDiscount, updateQuantity, removeItem]);
+
+  const cartKeyExtractor = useCallback((item: import("@/types").CartItem) => item.product.id, []);
+
+  const SearchBar = useMemo(() => (
     <View style={[styles.searchWrap, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius }]}>
       <Feather name="search" size={16} color={colors.mutedForeground} />
       <TextInput
@@ -269,29 +333,29 @@ export default function POSScreen() {
         style={[styles.searchInput, { color: colors.foreground }]}
       />
       {searchQuery.length > 0 && (
-        <TouchableOpacity onPress={() => setSearchQuery("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <TouchableOpacity onPress={clearSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Feather name="x" size={16} color={colors.mutedForeground} />
         </TouchableOpacity>
       )}
     </View>
-  );
+  ), [colors, searchQuery, clearSearch]);
 
-  const ScanButton = (
+  const ScanButton = useMemo(() => (
     <TouchableOpacity
-      onPress={() => setShowScanner(true)}
+      onPress={openScanner}
       style={[styles.scanBtn, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}
     >
       <Feather name="maximize" size={18} color={colors.primary} />
     </TouchableOpacity>
-  );
+  ), [colors, openScanner]);
 
   const CartContent = (
     <View style={styles.cartInner}>
       <View style={[styles.cartHeader, { borderBottomColor: colors.border }]}>
         <Text style={[styles.cartTitle, { color: colors.foreground }]}>Order</Text>
-        <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
+        <View style={styles.cartHeaderRight}>
           {currentStaff && (
-            <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>
+            <Text style={[styles.staffLabel, { color: colors.mutedForeground }]}>
               {currentStaff.name}
             </Text>
           )}
@@ -308,34 +372,11 @@ export default function POSScreen() {
       ) : (
         <FlatList
           data={cartItems}
-          renderItem={({ item }) => (
-            <View>
-              <CartItemRow item={item} />
-              {item.discountAmount && item.discountAmount > 0 ? (
-                <View style={styles.itemDiscRow}>
-                  <Text style={{ color: colors.success, fontSize: 11 }}>
-                    Discount: -{formatCurrency(item.discountAmount)}
-                  </Text>
-                  <TouchableOpacity onPress={() => setItemDiscount(item.product.id, undefined, undefined)}>
-                    <Feather name="x" size={12} color={colors.mutedForeground} />
-                  </TouchableOpacity>
-                </View>
-              ) : null}
-              <TouchableOpacity
-                onPress={() => {
-                  setShowItemDiscount(item.product.id);
-                  setItemDiscType(item.discountType || "percentage");
-                  setItemDiscValue(item.discountValue ? String(item.discountValue) : "");
-                }}
-                style={styles.itemDiscBtn}
-              >
-                <Feather name="percent" size={10} color={colors.primary} />
-              </TouchableOpacity>
-            </View>
-          )}
-          keyExtractor={(item) => item.product.id}
+          renderItem={renderCartItem}
+          keyExtractor={cartKeyExtractor}
           style={styles.cartList}
           showsVerticalScrollIndicator={false}
+          removeClippedSubviews={Platform.OS !== "web"}
         />
       )}
 
@@ -387,12 +428,21 @@ export default function POSScreen() {
             ) : (
               <FlatList
                 data={filteredProducts}
-                renderItem={({ item }) => <ProductCard product={item} onPress={() => handleAddItem(item)} />}
-                keyExtractor={(item) => item.id}
+                renderItem={renderProductItem}
+                keyExtractor={productKeyExtractor}
                 numColumns={numColumns}
                 key={String(numColumns)}
                 contentContainerStyle={styles.grid}
                 showsVerticalScrollIndicator={false}
+                initialNumToRender={12}
+                maxToRenderPerBatch={8}
+                windowSize={5}
+                removeClippedSubviews={Platform.OS !== "web"}
+                getItemLayout={(_data, index) => ({
+                  length: PRODUCT_ITEM_HEIGHT,
+                  offset: PRODUCT_ITEM_HEIGHT * Math.floor(index / numColumns),
+                  index,
+                })}
               />
             )}
           </View>
@@ -411,18 +461,22 @@ export default function POSScreen() {
             ) : (
               <FlatList
                 data={filteredProducts}
-                renderItem={({ item }) => <ProductCard product={item} onPress={() => handleAddItem(item)} />}
-                keyExtractor={(item) => item.id}
+                renderItem={renderProductItem}
+                keyExtractor={productKeyExtractor}
                 numColumns={2}
                 key="2"
                 contentContainerStyle={styles.grid}
                 showsVerticalScrollIndicator={false}
+                initialNumToRender={8}
+                maxToRenderPerBatch={6}
+                windowSize={5}
+                removeClippedSubviews={Platform.OS !== "web"}
               />
             )}
           </View>
           {itemCount > 0 && (
             <TouchableOpacity
-              onPress={() => setShowCart(true)}
+              onPress={openCart}
               style={[styles.cartBar, { backgroundColor: colors.success, paddingBottom: insets.bottom + 14 }]}
             >
               <View style={styles.cartBarLeft}>
@@ -436,7 +490,7 @@ export default function POSScreen() {
             <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
               <View style={[styles.modalTopBar, { paddingTop: insets.top + 12, borderBottomColor: colors.border }]}>
                 <Text style={[styles.modalTitle, { color: colors.foreground }]}>Cart</Text>
-                <TouchableOpacity onPress={() => setShowCart(false)}>
+                <TouchableOpacity onPress={closeCart}>
                   <Feather name="x" size={22} color={colors.foreground} />
                 </TouchableOpacity>
               </View>
@@ -448,14 +502,14 @@ export default function POSScreen() {
 
       <Modal visible={showPayment} animationType="fade" transparent>
         <View style={styles.paymentOverlay}>
-          <ScrollView contentContainerStyle={{ alignItems: "center", justifyContent: "center", flexGrow: 1, padding: 24 }}>
+          <ScrollView contentContainerStyle={styles.paymentScrollContent}>
             <View style={[styles.paymentSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2 }]}>
               <Text style={[styles.paymentTitle, { color: colors.foreground }]}>Payment</Text>
 
               {availableTables.length > 0 && (
                 <>
                   <Text style={[styles.paymentLabel, { color: colors.mutedForeground }]}>Table (optional)</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tableScrollRow}>
                     <TouchableOpacity
                       onPress={() => setSelectedTable(null)}
                       style={[styles.tableChip, { borderColor: !selectedTable ? colors.primary : colors.border, backgroundColor: !selectedTable ? colors.primary + "18" : "transparent", borderRadius: colors.radius }]}
@@ -506,16 +560,16 @@ export default function POSScreen() {
                     <View style={[styles.customerPickerAvatar, { backgroundColor: colors.primary + "20" }]}>
                       <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 14 }}>{selectedCustomer.name.charAt(0).toUpperCase()}</Text>
                     </View>
-                    <View style={{ flex: 1 }}>
+                    <View style={styles.customerInfoCol}>
                       <Text style={[styles.customerPickerName, { color: colors.foreground }]}>{selectedCustomer.name}</Text>
                       {(selectedCustomer.loyaltyPoints ?? 0) > 0 && (
-                        <Text style={{ color: "#F39C12", fontSize: 11 }}>{selectedCustomer.loyaltyPoints} loyalty pts</Text>
+                        <Text style={styles.loyaltyPtsLabel}>{selectedCustomer.loyaltyPoints} loyalty pts</Text>
                       )}
                       {paymentMethod === "Credit" && selectedCustomer.creditBalance > 0 && (
                         <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Balance: {formatCurrency(selectedCustomer.creditBalance)}</Text>
                       )}
                     </View>
-                    <TouchableOpacity onPress={() => { setSelectedCustomer(null); setLoyaltyRedeemPts(""); }} style={{ padding: 4 }}>
+                    <TouchableOpacity onPress={() => { setSelectedCustomer(null); setLoyaltyRedeemPts(""); }} style={styles.clearCustomerBtn}>
                       <Feather name="x" size={14} color={colors.mutedForeground} />
                     </TouchableOpacity>
                   </View>
@@ -536,16 +590,16 @@ export default function POSScreen() {
                     <View key={i} style={styles.splitEntryRow}>
                       <Text style={{ color: colors.foreground, flex: 1 }}>{e.method}</Text>
                       <Text style={{ color: colors.foreground, fontWeight: "700" }}>{formatCurrency(e.amount)}</Text>
-                      <TouchableOpacity onPress={() => setSplitEntries(splitEntries.filter((_, j) => j !== i))} style={{ marginLeft: 8 }}>
+                      <TouchableOpacity onPress={() => setSplitEntries(splitEntries.filter((_, j) => j !== i))} style={styles.splitRemoveBtn}>
                         <Feather name="x" size={14} color={colors.destructive} />
                       </TouchableOpacity>
                     </View>
                   ))}
                   {splitRemaining > 0.01 && (
                     <>
-                      <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 8 }}>Remaining: {formatCurrency(splitRemaining)}</Text>
+                      <Text style={[styles.splitRemainingLabel, { color: colors.mutedForeground }]}>Remaining: {formatCurrency(splitRemaining)}</Text>
                       <View style={styles.splitAddRow}>
-                        <View style={{ flexDirection: "row", gap: 6, marginBottom: 8 }}>
+                        <View style={styles.splitMethodsRow}>
                           {(["Card", "Cash", "Credit"] as const).map((m) => (
                             <TouchableOpacity
                               key={m}
@@ -556,7 +610,7 @@ export default function POSScreen() {
                             </TouchableOpacity>
                           ))}
                         </View>
-                        <View style={{ flexDirection: "row", gap: 8 }}>
+                        <View style={styles.splitInputRow}>
                           <TextInput
                             value={splitAmount}
                             onChangeText={setSplitAmount}
@@ -575,7 +629,7 @@ export default function POSScreen() {
                 </View>
               )}
 
-              <TouchableOpacity onPress={() => setShowDiscountInput(!showDiscountInput)} style={styles.discountToggle}>
+              <TouchableOpacity onPress={toggleDiscount} style={styles.discountToggle}>
                 <Feather name="percent" size={14} color={colors.primary} />
                 <Text style={{ color: colors.primary, fontSize: 13, marginLeft: 6 }}>
                   {showDiscountInput ? "Remove order discount" : "Add order discount"}
@@ -584,7 +638,7 @@ export default function POSScreen() {
 
               {showDiscountInput && (
                 <View style={[styles.discountBox, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}>
-                  <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+                  <View style={styles.discTypeRow}>
                     {(["percentage", "fixed"] as const).map((t) => (
                       <TouchableOpacity
                         key={t}
@@ -606,20 +660,20 @@ export default function POSScreen() {
                     style={[styles.discInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
                   />
                   {orderDiscAmt > 0 && (
-                    <Text style={{ color: colors.success, fontSize: 12, marginTop: 6 }}>Discount: -{formatCurrency(orderDiscAmt)}</Text>
+                    <Text style={[styles.discAppliedLabel, { color: colors.success }]}>Discount: -{formatCurrency(orderDiscAmt)}</Text>
                   )}
                 </View>
               )}
 
               {selectedCustomer && (selectedCustomer.loyaltyPoints ?? 0) > 0 && (
                 <View style={[styles.discountBox, { backgroundColor: colors.secondary, borderRadius: colors.radius, marginBottom: 12 }]}>
-                  <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+                  <View style={styles.loyaltyHeader}>
                     <Feather name="award" size={14} color="#F39C12" />
-                    <Text style={{ color: "#F39C12", fontSize: 13, fontWeight: "600", marginLeft: 6 }}>
+                    <Text style={styles.loyaltyTitle}>
                       Loyalty Points ({selectedCustomer.loyaltyPoints} available)
                     </Text>
                   </View>
-                  <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 8 }}>
+                  <Text style={[styles.loyaltyRateLabel, { color: colors.mutedForeground }]}>
                     1 point = {formatCurrency(loyaltyRate)} discount
                   </Text>
                   <TextInput
@@ -631,7 +685,7 @@ export default function POSScreen() {
                     style={[styles.discInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
                   />
                   {loyaltyRedeemAmount > 0 && (
-                    <Text style={{ color: "#F39C12", fontSize: 12, marginTop: 6 }}>
+                    <Text style={styles.loyaltyRedeemLabel}>
                       Redeeming {loyaltyRedeemPtsActual} pts = -{formatCurrency(loyaltyRedeemAmount)}
                     </Text>
                   )}
@@ -651,8 +705,8 @@ export default function POSScreen() {
                 )}
                 {loyaltyRedeemAmount > 0 && (
                   <View style={styles.summaryRow}>
-                    <Text style={{ color: "#F39C12" }}>Loyalty Redemption</Text>
-                    <Text style={{ color: "#F39C12" }}>-{formatCurrency(loyaltyRedeemAmount)}</Text>
+                    <Text style={styles.loyaltyPtsLabel}>Loyalty Redemption</Text>
+                    <Text style={styles.loyaltyPtsLabel}>-{formatCurrency(loyaltyRedeemAmount)}</Text>
                   </View>
                 )}
                 <View style={styles.summaryRow}>
@@ -667,7 +721,7 @@ export default function POSScreen() {
               </View>
 
               <View style={styles.paymentActions}>
-                <TouchableOpacity onPress={() => setShowPayment(false)} style={[styles.cancelBtn, { borderColor: colors.border, borderRadius: colors.radius }]}>
+                <TouchableOpacity onPress={closePayment} style={[styles.cancelBtn, { borderColor: colors.border, borderRadius: colors.radius }]}>
                   <Text style={{ color: colors.mutedForeground, fontWeight: "600" }}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={handleChargeSale} style={[styles.confirmBtn, { backgroundColor: colors.success, borderRadius: colors.radius }]}>
@@ -684,7 +738,7 @@ export default function POSScreen() {
         <View style={styles.paymentOverlay}>
           <View style={[styles.itemDiscSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2 }]}>
             <Text style={[styles.paymentTitle, { color: colors.foreground, fontSize: 18 }]}>Item Discount</Text>
-            <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+            <View style={styles.discTypeRow}>
               {(["percentage", "fixed"] as const).map((t) => (
                 <TouchableOpacity
                   key={t}
@@ -718,7 +772,7 @@ export default function POSScreen() {
         </View>
       </Modal>
 
-      <ReceiptModal visible={!!receiptSale} sale={receiptSale} onClose={() => setReceiptSale(null)} />
+      <ReceiptModal visible={!!receiptSale} sale={receiptSale} onClose={closeReceipt} />
       <CustomerSelectModal
         visible={showCustomerSelect}
         onSelect={(customer) => { setSelectedCustomer(customer); setShowCustomerSelect(false); }}
@@ -749,7 +803,9 @@ const styles = StyleSheet.create({
   scanBtn: { padding: 10, marginLeft: 4 },
   cartInner: { flex: 1 },
   cartHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1 },
+  cartHeaderRight: { flexDirection: "row", gap: 12, alignItems: "center" },
   cartTitle: { fontSize: 17, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  staffLabel: { fontSize: 11 },
   cartList: { flex: 1 },
   cartFooter: { padding: 16, borderTopWidth: 1 },
   totalsRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
@@ -771,6 +827,7 @@ const styles = StyleSheet.create({
   modalTopBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1 },
   modalTitle: { fontSize: 20, fontWeight: "700", fontFamily: "Inter_700Bold" },
   paymentOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "center", alignItems: "center" },
+  paymentScrollContent: { alignItems: "center", justifyContent: "center", flexGrow: 1, padding: 24 },
   paymentSheet: { width: "100%", maxWidth: 460, padding: 24 },
   paymentTitle: { fontSize: 22, fontWeight: "700", fontFamily: "Inter_700Bold", marginBottom: 20 },
   paymentLabel: { fontSize: 12, marginBottom: 8, textTransform: "uppercase" },
@@ -780,6 +837,10 @@ const styles = StyleSheet.create({
   customerPickerRow: { flexDirection: "row", alignItems: "center" },
   customerPickerAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", marginRight: 10 },
   customerPickerName: { fontSize: 14, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
+  customerInfoCol: { flex: 1 },
+  clearCustomerBtn: { padding: 4 },
+  loyaltyPtsLabel: { color: "#F39C12", fontSize: 11 },
+  tableScrollRow: { marginBottom: 12 },
   tableChip: { paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, marginRight: 8 },
   summaryBox: { padding: 16, marginBottom: 16 },
   summaryRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
@@ -789,13 +850,23 @@ const styles = StyleSheet.create({
   confirmBtnText: { color: "#fff", fontSize: 16, fontWeight: "700", fontFamily: "Inter_700Bold" },
   discountToggle: { flexDirection: "row", alignItems: "center", marginBottom: 12, paddingVertical: 4 },
   discountBox: { padding: 14, marginBottom: 12 },
+  discTypeRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
   discTypeBtn: { paddingHorizontal: 16, paddingVertical: 8, borderWidth: 1 },
   discInput: { paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, borderWidth: 1 },
+  discAppliedLabel: { fontSize: 12, marginTop: 6 },
+  loyaltyHeader: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  loyaltyTitle: { color: "#F39C12", fontSize: 13, fontWeight: "600", marginLeft: 6 },
+  loyaltyRateLabel: { fontSize: 11, marginBottom: 8 },
+  loyaltyRedeemLabel: { color: "#F39C12", fontSize: 12, marginTop: 6 },
   splitBox: { padding: 14, marginBottom: 12 },
   splitLabel: { fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold", marginBottom: 8 },
   splitEntryRow: { flexDirection: "row", alignItems: "center", paddingVertical: 6 },
+  splitRemoveBtn: { marginLeft: 8 },
+  splitRemainingLabel: { fontSize: 12, marginTop: 8 },
+  splitMethodsRow: { flexDirection: "row", gap: 6, marginBottom: 8 },
   splitMethodBtn: { paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1 },
   splitAddRow: { marginTop: 8 },
+  splitInputRow: { flexDirection: "row", gap: 8 },
   splitInput: { flex: 1, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, borderWidth: 1 },
   splitAddBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
   itemDiscRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingBottom: 4 },

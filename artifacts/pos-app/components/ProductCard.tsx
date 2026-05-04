@@ -1,36 +1,36 @@
-import React, { useRef } from "react";
+import React, { useCallback, useRef } from "react";
 import { Animated, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import * as Haptics from "expo-haptics";
-import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
 import type { Product } from "@/types";
 import { formatCurrency } from "@/types";
 
 interface Props {
   product: Product;
-  onPress: () => void;
+  onAdd: (productId: string) => void;
+  quantity: number;
 }
 
-export function ProductCard({ product, onPress }: Props) {
+function ProductCardInner({ product, onAdd, quantity }: Props) {
   const colors = useColors();
-  const { getItemQuantity } = useCart();
-  const quantity = getItemQuantity(product.id);
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  const isOutOfStock = product.stockQuantity <= 0;
+  const isLowStock = !isOutOfStock && product.stockQuantity <= (product.lowStockThreshold ?? 5);
 
-  const handlePress = () => {
+  const handlePress = useCallback(() => {
     Animated.sequence([
       Animated.timing(scaleAnim, { toValue: 0.93, duration: 70, useNativeDriver: true }),
       Animated.timing(scaleAnim, { toValue: 1, duration: 100, useNativeDriver: true }),
     ]).start();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onPress();
-  };
+    onAdd(product.id);
+  }, [onAdd, product.id, scaleAnim]);
 
   return (
     <Animated.View style={[styles.wrapper, { transform: [{ scale: scaleAnim }] }]}>
       <TouchableOpacity
         onPress={handlePress}
-        activeOpacity={0.9}
+        activeOpacity={isOutOfStock ? 1 : 0.9}
         style={[
           styles.card,
           {
@@ -38,20 +38,33 @@ export function ProductCard({ product, onPress }: Props) {
             borderRadius: colors.radius,
             borderColor: quantity > 0 ? colors.primary : colors.border,
             borderWidth: quantity > 0 ? 2 : 1,
+            opacity: isOutOfStock ? 0.5 : 1,
           },
         ]}
       >
         <View style={[styles.colorBand, { backgroundColor: product.colorHex }]}>
           <Text style={styles.initial}>{product.name.charAt(0).toUpperCase()}</Text>
+          {isOutOfStock && (
+            <View style={styles.stockOverlay}>
+              <Text style={styles.stockOverlayText}>OUT OF STOCK</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.info}>
           <Text style={[styles.name, { color: colors.foreground }]} numberOfLines={2}>
             {product.name}
           </Text>
-          <Text style={[styles.price, { color: colors.primary }]}>
-            {formatCurrency(product.price)}
-          </Text>
+          <View style={styles.priceRow}>
+            <Text style={[styles.price, { color: colors.primary }]}>
+              {formatCurrency(product.price)}
+            </Text>
+            {isLowStock && (
+              <View style={[styles.lowStockBadge, { backgroundColor: "#F39C12" + "20" }]}>
+                <Text style={styles.lowStockText}>{product.stockQuantity} left</Text>
+              </View>
+            )}
+          </View>
         </View>
 
         {quantity > 0 && (
@@ -63,6 +76,8 @@ export function ProductCard({ product, onPress }: Props) {
     </Animated.View>
   );
 }
+
+export const ProductCard = React.memo(ProductCardInner);
 
 const styles = StyleSheet.create({
   wrapper: {
@@ -84,6 +99,23 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.9)",
     fontFamily: "Inter_700Bold",
   },
+  stockOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stockOverlayText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1,
+    fontFamily: "Inter_700Bold",
+  },
   info: {
     padding: 10,
     paddingTop: 8,
@@ -94,11 +126,27 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     lineHeight: 18,
   },
+  priceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 4,
+  },
   price: {
     fontSize: 15,
     fontWeight: "700",
     fontFamily: "Inter_700Bold",
-    marginTop: 4,
+  },
+  lowStockBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  lowStockText: {
+    color: "#F39C12",
+    fontSize: 9,
+    fontWeight: "700",
+    fontFamily: "Inter_700Bold",
   },
   badge: {
     position: "absolute",

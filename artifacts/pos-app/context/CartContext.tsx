@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo, useReducer } from "react";
+import React, { createContext, useCallback, useContext, useMemo, useReducer } from "react";
 import type { CartItem, Product } from "@/types";
 import { VAT_RATE } from "@/types";
 
@@ -21,6 +21,7 @@ interface CartContextValue {
   effectiveSubtotal: number;
   vatAmount: number;
   total: number;
+  quantityMap: Record<string, number>;
   addItem: (product: Product, taxRate?: number) => void;
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
@@ -118,20 +119,32 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, [state.items]);
   const total = useMemo(() => effectiveSubtotal + vatAmount, [effectiveSubtotal, vatAmount]);
 
-  const addItem = (product: Product, taxRate?: number) => dispatch({ type: "ADD_ITEM", product, taxRate });
-  const removeItem = (productId: string) => dispatch({ type: "REMOVE_ITEM", productId });
-  const updateQuantity = (productId: string, quantity: number) =>
-    dispatch({ type: "UPDATE_QUANTITY", productId, quantity });
-  const setItemDiscount = (productId: string, discountType?: "percentage" | "fixed", discountValue?: number) =>
-    dispatch({ type: "SET_ITEM_DISCOUNT", productId, discountType, discountValue });
-  const clearCart = () => dispatch({ type: "CLEAR" });
-  const getItemQuantity = (productId: string) =>
-    state.items.find((i) => i.product.id === productId)?.quantity ?? 0;
+  const quantityMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const item of state.items) {
+      map[item.product.id] = item.quantity;
+    }
+    return map;
+  }, [state.items]);
+
+  const addItem = useCallback((product: Product, taxRate?: number) => dispatch({ type: "ADD_ITEM", product, taxRate }), []);
+  const removeItem = useCallback((productId: string) => dispatch({ type: "REMOVE_ITEM", productId }), []);
+  const updateQuantity = useCallback((productId: string, quantity: number) =>
+    dispatch({ type: "UPDATE_QUANTITY", productId, quantity }), []);
+  const setItemDiscount = useCallback((productId: string, discountType?: "percentage" | "fixed", discountValue?: number) =>
+    dispatch({ type: "SET_ITEM_DISCOUNT", productId, discountType, discountValue }), []);
+  const clearCart = useCallback(() => dispatch({ type: "CLEAR" }), []);
+  const getItemQuantity = useCallback((productId: string) =>
+    state.items.find((i) => i.product.id === productId)?.quantity ?? 0, [state.items]);
+
+  const value = useMemo(() => ({
+    items: state.items, itemCount, subtotal, itemDiscountTotal, effectiveSubtotal,
+    vatAmount, total, quantityMap, addItem, removeItem, updateQuantity, setItemDiscount, clearCart, getItemQuantity,
+  }), [state.items, itemCount, subtotal, itemDiscountTotal, effectiveSubtotal,
+    vatAmount, total, quantityMap, addItem, removeItem, updateQuantity, setItemDiscount, clearCart, getItemQuantity]);
 
   return (
-    <CartContext.Provider
-      value={{ items: state.items, itemCount, subtotal, itemDiscountTotal, effectiveSubtotal, vatAmount, total, addItem, removeItem, updateQuantity, setItemDiscount, clearCart, getItemQuantity }}
-    >
+    <CartContext.Provider value={value}>
       {children}
     </CartContext.Provider>
   );

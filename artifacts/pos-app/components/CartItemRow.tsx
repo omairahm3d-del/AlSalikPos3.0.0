@@ -1,18 +1,31 @@
-import React from "react";
+import React, { useCallback } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
 import type { CartItem } from "@/types";
 import { formatCurrency } from "@/types";
 
 interface Props {
   item: CartItem;
+  onUpdateQuantity: (productId: string, quantity: number) => void;
+  onRemoveItem: (productId: string) => void;
 }
 
-export function CartItemRow({ item }: Props) {
+function CartItemRowInner({ item, onUpdateQuantity, onRemoveItem }: Props) {
   const colors = useColors();
-  const { updateQuantity, removeItem } = useCart();
+
+  const decrement = useCallback(
+    () => onUpdateQuantity(item.product.id, item.quantity - 1),
+    [onUpdateQuantity, item.product.id, item.quantity]
+  );
+  const increment = useCallback(
+    () => onUpdateQuantity(item.product.id, item.quantity + 1),
+    [onUpdateQuantity, item.product.id, item.quantity]
+  );
+  const remove = useCallback(
+    () => onRemoveItem(item.product.id),
+    [onRemoveItem, item.product.id]
+  );
 
   return (
     <View
@@ -34,7 +47,7 @@ export function CartItemRow({ item }: Props) {
 
       <View style={styles.qtySection}>
         <TouchableOpacity
-          onPress={() => updateQuantity(item.product.id, item.quantity - 1)}
+          onPress={decrement}
           style={[styles.qtyBtn, { backgroundColor: colors.secondary }]}
         >
           <Feather name="minus" size={13} color={colors.foreground} />
@@ -43,7 +56,7 @@ export function CartItemRow({ item }: Props) {
         <Text style={[styles.qty, { color: colors.foreground }]}>{item.quantity}</Text>
 
         <TouchableOpacity
-          onPress={() => updateQuantity(item.product.id, item.quantity + 1)}
+          onPress={increment}
           style={[styles.qtyBtn, { backgroundColor: colors.primary }]}
         >
           <Feather name="plus" size={13} color="#fff" />
@@ -55,7 +68,7 @@ export function CartItemRow({ item }: Props) {
       </Text>
 
       <TouchableOpacity
-        onPress={() => removeItem(item.product.id)}
+        onPress={remove}
         style={styles.deleteBtn}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
@@ -64,6 +77,8 @@ export function CartItemRow({ item }: Props) {
     </View>
   );
 }
+
+export const CartItemRow = React.memo(CartItemRowInner);
 
 const styles = StyleSheet.create({
   row: {
