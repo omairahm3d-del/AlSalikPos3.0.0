@@ -141,6 +141,9 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
     await printHtml(html, {
       deviceName: ps?.windowsReceiptPrinterName || "",
       paperWidth: ps?.paperWidth || "80mm",
+      rawMode: !!ps?.rawTextMode,
+      autoCut: ps?.autoCutPaper !== false,
+      codepage: ps?.rawCodepage || "cp1252",
     });
   };
 

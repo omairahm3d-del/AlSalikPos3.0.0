@@ -229,6 +229,100 @@ ipcMain.handle('printers:print', async (_evt, payload) => {
   }
 });
 
+// ===== ESC/POS RAW print via PowerShell + Win32 spooler =====
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawn } = require('child_process');
+
+function escposBuild(text, opts) {
+  const codepage = (opts.codepage || 'cp1252').toLowerCase();
+  const cut = opts.autoCut !== false;
+
+  // ESC @ : initialize
+  const init = Buffer.from([0x1B, 0x40]);
+  // ESC t n : select code page (n: 0=CP437, 16=CP1252, 22=CP858)
+  const cpMap = { cp437: 0, cp1252: 16, ascii: 0 };
+  const cpByte = cpMap[codepage] != null ? cpMap[codepage] : 16;
+  const setCp = Buffer.from([0x1B, 0x74, cpByte]);
+  // ESC a 0 : left align
+  const align = Buffer.from([0x1B, 0x61, 0x00]);
+
+  // Encode text. Node Buffer doesn't natively do CP437; map non-ascii via simple fold.
+  const safe = String(text).replace(/[\u0080-\uFFFF]/g, (ch) => {
+    // Try a small map for common chars
+    const map = { '\u00B0': String.fromCharCode(0xF8), '\u00A3': String.fromCharCode(0x9C), '\u00E9': 'e', '\u00E8': 'e' };
+    return map[ch] != null ? map[ch] : '?';
+  });
+  const body = Buffer.from(safe, 'binary');
+
+  // Feed 4 lines + cut
+  const feedAndCut = cut
+    ? Buffer.from([0x0A, 0x0A, 0x0A, 0x0A, 0x1D, 0x56, 0x00]) // GS V 0 = full cut
+    : Buffer.from([0x0A, 0x0A, 0x0A]);
+
+  return Buffer.concat([init, setCp, align, body, feedAndCut]);
+}
+
+const RAW_PRINT_PS = `param([string]$PrinterName, [string]$BinPath)
+$src = @"
+using System;
+using System.IO;
+using System.Runtime.InteropServices;
+public class RP {
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+  public class DI { public string pDocName; public string pOutputFile; public string pDataType; }
+  [DllImport("winspool.Drv", EntryPoint="OpenPrinterW", SetLastError=true, CharSet=CharSet.Unicode)] public static extern bool OpenPrinter(string s, out IntPtr h, IntPtr d);
+  [DllImport("winspool.Drv", EntryPoint="ClosePrinter", SetLastError=true)] public static extern bool ClosePrinter(IntPtr h);
+  [DllImport("winspool.Drv", EntryPoint="StartDocPrinterW", SetLastError=true, CharSet=CharSet.Unicode)] public static extern bool StartDocPrinter(IntPtr h, int l, [In, MarshalAs(UnmanagedType.LPStruct)] DI di);
+  [DllImport("winspool.Drv", EntryPoint="EndDocPrinter", SetLastError=true)] public static extern bool EndDocPrinter(IntPtr h);
+  [DllImport("winspool.Drv", EntryPoint="StartPagePrinter", SetLastError=true)] public static extern bool StartPagePrinter(IntPtr h);
+  [DllImport("winspool.Drv", EntryPoint="EndPagePrinter", SetLastError=true)] public static extern bool EndPagePrinter(IntPtr h);
+  [DllImport("winspool.Drv", EntryPoint="WritePrinter", SetLastError=true)] public static extern bool WritePrinter(IntPtr h, byte[] d, int l, out int w);
+  public static bool Send(string p, byte[] b) {
+    IntPtr h; if(!OpenPrinter(p, out h, IntPtr.Zero)) return false;
+    var di = new DI(); di.pDocName = "POS Receipt"; di.pDataType = "RAW";
+    if(!StartDocPrinter(h, 1, di)) { ClosePrinter(h); return false; }
+    StartPagePrinter(h); int w; bool ok = WritePrinter(h, b, b.Length, out w);
+    EndPagePrinter(h); EndDocPrinter(h); ClosePrinter(h); return ok;
+  }
+}
+"@
+Add-Type -TypeDefinition $src -Language CSharp
+$bytes = [System.IO.File]::ReadAllBytes($BinPath)
+$ok = [RP]::Send($PrinterName, $bytes)
+if ($ok) { exit 0 } else { exit 1 }
+`;
+
+ipcMain.handle('printers:printRaw', async (_evt, payload) => {
+  const { text, options } = payload || {};
+  const opts = options || {};
+  const printerName = opts.deviceName;
+  if (!printerName) return { ok: false, error: 'No printer selected' };
+  if (process.platform !== 'win32') return { ok: false, error: 'RAW printing only available on Windows' };
+  if (text == null) return { ok: false, error: 'No text provided' };
+
+  const bin = escposBuild(String(text), { autoCut: !!opts.autoCut, codepage: opts.codepage || 'cp1252' });
+  const tmp = path.join(os.tmpdir(), `alsalik-raw-${Date.now()}-${Math.random().toString(36).slice(2,8)}.bin`);
+  const ps1 = path.join(os.tmpdir(), `alsalik-raw-${Date.now()}-${Math.random().toString(36).slice(2,8)}.ps1`);
+  try {
+    fs.writeFileSync(tmp, bin);
+    fs.writeFileSync(ps1, RAW_PRINT_PS);
+    const code = await new Promise((resolve) => {
+      const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1, '-PrinterName', printerName, '-BinPath', tmp], { windowsHide: true });
+      let stderr = '';
+      child.stderr.on('data', (d) => { stderr += d.toString(); });
+      child.on('close', (c) => { if (c !== 0) console.warn('RAW print stderr:', stderr); resolve(c); });
+      child.on('error', (e) => { console.warn('RAW print spawn error:', e); resolve(1); });
+    });
+    return { ok: code === 0 };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  } finally {
+    setTimeout(() => { try { fs.unlinkSync(tmp); } catch {} try { fs.unlinkSync(ps1); } catch {} }, 5000);
+  }
+});
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate));
   createWindow();

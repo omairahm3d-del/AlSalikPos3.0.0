@@ -262,9 +262,13 @@ export default function POSScreen() {
         itemDiscountTotal,
       });
       const { printHtml } = await import("@/lib/printBridge");
+      const ps = businessSettings?.printerSettings;
       await printHtml(html, {
-        deviceName: businessSettings?.printerSettings?.windowsReceiptPrinterName || "",
-        paperWidth: businessSettings?.printerSettings?.paperWidth || "80mm",
+        deviceName: ps?.windowsReceiptPrinterName || "",
+        paperWidth: ps?.paperWidth || "80mm",
+        rawMode: !!ps?.rawTextMode,
+        autoCut: ps?.autoCutPaper !== false,
+        codepage: ps?.rawCodepage || "cp1252",
       });
     } catch (e: any) {
       Alert.alert("Print Error", e.message || "Could not print bill");
@@ -518,12 +522,17 @@ export default function POSScreen() {
 </head><body>OPEN CASH DRAWER<br/>${new Date().toLocaleString("en-GB")}<script>window.onload=function(){setTimeout(function(){window.print();setTimeout(function(){window.close();},500);},150);};</script></body></html>`;
     try {
       const { printHtml } = await import("@/lib/printBridge");
+      const dps = businessSettings?.printerSettings;
       const ok = await printHtml(html, {
         deviceName:
-          businessSettings?.printerSettings?.windowsDrawerPrinterName ||
-          businessSettings?.printerSettings?.windowsReceiptPrinterName ||
+          dps?.windowsDrawerPrinterName ||
+          dps?.windowsReceiptPrinterName ||
           "",
         paperWidth: "80mm",
+        rawMode: !!dps?.rawTextMode,
+        rawText: dps?.rawTextMode ? "OPEN CASH DRAWER\n" + new Date().toLocaleString("en-GB") + "\n" : undefined,
+        autoCut: dps?.autoCutPaper !== false,
+        codepage: dps?.rawCodepage || "cp1252",
       });
       if (!ok && Platform.OS === "web" && !window.electronPOS) {
         Alert.alert("Popup Blocked", "Please allow popups for this site so the drawer-kick page can open.");

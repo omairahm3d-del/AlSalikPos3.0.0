@@ -17,6 +17,10 @@ type ElectronAPI = {
     html: string,
     options: { deviceName?: string; paperWidth?: "58mm" | "80mm"; copies?: number }
   ) => Promise<{ ok: boolean; error?: string }>;
+  silentPrintRaw?: (
+    text: string,
+    options: { deviceName?: string; autoCut?: boolean; codepage?: "cp437" | "cp1252" | "ascii" }
+  ) => Promise<{ ok: boolean; error?: string }>;
 };
 
 declare global {
@@ -47,10 +51,25 @@ export type PrintOpts = {
   deviceName?: string;
   paperWidth?: "58mm" | "80mm";
   copies?: number;
+  rawText?: string;
+  rawMode?: boolean;
+  autoCut?: boolean;
+  codepage?: "cp437" | "cp1252" | "ascii";
 };
+
+export async function printRawText(text: string, opts: { deviceName?: string; autoCut?: boolean; codepage?: "cp437" | "cp1252" | "ascii" } = {}): Promise<boolean> {
+  const api = getElectronAPI();
+  if (!api || !api.silentPrintRaw || !opts.deviceName) return false;
+  const res = await api.silentPrintRaw(text, opts);
+  return !!res.ok;
+}
 
 export async function printHtml(html: string, opts: PrintOpts = {}): Promise<boolean> {
   const api = getElectronAPI();
+  if (api && opts.rawMode && opts.rawText && api.silentPrintRaw && opts.deviceName) {
+    const r = await api.silentPrintRaw(opts.rawText, { deviceName: opts.deviceName, autoCut: opts.autoCut, codepage: opts.codepage });
+    if (r.ok) return true;
+  }
   if (api && opts.deviceName) {
     const res = await api.silentPrint(html, opts);
     if (res.ok) return true;

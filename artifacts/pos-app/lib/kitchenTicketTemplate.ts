@@ -52,7 +52,7 @@ export function generateKitchenTicketHTML(
   <style>
     @page { margin: 4mm; size: 80mm auto; }
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: 'Courier New', Courier, monospace; font-size: ${fs.body}px; color: #000; width: 72mm; margin: 0 auto; padding: 4mm 0; }
+    body { font-family: 'Tahoma', 'Arial', 'Segoe UI', sans-serif; font-size: ${fs.body}px; color: #000; width: 72mm; margin: 0 auto; padding: 4mm 0; }
     .divider { border-top: 2px dashed #000; margin: 8px 0; }
     .header { text-align: center; font-size: ${fs.header}px; font-weight: bold; margin-bottom: 4px; }
     .info { font-size: ${fs.body}px; margin-bottom: 2px; }

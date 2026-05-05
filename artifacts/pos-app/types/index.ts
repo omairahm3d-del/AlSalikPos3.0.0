@@ -234,6 +234,9 @@ export interface PrinterSettings {
   windowsReceiptPrinterName?: string;
   windowsKOTPrinterName?: string;
   windowsDrawerPrinterName?: string;
+  rawTextMode?: boolean;
+  autoCutPaper?: boolean;
+  rawCodepage?: "cp437" | "cp1252" | "ascii";
 }
 
 export interface KOTSettings {
@@ -388,6 +391,9 @@ export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
   printers: [],
   defaultReceiptPrinterId: "",
   defaultKOTPrinterId: "",
+  rawTextMode: false,
+  autoCutPaper: true,
+  rawCodepage: "cp1252",
 };
 
 export const DEFAULT_KOT_SETTINGS: KOTSettings = {

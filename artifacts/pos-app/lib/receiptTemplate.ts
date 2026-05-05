@@ -91,7 +91,7 @@ export function generateReceiptHTML(
   <style>
     @page { margin: 4mm; size: ${pageSize} auto; }
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: 'Courier New', Courier, monospace; font-size: ${fs.body}px; color: #000; width: ${pw}; margin: 0 auto; padding: 4mm 0; }
+    body { font-family: 'Tahoma', 'Arial', 'Segoe UI', sans-serif; font-size: ${fs.body}px; color: #000; width: ${pw}; margin: 0 auto; padding: 4mm 0; }
     .center { text-align: center; }
     .bold { font-weight: bold; }
     .ar { font-family: 'Tahoma', 'Arial', sans-serif; direction: rtl; unicode-bidi: embed; }
@@ -226,7 +226,7 @@ export function generateZReportHTML(
   <style>
     @page { margin: 6mm; size: 80mm auto; }
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: 'Courier New', Courier, monospace; font-size: 12px; color: #000; width: 72mm; margin: 0 auto; padding: 4mm 0; }
+    body { font-family: 'Tahoma', 'Arial', 'Segoe UI', sans-serif; font-size: 12px; color: #000; width: 72mm; margin: 0 auto; padding: 4mm 0; }
     .center { text-align: center; }
     .bold { font-weight: bold; }
     .divider { border-top: 1px dashed #000; margin: 8px 0; }
@@ -358,7 +358,7 @@ export function generateCreditPaymentReceiptHTML(
   <style>
     @page { margin: 4mm; size: ${pageSize} auto; }
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: 'Courier New', Courier, monospace; font-size: ${fs.body}px; color: #000; width: ${pw}; margin: 0 auto; padding: 4mm 0; }
+    body { font-family: 'Tahoma', 'Arial', 'Segoe UI', sans-serif; font-size: ${fs.body}px; color: #000; width: ${pw}; margin: 0 auto; padding: 4mm 0; }
     .center { text-align: center; }
     .bold { font-weight: bold; }
     .divider { border-top: 1px dashed #000; margin: 6px 0; }

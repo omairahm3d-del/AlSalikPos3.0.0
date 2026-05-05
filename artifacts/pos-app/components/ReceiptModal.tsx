@@ -60,9 +60,19 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
     try {
       const html = generateReceiptHTML(sale, items, business);
       const { printHtml } = await import("@/lib/printBridge");
+      const ps = business.printerSettings;
+      let rawText: string | undefined;
+      if (ps?.rawTextMode) {
+        const { generateReceiptText } = await import("@/lib/textReceipt");
+        rawText = generateReceiptText(sale, items, business);
+      }
       await printHtml(html, {
-        deviceName: business.printerSettings?.windowsReceiptPrinterName || "",
-        paperWidth: business.printerSettings?.paperWidth || "80mm",
+        deviceName: ps?.windowsReceiptPrinterName || "",
+        paperWidth: ps?.paperWidth || "80mm",
+        rawMode: !!ps?.rawTextMode,
+        rawText,
+        autoCut: ps?.autoCutPaper !== false,
+        codepage: ps?.rawCodepage || "cp1252",
       });
     } catch {
     }

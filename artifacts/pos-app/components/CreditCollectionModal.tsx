@@ -420,9 +420,13 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
         invoices: successInfo.invoices,
       }, business);
       const { printHtml } = await import("@/lib/printBridge");
+      const ps = business.printerSettings;
       await printHtml(html, {
-        deviceName: business.printerSettings?.windowsReceiptPrinterName || "",
-        paperWidth: business.printerSettings?.paperWidth || "80mm",
+        deviceName: ps?.windowsReceiptPrinterName || "",
+        paperWidth: ps?.paperWidth || "80mm",
+        rawMode: !!ps?.rawTextMode,
+        autoCut: ps?.autoCutPaper !== false,
+        codepage: ps?.rawCodepage || "cp1252",
       });
     } catch { /* ignore */ }
   };

@@ -103,7 +103,7 @@ const SECTIONS: SectionCard[] = [
   { id: "tax", icon: "percent", title: "Tax Groups", subtitle: "VAT rates & tax groups", color: "#F39C12", permKey: "boTax" },
   { id: "business", icon: "briefcase", title: "Business Settings", subtitle: "Company info & loyalty", color: "#6C63FF", permKey: "boBusiness" },
   { id: "emailSettings", icon: "mail", title: "Email Settings", subtitle: "Z-Report email delivery", color: "#3498DB", permKey: "boBusiness" },
-  { id: "database", icon: "database", title: "Database", subtitle: "Backup, restore & clear data", color: "#16A085", adminOnly: true },
+  { id: "database", icon: "database", title: "Database", subtitle: "Backup, restore & clear data", color: "#16A085" },
   { id: "permissions", icon: "shield", title: "Permissions", subtitle: "Configure staff access rights", color: "#E74C3C", adminOnly: true },
 ];
 
@@ -968,8 +968,18 @@ export default function BackOfficeScreen() {
                   onPress={async () => {
                     const dn = printerSettings.windowsReceiptPrinterName || windowsPrinters.find((p) => p.isDefault)?.name || windowsPrinters[0]?.name || "";
                     if (!dn) { Alert.alert("No Printer", "Select a printer first."); return; }
-                    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>@page{margin:0;size:${printerSettings.paperWidth} auto}body{margin:0;padding:8px;font-family:'Courier New',monospace;color:#000;font-size:12px;text-align:center}</style></head><body><div style="font-size:14px;font-weight:bold">AL SALIK POS</div><div>Test Print</div><div>${new Date().toLocaleString("en-GB")}</div><div style="margin-top:6px">--------------------------------</div><div>If this prints clearly,</div><div>your printer is configured.</div><div style="margin-top:6px">--------------------------------</div></body></html>`;
-                    const ok = await printHtml(html, { deviceName: dn, paperWidth: printerSettings.paperWidth });
+                    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>@page{margin:0;size:${printerSettings.paperWidth} auto}body{margin:0;padding:8px;font-family:'Tahoma','Arial',sans-serif;color:#000;font-size:12px;text-align:center}</style></head><body><div style="font-size:14px;font-weight:bold">AL SALIK POS</div><div>Test Print</div><div>${new Date().toLocaleString("en-GB")}</div><div style="margin-top:6px">--------------------------------</div><div>If this prints clearly,</div><div>your printer is configured.</div><div style="margin-top:6px">--------------------------------</div></body></html>`;
+                    const rawText = printerSettings.rawTextMode
+                      ? `AL SALIK POS\nTest Print (RAW)\n${new Date().toLocaleString("en-GB")}\n--------------------------------\nIf you see this with a clean cut,\nESC/POS RAW mode works.\n--------------------------------\n`
+                      : undefined;
+                    const ok = await printHtml(html, {
+                      deviceName: dn,
+                      paperWidth: printerSettings.paperWidth,
+                      rawMode: !!printerSettings.rawTextMode,
+                      rawText,
+                      autoCut: printerSettings.autoCutPaper !== false,
+                      codepage: printerSettings.rawCodepage || "cp1252",
+                    });
                     Alert.alert(ok ? "Test Sent" : "Test Failed", ok ? `Sent to "${dn}".` : "Could not send to printer. Check Windows printer status.");
                   }}
                   style={[s.chip, { borderColor: colors.success, borderStyle: "dashed", alignSelf: "flex-start", marginTop: 4, borderRadius: colors.radius, flexDirection: "row", gap: 6 }]}
@@ -977,6 +987,29 @@ export default function BackOfficeScreen() {
                   <Feather name="printer" size={12} color={colors.success} />
                   <Text style={{ color: colors.success, fontWeight: "600", fontSize: 12 }}>Send Test Print</Text>
                 </TouchableOpacity>
+
+                <View style={{ marginTop: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border }}>
+                  <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 13, marginBottom: 8 }}>Thermal Print Mode</Text>
+                  <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 10, lineHeight: 15 }}>
+                    Enable RAW (ESC/POS) mode if your POS-80 printer prints question marks or garbled text.
+                    RAW sends plain text + paper-cut commands directly to the printer (Latin-only, no Arabic).
+                  </Text>
+                  {renderSwitch("Use RAW Text Mode (ESC/POS)", !!printerSettings.rawTextMode, (v) => setPrinterSettings({ ...printerSettings, rawTextMode: v }))}
+                  {renderSwitch("Auto-cut paper after print", printerSettings.autoCutPaper !== false, (v) => setPrinterSettings({ ...printerSettings, autoCutPaper: v }))}
+                  {printerSettings.rawTextMode && (
+                    <View style={{ marginTop: 6 }}>
+                      <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 4 }}>Code Page</Text>
+                      <View style={s.chipRow}>
+                        {(["cp1252", "cp437", "ascii"] as const).map((cp) => (
+                          <TouchableOpacity key={cp} onPress={() => setPrinterSettings({ ...printerSettings, rawCodepage: cp })}
+                            style={[s.chip, { backgroundColor: (printerSettings.rawCodepage || "cp1252") === cp ? colors.primary : colors.secondary, borderColor: colors.border, borderRadius: colors.radius }]}>
+                            <Text style={{ color: (printerSettings.rawCodepage || "cp1252") === cp ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 11, textTransform: "uppercase" }}>{cp}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+                </View>
               </>
             )}
           </View>
