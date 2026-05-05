@@ -8,46 +8,67 @@ const INSTALLER_PATH = resolve(
   process.cwd(),
   "../../desktop-installer/dist/Al Salik POS Setup 1.0.0.exe",
 );
+const APK_PATH = resolve(
+  process.cwd(),
+  "../../desktop-installer/dist/Al Salik POS.apk",
+);
 
-router.get("/download/installer", (req, res) => {
-  if (!existsSync(INSTALLER_PATH)) {
-    req.log.error({ path: INSTALLER_PATH }, "Installer file not found");
-    res.status(404).json({ error: "Installer not found" });
+function streamFile(req: any, res: any, filePath: string, filename: string) {
+  if (!existsSync(filePath)) {
+    req.log.error({ path: filePath }, "Download file not found");
+    res.status(404).json({ error: "File not found" });
     return;
   }
-
-  const stat = statSync(INSTALLER_PATH);
-  const filename = "Al Salik POS Setup 1.0.0.exe";
-
+  const stat = statSync(filePath);
   res.setHeader("Content-Type", "application/octet-stream");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="${filename}"`,
-  );
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Content-Length", stat.size.toString());
   res.setHeader("Cache-Control", "no-cache");
-
-  const stream = createReadStream(INSTALLER_PATH);
+  const stream = createReadStream(filePath);
   stream.on("error", (err) => {
-    req.log.error({ err }, "Error streaming installer");
+    req.log.error({ err }, "Error streaming file");
     if (!res.headersSent) res.status(500).end();
   });
   stream.pipe(res);
+}
+
+router.get("/download/installer", (req, res) => {
+  streamFile(req, res, INSTALLER_PATH, "Al Salik POS Setup 1.0.0.exe");
 });
 
-router.get("/download/info", (req, res) => {
-  if (!existsSync(INSTALLER_PATH)) {
-    res.status(404).json({ available: false });
-    return;
+router.get("/download/apk", (req, res) => {
+  streamFile(req, res, APK_PATH, "Al Salik POS.apk");
+});
+
+router.get("/download/info", (_req, res) => {
+  const result: Record<string, any> = {};
+  if (existsSync(INSTALLER_PATH)) {
+    const s = statSync(INSTALLER_PATH);
+    result.windows = {
+      available: true,
+      filename: "Al Salik POS Setup 1.0.0.exe",
+      sizeBytes: s.size,
+      sizeMB: Math.round(s.size / 1024 / 1024),
+      downloadUrl: "/api/download/installer",
+    };
+  } else {
+    result.windows = { available: false };
   }
-  const stat = statSync(INSTALLER_PATH);
-  res.json({
-    available: true,
-    filename: "Al Salik POS Setup 1.0.0.exe",
-    sizeBytes: stat.size,
-    sizeMB: Math.round(stat.size / 1024 / 1024),
-    downloadUrl: "/api/download/installer",
-  });
+  if (existsSync(APK_PATH)) {
+    const s = statSync(APK_PATH);
+    result.android = {
+      available: true,
+      filename: "Al Salik POS.apk",
+      sizeBytes: s.size,
+      sizeMB: Math.round(s.size / 1024 / 1024),
+      downloadUrl: "/api/download/apk",
+    };
+  } else {
+    result.android = { available: false };
+  }
+  // Backwards-compat: top-level keys mirror the windows installer.
+  Object.assign(result, result.windows);
+  res.json(result);
 });
 
 export default router;
