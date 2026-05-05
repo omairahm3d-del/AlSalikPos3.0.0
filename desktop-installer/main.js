@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Menu, shell, dialog } = require('electron');
+const { app, BrowserWindow, Menu, shell, dialog, ipcMain } = require('electron');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -83,6 +83,7 @@ async function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: false,
+      preload: path.join(__dirname, 'preload.js'),
     },
     backgroundColor: '#0F1117',
     show: false,
@@ -166,6 +167,67 @@ const menuTemplate = [
     ],
   },
 ];
+
+// ===== Printer IPC bridge =====
+ipcMain.handle('printers:list', async () => {
+  try {
+    if (!mainWindow) return [];
+    const list = await mainWindow.webContents.getPrintersAsync();
+    return list.map((p) => ({
+      name: p.name,
+      displayName: p.displayName || p.name,
+      description: p.description || '',
+      isDefault: !!p.isDefault,
+      status: p.status,
+    }));
+  } catch (e) {
+    console.error('printers:list error', e);
+    return [];
+  }
+});
+
+ipcMain.handle('printers:print', async (_evt, payload) => {
+  const { html, options } = payload || {};
+  if (!html) return { ok: false, error: 'No HTML provided' };
+  const opts = options || {};
+  const deviceName = opts.deviceName || '';
+  const paperWidth = opts.paperWidth === '58mm' ? 58 : 80;
+  const copies = Math.max(1, Math.min(10, parseInt(opts.copies || 1, 10)));
+
+  const win = new BrowserWindow({
+    show: false,
+    webPreferences: { offscreen: false, contextIsolation: true, sandbox: true },
+  });
+
+  try {
+    const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+    await win.loadURL(dataUrl);
+    await new Promise((r) => setTimeout(r, 120));
+
+    const printOpts = {
+      silent: true,
+      printBackground: true,
+      deviceName,
+      copies,
+      margins: { marginType: 'none' },
+      pageSize: { width: paperWidth * 1000, height: 297000 },
+      scaleFactor: 100,
+    };
+
+    const ok = await new Promise((resolve) => {
+      win.webContents.print(printOpts, (success, reason) => {
+        if (!success) console.warn('Silent print failed:', reason);
+        resolve(success);
+      });
+    });
+    return { ok };
+  } catch (e) {
+    console.error('printers:print error', e);
+    return { ok: false, error: String(e && e.message || e) };
+  } finally {
+    setTimeout(() => { try { win.destroy(); } catch {} }, 500);
+  }
+});
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate));

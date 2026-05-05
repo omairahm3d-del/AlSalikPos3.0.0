@@ -136,17 +136,12 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
   const hasInput = closingCash.trim() !== "";
 
   const printReport = async (html: string) => {
-    if (Platform.OS === "web") {
-      try {
-        const w = window.open("", "_blank", "width=420,height=700");
-        if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 350); }
-      } catch { /* ignore */ }
-    } else {
-      try {
-        const Print = await import("expo-print");
-        await Print.printAsync({ html });
-      } catch { /* ignore */ }
-    }
+    const ps = savedBusiness?.printerSettings;
+    const { printHtml } = await import("@/lib/printBridge");
+    await printHtml(html, {
+      deviceName: ps?.windowsReceiptPrinterName || "",
+      paperWidth: ps?.paperWidth || "80mm",
+    });
   };
 
   const sendEmail = async (html: string, business: BusinessSettings): Promise<boolean> => {

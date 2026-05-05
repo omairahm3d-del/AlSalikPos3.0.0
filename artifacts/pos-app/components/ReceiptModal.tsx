@@ -57,20 +57,13 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
 
   const handlePrint = async () => {
     if (!sale || !business) return;
-    if (Platform.OS === "web") {
-      const html = generateReceiptHTML(sale, items, business);
-      const w = window.open("", "_blank", "width=350,height=600");
-      if (w) {
-        w.document.write(html);
-        w.document.close();
-        setTimeout(() => w.print(), 300);
-      }
-      return;
-    }
     try {
-      const Print = await import("expo-print");
       const html = generateReceiptHTML(sale, items, business);
-      await Print.printAsync({ html });
+      const { printHtml } = await import("@/lib/printBridge");
+      await printHtml(html, {
+        deviceName: business.printerSettings?.windowsReceiptPrinterName || "",
+        paperWidth: business.printerSettings?.paperWidth || "80mm",
+      });
     } catch {
     }
   };

@@ -28,6 +28,7 @@ import { useDatabase } from "@/context/DatabaseCore";
 import { useStaff } from "@/context/StaffContext";
 import { useColors } from "@/hooks/useColors";
 import { generateReceiptHTML } from "@/lib/receiptTemplate";
+import { isElectron, listWindowsPrinters, printHtml } from "@/lib/printBridge";
 import type {
   BusinessSettings,
   Category,
@@ -125,6 +126,13 @@ export default function BackOfficeScreen() {
 
   const [receiptDesign, setReceiptDesign] = useState<ReceiptDesignSettings>({ ...DEFAULT_RECEIPT_DESIGN });
   const [printerSettings, setPrinterSettings] = useState<PrinterSettings>({ ...DEFAULT_PRINTER_SETTINGS });
+  const [windowsPrinters, setWindowsPrinters] = useState<{ name: string; displayName: string; isDefault: boolean }[]>([]);
+  const refreshWindowsPrinters = useCallback(async () => {
+    if (!isElectron()) return;
+    const list = await listWindowsPrinters();
+    setWindowsPrinters(list.map((p) => ({ name: p.name, displayName: p.displayName, isDefault: p.isDefault })));
+  }, []);
+  useEffect(() => { refreshWindowsPrinters(); }, [refreshWindowsPrinters]);
   const [kotSettings, setKotSettings] = useState<KOTSettings>({ ...DEFAULT_KOT_SETTINGS });
   const [customerDisplay, setCustomerDisplay] = useState<CustomerDisplaySettings>({ ...DEFAULT_CUSTOMER_DISPLAY });
   const [bizSettings, setBizSettings] = useState<BusinessSettings | null>(null);
@@ -727,6 +735,76 @@ export default function BackOfficeScreen() {
     <View style={s.sectionContent}>
       {renderHeader("Printer Settings")}
       <ScrollView contentContainerStyle={s.formContent} showsVerticalScrollIndicator={false}>
+        {isElectron() && (
+          <View style={{ marginBottom: 16, padding: 12, backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 14 }}>Windows Direct Printers</Text>
+              <TouchableOpacity onPress={refreshWindowsPrinters} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <Feather name="refresh-cw" size={12} color={colors.primary} />
+                <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "600" }}>Refresh</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 12, lineHeight: 15 }}>
+              Pick a Windows printer for each job. Selected printers will print silently (no dialog) at full thermal paper width.
+            </Text>
+            {windowsPrinters.length === 0 ? (
+              <Text style={{ color: colors.mutedForeground, fontSize: 12, fontStyle: "italic", paddingVertical: 6 }}>
+                No printers detected. Install your printer in Windows then tap Refresh.
+              </Text>
+            ) : (
+              <>
+                {([
+                  { label: "Receipt Printer", key: "windowsReceiptPrinterName" as const },
+                  { label: "Kitchen (KOT) Printer", key: "windowsKOTPrinterName" as const },
+                  { label: "Cash Drawer Printer", key: "windowsDrawerPrinterName" as const },
+                ]).map((row) => {
+                  const cur = (printerSettings as any)[row.key] as string | undefined;
+                  return (
+                    <View key={row.key} style={{ marginBottom: 10 }}>
+                      <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 4 }}>{row.label}</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                        <TouchableOpacity
+                          onPress={() => setPrinterSettings({ ...printerSettings, [row.key]: "" })}
+                          style={[s.chip, { backgroundColor: !cur ? colors.primary : colors.secondary, borderColor: !cur ? colors.primary : colors.border, borderRadius: colors.radius, marginRight: 8 }]}
+                        >
+                          <Text style={{ color: !cur ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 12 }}>None</Text>
+                        </TouchableOpacity>
+                        {windowsPrinters.map((wp) => {
+                          const sel = cur === wp.name;
+                          return (
+                            <TouchableOpacity
+                              key={wp.name}
+                              onPress={() => setPrinterSettings({ ...printerSettings, [row.key]: wp.name })}
+                              style={[s.chip, { backgroundColor: sel ? colors.primary : colors.secondary, borderColor: sel ? colors.primary : colors.border, borderRadius: colors.radius, marginRight: 8 }]}
+                            >
+                              <Text style={{ color: sel ? "#fff" : colors.foreground, fontWeight: "600", fontSize: 12 }} numberOfLines={1}>
+                                {wp.displayName}{wp.isDefault ? " ★" : ""}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+                  );
+                })}
+                <TouchableOpacity
+                  onPress={async () => {
+                    const dn = printerSettings.windowsReceiptPrinterName || windowsPrinters.find((p) => p.isDefault)?.name || windowsPrinters[0]?.name || "";
+                    if (!dn) { Alert.alert("No Printer", "Select a printer first."); return; }
+                    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>@page{margin:0;size:${printerSettings.paperWidth} auto}body{margin:0;padding:8px;font-family:'Courier New',monospace;color:#000;font-size:12px;text-align:center}</style></head><body><div style="font-size:14px;font-weight:bold">AL SALIK POS</div><div>Test Print</div><div>${new Date().toLocaleString("en-GB")}</div><div style="margin-top:6px">--------------------------------</div><div>If this prints clearly,</div><div>your printer is configured.</div><div style="margin-top:6px">--------------------------------</div></body></html>`;
+                    const ok = await printHtml(html, { deviceName: dn, paperWidth: printerSettings.paperWidth });
+                    Alert.alert(ok ? "Test Sent" : "Test Failed", ok ? `Sent to "${dn}".` : "Could not send to printer. Check Windows printer status.");
+                  }}
+                  style={[s.chip, { borderColor: colors.success, borderStyle: "dashed", alignSelf: "flex-start", marginTop: 4, borderRadius: colors.radius, flexDirection: "row", gap: 6 }]}
+                >
+                  <Feather name="printer" size={12} color={colors.success} />
+                  <Text style={{ color: colors.success, fontWeight: "600", fontSize: 12 }}>Send Test Print</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
+
         <Text style={[s.fieldLabel, { color: colors.mutedForeground }]}>Paper Width</Text>
         <View style={s.chipRow}>
           {(["58mm", "80mm"] as const).map((pw) => (

@@ -261,12 +261,11 @@ export default function POSScreen() {
         total,
         itemDiscountTotal,
       });
-      if (Platform.OS === "web") {
-        const w = window.open("", "_blank", "width=400,height=600");
-        if (w) { w.document.write(html); w.document.close(); w.print(); }
-      } else {
-        await Print.printAsync({ html });
-      }
+      const { printHtml } = await import("@/lib/printBridge");
+      await printHtml(html, {
+        deviceName: businessSettings?.printerSettings?.windowsReceiptPrinterName || "",
+        paperWidth: businessSettings?.printerSettings?.paperWidth || "80mm",
+      });
     } catch (e: any) {
       Alert.alert("Print Error", e.message || "Could not print bill");
     }
@@ -319,24 +318,22 @@ export default function POSScreen() {
                 cartItems, sale.invoiceNumber, kotTableName, currentStaff?.name, kotSettings, station
               );
               if (!ticketHtml) continue;
-              if (Platform.OS === "web") {
-                const w = window.open("", "_blank", "width=400,height=600");
-                if (w) { w.document.write(ticketHtml); w.document.close(); w.print(); }
-              } else {
-                await Print.printAsync({ html: ticketHtml });
-              }
+              const { printHtml: ph } = await import("@/lib/printBridge");
+              await ph(ticketHtml, {
+                deviceName: businessSettings?.printerSettings?.windowsKOTPrinterName || "",
+                paperWidth: businessSettings?.printerSettings?.paperWidth || "80mm",
+              });
             }
           } else {
             const ticketHtml = generateKitchenTicketHTML(
               cartItems, sale.invoiceNumber, kotTableName, currentStaff?.name, kotSettings
             );
             if (ticketHtml) {
-              if (Platform.OS === "web") {
-                const w = window.open("", "_blank", "width=400,height=600");
-                if (w) { w.document.write(ticketHtml); w.document.close(); w.print(); }
-              } else {
-                await Print.printAsync({ html: ticketHtml });
-              }
+              const { printHtml: ph } = await import("@/lib/printBridge");
+              await ph(ticketHtml, {
+                deviceName: businessSettings?.printerSettings?.windowsKOTPrinterName || "",
+                paperWidth: businessSettings?.printerSettings?.paperWidth || "80mm",
+              });
             }
           }
         } catch (printErr: any) {
@@ -520,22 +517,23 @@ export default function POSScreen() {
 <style>@page { margin:0; size:80mm 20mm; } body { margin:0; padding:6px; font-family:'Courier New',monospace; font-size:10px; text-align:center; color:#000; }</style>
 </head><body>OPEN CASH DRAWER<br/>${new Date().toLocaleString("en-GB")}<script>window.onload=function(){setTimeout(function(){window.print();setTimeout(function(){window.close();},500);},150);};</script></body></html>`;
     try {
-      if (Platform.OS === "web") {
-        const w = window.open("", "_blank", "width=320,height=200");
-        if (!w) {
-          Alert.alert("Popup Blocked", "Please allow popups for this site so the drawer-kick page can open.");
-          return;
-        }
-        w.document.write(html);
-        w.document.close();
-      } else {
-        await Print.printAsync({ html });
+      const { printHtml } = await import("@/lib/printBridge");
+      const ok = await printHtml(html, {
+        deviceName:
+          businessSettings?.printerSettings?.windowsDrawerPrinterName ||
+          businessSettings?.printerSettings?.windowsReceiptPrinterName ||
+          "",
+        paperWidth: "80mm",
+      });
+      if (!ok && Platform.OS === "web" && !window.electronPOS) {
+        Alert.alert("Popup Blocked", "Please allow popups for this site so the drawer-kick page can open.");
+        return;
       }
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } catch (e: any) {
       Alert.alert("Drawer Error", e?.message || "Could not send open-drawer command. Make sure your printer is set to 'Open drawer on print' in its driver settings.");
     }
-  }, []);
+  }, [businessSettings]);
 
   const OpenDrawerButton = useMemo(() => (
     <TouchableOpacity

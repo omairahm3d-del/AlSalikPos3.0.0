@@ -130,28 +130,13 @@ export function ReportsScreen({ embedded = false }: { embedded?: boolean }) {
     return hourlyData[maxIdx].value > 0 ? hourlyData[maxIdx] : null;
   }, [hourlyData, sales]);
 
-  const printZReport = async (html: string): Promise<boolean> => {
-    if (Platform.OS === "web") {
-      try {
-        const w = window.open("", "_blank", "width=400,height=700");
-        if (w) {
-          w.document.write(html);
-          w.document.close();
-          setTimeout(() => w.print(), 300);
-          return true;
-        }
-        return false;
-      } catch {
-        return false;
-      }
-    }
-    try {
-      const Print = await import("expo-print");
-      await Print.printAsync({ html });
-      return true;
-    } catch {
-      return false;
-    }
+  const printZReport = async (html: string, biz?: BusinessSettings): Promise<boolean> => {
+    const { printHtml } = await import("@/lib/printBridge");
+    const ps = biz?.printerSettings;
+    return await printHtml(html, {
+      deviceName: ps?.windowsReceiptPrinterName || "",
+      paperWidth: ps?.paperWidth || "80mm",
+    });
   };
 
   const emailZReport = async (html: string, business: BusinessSettings, dateLabel: string): Promise<{ ok: boolean; via: "smtp" | "mailto" | "composer" | "none"; error?: string }> => {
@@ -236,7 +221,7 @@ export function ReportsScreen({ embedded = false }: { embedded?: boolean }) {
       const html = generateZReportHTML(report, business);
       const dateLabel = formatDateLabel(selectedDate);
 
-      const printed = await printZReport(html);
+      const printed = await printZReport(html, business);
 
       let emailResult: { ok: boolean; via: string; error?: string } | null = null;
       if (business.zReportEmail?.trim()) {

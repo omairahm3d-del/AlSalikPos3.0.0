@@ -419,13 +419,11 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
         paidAt: successInfo.paidAt,
         invoices: successInfo.invoices,
       }, business);
-      if (Platform.OS === "web") {
-        const w = window.open("", "_blank", "width=420,height=700");
-        if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 350); }
-      } else {
-        const Print = await import("expo-print");
-        await Print.printAsync({ html });
-      }
+      const { printHtml } = await import("@/lib/printBridge");
+      await printHtml(html, {
+        deviceName: business.printerSettings?.windowsReceiptPrinterName || "",
+        paperWidth: business.printerSettings?.paperWidth || "80mm",
+      });
     } catch { /* ignore */ }
   };
 

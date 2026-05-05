@@ -231,6 +231,9 @@ export interface PrinterSettings {
   printers: PrinterConfig[];
   defaultReceiptPrinterId: string;
   defaultKOTPrinterId: string;
+  windowsReceiptPrinterName?: string;
+  windowsKOTPrinterName?: string;
+  windowsDrawerPrinterName?: string;
 }
 
 export interface KOTSettings {
