@@ -154,12 +154,12 @@ export function ReportsScreen({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  const emailZReport = async (html: string, business: BusinessSettings, dateLabel: string): Promise<boolean> => {
+  const emailZReport = async (html: string, business: BusinessSettings, dateLabel: string): Promise<{ ok: boolean; via: "smtp" | "mailto" | "composer" | "none"; error?: string }> => {
     const recipientEmail = business.zReportEmail?.trim();
-    if (!recipientEmail) return false;
+    if (!recipientEmail) return { ok: false, via: "none", error: "No recipient email configured" };
 
     const smtp = business.smtpConfig;
-    const hasSmtp = smtp?.host && smtp?.user && smtp?.pass;
+    const hasSmtp = !!(smtp?.host && smtp?.user && smtp?.pass);
 
     const subject = `Z-Report - ${business.businessName || "POS"} - ${dateLabel}`;
     const bodyText = [
@@ -176,16 +176,13 @@ export function ReportsScreen({ embedded = false }: { embedded?: boolean }) {
         const response = await fetch(`${baseUrl}/api/email/send`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            to: recipientEmail,
-            subject,
-            html,
-            config: smtp,
-          }),
+          body: JSON.stringify({ to: recipientEmail, subject, html, config: smtp }),
         });
-        const result = await response.json() as { success: boolean };
-        if (result.success) return true;
-      } catch {
+        const result = await response.json() as { success: boolean; error?: string };
+        if (result.success) return { ok: true, via: "smtp" };
+        return { ok: false, via: "smtp", error: result.error || "SMTP send failed" };
+      } catch (err: any) {
+        return { ok: false, via: "smtp", error: err?.message || "Network error contacting SMTP server" };
       }
     }
 
@@ -193,9 +190,9 @@ export function ReportsScreen({ embedded = false }: { embedded?: boolean }) {
       try {
         const mailtoUrl = `mailto:${encodeURIComponent(recipientEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
         window.open(mailtoUrl, "_blank");
-        return true;
-      } catch {
-        return false;
+        return { ok: true, via: "mailto" };
+      } catch (err: any) {
+        return { ok: false, via: "mailto", error: err?.message || "Could not open mail client" };
       }
     }
 
@@ -206,16 +203,13 @@ export function ReportsScreen({ embedded = false }: { embedded?: boolean }) {
       const isAvailable = await MailComposer.isAvailableAsync();
       if (isAvailable) {
         await MailComposer.composeAsync({
-          recipients: [recipientEmail],
-          subject,
-          body: bodyText,
-          attachments: [uri],
+          recipients: [recipientEmail], subject, body: bodyText, attachments: [uri],
         });
-        return true;
+        return { ok: true, via: "composer" };
       }
-      return false;
-    } catch {
-      return false;
+      return { ok: false, via: "composer", error: "No mail app installed on this device" };
+    } catch (err: any) {
+      return { ok: false, via: "composer", error: err?.message || "Could not open mail composer" };
     }
   };
 
@@ -244,9 +238,9 @@ export function ReportsScreen({ embedded = false }: { embedded?: boolean }) {
 
       const printed = await printZReport(html);
 
-      let emailOpened = false;
+      let emailResult: { ok: boolean; via: string; error?: string } | null = null;
       if (business.zReportEmail?.trim()) {
-        emailOpened = await emailZReport(html, business, dateLabel);
+        emailResult = await emailZReport(html, business, dateLabel);
       }
 
       setShowZReport(false);
@@ -254,16 +248,17 @@ export function ReportsScreen({ embedded = false }: { embedded?: boolean }) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
       const parts = [`Z-Report for ${dateLabel} has been saved.`];
-      if (printed) {
-        parts.push("Print dialog opened.");
-      } else {
-        parts.push("Printing was not available.");
-      }
-      if (business.zReportEmail?.trim()) {
-        if (emailOpened) {
+      parts.push(printed ? "Print dialog opened." : "Printing was not available.");
+      if (emailResult) {
+        if (emailResult.ok && emailResult.via === "smtp") {
+          parts.push(`Email sent to ${business.zReportEmail} via SMTP.`);
+        } else if (emailResult.ok) {
           parts.push(`Email composer opened for ${business.zReportEmail}.`);
         } else {
-          parts.push("Could not open email composer.");
+          const hint = !business.smtpConfig?.host
+            ? "\nTip: Configure SMTP in Settings → Email Configuration to send emails directly without a mail client."
+            : "";
+          parts.push(`Email failed: ${emailResult.error || "unknown error"}.${hint}`);
         }
       }
       Alert.alert("Register Closed", parts.join("\n"));

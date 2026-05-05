@@ -80,6 +80,9 @@ export function generateReceiptHTML(
     ? `<div class="center" style="margin-bottom:6px;"><img src="${business.logoBase64}" alt="Logo" style="max-width:${logoMaxW}px;max-height:60px;object-fit:contain;" /></div>`
     : "";
 
+  const bilingual = (en: string, ar: string) =>
+    `<span>${en}</span> <span style="font-size:${fs.body - 2}px;color:#444;">/ ${ar}</span>`;
+
   return `<!DOCTYPE html>
 <html dir="ltr" lang="en">
 <head>
@@ -91,6 +94,7 @@ export function generateReceiptHTML(
     body { font-family: 'Courier New', Courier, monospace; font-size: ${fs.body}px; color: #000; width: ${pw}; margin: 0 auto; padding: 4mm 0; }
     .center { text-align: center; }
     .bold { font-weight: bold; }
+    .ar { font-family: 'Tahoma', 'Arial', sans-serif; direction: rtl; unicode-bidi: embed; }
     .divider { border-top: 1px dashed #000; margin: 6px 0; }
     .header-title { font-size: ${fs.header}px; font-weight: bold; margin-bottom: 2px; }
     .header-ar { font-size: ${fs.title}px; font-weight: bold; margin-bottom: 4px; }
@@ -104,14 +108,14 @@ export function generateReceiptHTML(
   </style>
 </head>
 <body>
-  ${isRefund ? '<div class="refund-banner">*** REFUND ***</div>' : ""}
+  ${isRefund ? '<div class="refund-banner">*** REFUND / استرداد ***</div>' : ""}
 
   ${logoSection}
 
   ${headerText}
 
   <div class="center">
-    <div class="header-ar">فاتورة ضريبية مبسطة</div>
+    <div class="header-ar ar">فاتورة ضريبية مبسطة</div>
     <div class="header-title">SIMPLIFIED TAX INVOICE</div>
   </div>
 
@@ -119,44 +123,49 @@ export function generateReceiptHTML(
 
   <div class="center info-line">
     ${business.businessName ? `<div class="bold" style="font-size:${fs.title}px;">${business.businessName}</div>` : ""}
-    ${trnLine}
+    ${trnLine ? trnLine.replace("TRN:", "TRN / الرقم الضريبي:") : ""}
     ${business.address ? `<div>${business.address}</div>` : ""}
-    ${business.phone ? `<div>Tel: ${business.phone}</div>` : ""}
+    ${business.phone ? `<div>Tel / هاتف: ${business.phone}</div>` : ""}
     ${business.email ? `<div>${business.email}</div>` : ""}
   </div>
 
   <div class="divider"></div>
 
   <table>
-    <tr><td class="info-line"><strong>Invoice #:</strong></td><td class="info-line" style="text-align:right;">${sale.invoiceNumber || "N/A"}</td></tr>
-    <tr><td class="info-line"><strong>Date:</strong></td><td class="info-line" style="text-align:right;">${formatDateTime(sale.createdAt)}</td></tr>
-    <tr><td class="info-line"><strong>Payment:</strong></td><td class="info-line" style="text-align:right;">${sale.paymentMethod}</td></tr>
-    ${sale.customerName ? `<tr><td class="info-line"><strong>Customer:</strong></td><td class="info-line" style="text-align:right;">${sale.customerName}</td></tr>` : ""}
-    ${sale.staffName ? `<tr><td class="info-line"><strong>Cashier:</strong></td><td class="info-line" style="text-align:right;">${sale.staffName}</td></tr>` : ""}
-    ${sale.tableName ? `<tr><td class="info-line"><strong>Table:</strong></td><td class="info-line" style="text-align:right;">${sale.tableName}</td></tr>` : ""}
-    ${isRefund && sale.originalSaleId ? `<tr><td class="info-line"><strong>Ref:</strong></td><td class="info-line" style="text-align:right;">Original Sale</td></tr>` : ""}
+    <tr><td class="info-line"><strong>${bilingual("Invoice #", "رقم الفاتورة")}:</strong></td><td class="info-line" style="text-align:right;">${sale.invoiceNumber || "N/A"}</td></tr>
+    <tr><td class="info-line"><strong>${bilingual("Date", "التاريخ")}:</strong></td><td class="info-line" style="text-align:right;">${formatDateTime(sale.createdAt)}</td></tr>
+    <tr><td class="info-line"><strong>${bilingual("Payment", "الدفع")}:</strong></td><td class="info-line" style="text-align:right;">${sale.paymentMethod}</td></tr>
+    ${sale.customerName ? `<tr><td class="info-line"><strong>${bilingual("Customer", "العميل")}:</strong></td><td class="info-line" style="text-align:right;">${sale.customerName}</td></tr>` : ""}
+    ${sale.staffName ? `<tr><td class="info-line"><strong>${bilingual("Cashier", "الكاشير")}:</strong></td><td class="info-line" style="text-align:right;">${sale.staffName}</td></tr>` : ""}
+    ${sale.tableName ? `<tr><td class="info-line"><strong>${bilingual("Table", "طاولة")}:</strong></td><td class="info-line" style="text-align:right;">${sale.tableName}</td></tr>` : ""}
+    ${isRefund && sale.originalSaleId ? `<tr><td class="info-line"><strong>${bilingual("Ref", "مرجع")}:</strong></td><td class="info-line" style="text-align:right;">Original Sale / الفاتورة الأصلية</td></tr>` : ""}
   </table>
 
   <div class="divider"></div>
 
   <table>
-    <thead><tr><th style="text-align:left;">Item</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Price</th><th style="text-align:right;">Amount</th></tr></thead>
+    <thead><tr>
+      <th style="text-align:left;">${bilingual("Item", "الصنف")}</th>
+      <th style="text-align:center;">${bilingual("Qty", "الكمية")}</th>
+      <th style="text-align:right;">${bilingual("Price", "السعر")}</th>
+      <th style="text-align:right;">${bilingual("Amount", "المبلغ")}</th>
+    </tr></thead>
     <tbody>${itemRows}</tbody>
   </table>
 
   <div class="divider"></div>
 
   <table class="total-section">
-    <tr><td style="text-align:left;">Subtotal (Excl. VAT)</td><td style="text-align:right;">${fmt(sale.subtotal)}</td></tr>
-    ${discountLine}
-    <tr><td style="text-align:left;">VAT (${vatPct}%)</td><td style="text-align:right;">${fmt(sale.vatAmount)}</td></tr>
+    <tr><td style="text-align:left;">${bilingual("Subtotal (Excl. VAT)", "المجموع الفرعي (بدون ضريبة)")}</td><td style="text-align:right;">${fmt(sale.subtotal)}</td></tr>
+    ${discountLine ? discountLine.replace(">Discount", ">Discount / الخصم") : ""}
+    <tr><td style="text-align:left;">${bilingual(`VAT (${vatPct}%)`, `ضريبة القيمة المضافة (${vatPct}%)`)}</td><td style="text-align:right;">${fmt(sale.vatAmount)}</td></tr>
   </table>
 
   <div class="divider"></div>
 
   <table>
     <tr class="grand-total">
-      <td style="text-align:left;">${isRefund ? "REFUND TOTAL" : "TOTAL (Incl. VAT)"}</td>
+      <td style="text-align:left;">${isRefund ? bilingual("REFUND TOTAL", "إجمالي الاسترداد") : bilingual("TOTAL (Incl. VAT)", "الإجمالي (شامل الضريبة)")}</td>
       <td style="text-align:right;">${isRefund ? "-" : ""}${fmt(sale.total)}</td>
     </tr>
   </table>
@@ -166,13 +175,14 @@ export function generateReceiptHTML(
   ${sale.invoiceNumber ? `<div class="center" style="margin-top:8px;">${generateBarcodeSVG(sale.invoiceNumber, { width: rd.paperWidth === "58mm" ? 160 : 220, height: 36 })}</div>` : ""}
 
   ${business.phone ? `<div class="center" style="margin-top:10px;">
-    <div style="font-size:${fs.body - 2}px;margin-bottom:4px;">Chat with us on WhatsApp</div>
+    <div style="font-size:${fs.body - 2}px;margin-bottom:4px;">Chat with us on WhatsApp / تواصل معنا على واتساب</div>
     ${generateWhatsAppQRSVG(business.phone, rd.paperWidth === "58mm" ? 80 : 100)}
   </div>` : ""}
 
   <div class="footer">
-    ${isRefund ? "This is a refund receipt<br/>" : ""}
+    ${isRefund ? "This is a refund receipt / هذه فاتورة استرداد<br/>" : ""}
     Prices are inclusive of ${vatPct}% VAT where applicable<br/>
+    <span class="ar">الأسعار شاملة ضريبة القيمة المضافة ${vatPct}% حيثما ينطبق</span><br/>
     ${footerText}
     <div style="margin-top:6px;border-top:1px dashed #ccc;padding-top:5px;font-size:${fs.body - 3}px;color:#888;">Powered by Al Salik Computers</div>
   </div>

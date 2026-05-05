@@ -87,7 +87,15 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
       setDone(false);
       setSavedHtml("");
       setSavedBusiness(null);
+      setSales([]);
+      setItems([]);
       fetchData();
+    } else {
+      setClosingCash("");
+      setConfirming(false);
+      setDone(false);
+      setSavedHtml("");
+      setSavedBusiness(null);
     }
   }, [visible]);
 
