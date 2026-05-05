@@ -46,6 +46,9 @@ The POS application is built with Expo (SDK 54) and React Native, optimized for 
 - **Reporting**: Daily sales reports, Z-Reports (end-of-day summaries), and a comprehensive Reports Hub with 6 sub-reports: Z-Report History, Payment Method, Staff Sales, Rider Delivery, Customer Transactions, Daily Item Detail. Closing register prints Z-Report and optionally emails it — uses SMTP (API server / nodemailer) when configured, falls back to expo-mail-composer otherwise. Z-report closing modal shows expected cash (from cash sales) and live variance as the user types.
 - **Staff Management**: PIN-based login with role (admin/cashier) authentication.
 - **Barcode Scanning**: Integrated EAN-13/8, UPC-A/E, QR, Code128/39 scanning using `expo-camera`. Scanning a receipt barcode (INV-*) on Register screen looks up the credit sale and opens a credit payment collection modal.
+- **WhatsApp QR**: Generated server-side via the `qrcode` npm package in `lib/barcodeSvg.ts` (`generateQRSVG` / `generateWhatsAppQRSVG`). Replaces a hand-rolled encoder that produced unscannable codes.
+- **Cash Drawer**: Register screen has an "Open Drawer" button (`handleOpenCashDrawer`) that prints a tiny 80mm × 20mm "OPEN CASH DRAWER" page. The connected POS printer's driver should have "Open drawer on print" enabled (standard ESC/POS setup) — that triggers the kick.
+- **Branding**: LockScreen shows "Al Salik POS — by Al Salik Computers" header (logo tile + name + provider). Windows .exe has the icon + version metadata embedded via `resedit` (pure-JS PE editor) since wine isn't available in this environment. Icon source: `desktop-installer/assets/icon.ico` (multi-size from `artifacts/pos-app/assets/images/icon.png`).
 - **Modals**: Centralized modal components for receipt preview, business settings, barcode scanning, and customer selection.
 
 ### POS App Tabs

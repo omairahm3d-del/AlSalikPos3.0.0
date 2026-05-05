@@ -515,6 +515,38 @@ export default function POSScreen() {
     </TouchableOpacity>
   ), [colors, openScanner]);
 
+  const handleOpenCashDrawer = useCallback(async () => {
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+<style>@page { margin:0; size:80mm 20mm; } body { margin:0; padding:6px; font-family:'Courier New',monospace; font-size:10px; text-align:center; color:#000; }</style>
+</head><body>OPEN CASH DRAWER<br/>${new Date().toLocaleString("en-GB")}<script>window.onload=function(){setTimeout(function(){window.print();setTimeout(function(){window.close();},500);},150);};</script></body></html>`;
+    try {
+      if (Platform.OS === "web") {
+        const w = window.open("", "_blank", "width=320,height=200");
+        if (!w) {
+          Alert.alert("Popup Blocked", "Please allow popups for this site so the drawer-kick page can open.");
+          return;
+        }
+        w.document.write(html);
+        w.document.close();
+      } else {
+        await Print.printAsync({ html });
+      }
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch (e: any) {
+      Alert.alert("Drawer Error", e?.message || "Could not send open-drawer command. Make sure your printer is set to 'Open drawer on print' in its driver settings.");
+    }
+  }, []);
+
+  const OpenDrawerButton = useMemo(() => (
+    <TouchableOpacity
+      onPress={handleOpenCashDrawer}
+      style={[styles.endOfDayBtn, { backgroundColor: "#16A085" + "18", borderColor: "#16A085" + "40", borderRadius: colors.radius }]}
+    >
+      <Feather name="inbox" size={15} color="#16A085" />
+      <Text style={[styles.endOfDayText, { color: "#16A085" }]}>Open Drawer</Text>
+    </TouchableOpacity>
+  ), [colors, handleOpenCashDrawer]);
+
   const EndOfDayButton = useMemo(() => (
     <TouchableOpacity
       onPress={() => setShowCloseRegister(true)}
@@ -658,6 +690,7 @@ export default function POSScreen() {
             <View style={[styles.catalogHeader, { borderBottomColor: colors.border }]}>
               <CategoryFilter categories={dynamicCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
               {CollectCreditButton}
+              {OpenDrawerButton}
               {EndOfDayButton}
               {ScanButton}
             </View>
@@ -693,6 +726,7 @@ export default function POSScreen() {
             <View style={[styles.catalogHeader, { borderBottomColor: colors.border }]}>
               <CategoryFilter categories={dynamicCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
               {CollectCreditButton}
+              {OpenDrawerButton}
               {EndOfDayButton}
               {ScanButton}
             </View>

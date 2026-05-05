@@ -44,8 +44,16 @@ export function LockScreen() {
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <View style={styles.content}>
+        <View style={styles.brandWrap}>
+          <View style={[styles.brandLogo, { backgroundColor: "#6C63FF" }]}>
+            <Feather name="shopping-bag" size={26} color="#fff" />
+          </View>
+          <Text style={[styles.brandName, { color: colors.foreground }]}>Al Salik POS</Text>
+          <Text style={[styles.brandSub, { color: "#6C63FF" }]}>by Al Salik Computers</Text>
+        </View>
+
         <View style={[styles.iconCircle, { backgroundColor: colors.primary + "20" }]}>
-          <Feather name="lock" size={32} color={colors.primary} />
+          <Feather name="lock" size={28} color={colors.primary} />
         </View>
         <Text style={[styles.title, { color: colors.foreground }]}>Staff Login</Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
@@ -102,9 +110,13 @@ export function LockScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, justifyContent: "center", alignItems: "center" },
   content: { alignItems: "center", width: "100%", maxWidth: 320 },
+  brandWrap: { alignItems: "center", marginBottom: 28 },
+  brandLogo: { width: 64, height: 64, borderRadius: 16, alignItems: "center", justifyContent: "center", marginBottom: 12 },
+  brandName: { fontSize: 24, fontWeight: "700", fontFamily: "Inter_700Bold", letterSpacing: 0.5 },
+  brandSub: { fontSize: 12, fontWeight: "600", fontFamily: "Inter_600SemiBold", marginTop: 4, letterSpacing: 0.3 },
   iconCircle: {
-    width: 72, height: 72, borderRadius: 36,
-    alignItems: "center", justifyContent: "center", marginBottom: 16,
+    width: 64, height: 64, borderRadius: 32,
+    alignItems: "center", justifyContent: "center", marginBottom: 14,
   },
   title: { fontSize: 22, fontWeight: "700", fontFamily: "Inter_700Bold", marginBottom: 6 },
   subtitle: { fontSize: 14, marginBottom: 28 },
