@@ -230,9 +230,7 @@ ipcMain.handle('printers:print', async (_evt, payload) => {
 });
 
 // ===== ESC/POS RAW print via PowerShell + Win32 spooler =====
-const fs = require('fs');
 const os = require('os');
-const path = require('path');
 const { spawn } = require('child_process');
 
 function escposBuild(text, opts) {
