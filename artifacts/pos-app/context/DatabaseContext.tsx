@@ -1,7 +1,7 @@
 import React, { useCallback } from "react";
 import { useSQLiteContext } from "expo-sqlite";
 import type {
-  BusinessSettings, CartItem, Category, CreditPayment, Customer,
+  BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment, Customer,
   HeldOrder, HeldOrderItem, Ingredient, PosTable, Product,
   RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
@@ -652,6 +652,84 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     await db.runAsync("DELETE FROM recipe_ingredients WHERE product_id=?", [productId]);
   }, [db]);
 
+  const ALL_TABLES = [
+    "products", "categories", "sales", "sale_items", "settings", "customers",
+    "credit_payments", "staff", "pos_tables", "tax_groups", "split_payments",
+    "z_reports", "riders", "held_orders", "held_order_items", "ingredients",
+    "recipe_ingredients", "invoice_counter",
+  ];
+
+  const exportData = useCallback(async (): Promise<BackupData> => {
+    const tables: Record<string, unknown[]> = {};
+    for (const t of ALL_TABLES) {
+      try {
+        tables[t] = await db.getAllAsync<any>(`SELECT * FROM ${t}`);
+      } catch {
+        tables[t] = [];
+      }
+    }
+    return { app: "al-salik-pos", version: 1, exportedAt: Date.now(), tables };
+  }, [db]);
+
+  const importData = useCallback(async (data: BackupData): Promise<void> => {
+    if (data.app !== "al-salik-pos") throw new Error("Invalid backup");
+    await db.withTransactionAsync(async () => {
+      for (const t of ALL_TABLES) {
+        try { await db.runAsync(`DELETE FROM ${t}`); } catch {}
+      }
+      for (const t of ALL_TABLES) {
+        const rows = data.tables?.[t];
+        if (!Array.isArray(rows) || rows.length === 0) continue;
+        const cols = Object.keys(rows[0] as any);
+        const placeholders = cols.map(() => "?").join(",");
+        const sql = `INSERT OR REPLACE INTO ${t} (${cols.join(",")}) VALUES (${placeholders})`;
+        for (const row of rows) {
+          const vals = cols.map((c) => (row as any)[c]);
+          try { await db.runAsync(sql, vals); } catch {}
+        }
+      }
+    });
+  }, [db]);
+
+  const clearData = useCallback(async (opts: ClearDataOptions): Promise<void> => {
+    await db.withTransactionAsync(async () => {
+      if (opts.sales) {
+        await db.runAsync("DELETE FROM sale_items");
+        await db.runAsync("DELETE FROM split_payments");
+        await db.runAsync("DELETE FROM sales");
+      }
+      if (opts.zReports) await db.runAsync("DELETE FROM z_reports");
+      if (opts.heldOrders) {
+        await db.runAsync("DELETE FROM held_order_items");
+        await db.runAsync("DELETE FROM held_orders");
+        await db.runAsync("UPDATE pos_tables SET status='available', current_order_id=NULL");
+      }
+      if (opts.customers) {
+        await db.runAsync("DELETE FROM credit_payments");
+        await db.runAsync("DELETE FROM customers");
+      }
+      if (opts.products) {
+        await db.runAsync("DELETE FROM recipe_ingredients");
+        await db.runAsync("DELETE FROM products");
+      }
+      if (opts.categories) await db.runAsync("DELETE FROM categories");
+      if (opts.ingredients) {
+        await db.runAsync("DELETE FROM recipe_ingredients");
+        await db.runAsync("DELETE FROM ingredients");
+      }
+      if (opts.taxGroups) await db.runAsync("DELETE FROM tax_groups");
+      if (opts.riders) await db.runAsync("DELETE FROM riders");
+      if (opts.tables) {
+        await db.runAsync("DELETE FROM held_order_items");
+        await db.runAsync("DELETE FROM held_orders");
+        await db.runAsync("DELETE FROM pos_tables");
+      }
+      if (opts.resetInvoiceCounter || opts.sales) {
+        await db.runAsync("UPDATE invoice_counter SET next_value=1 WHERE id=1");
+      }
+    });
+  }, [db]);
+
   return (
     <DatabaseContext.Provider value={{
       loadProducts, createProduct, updateProduct, deleteProduct, updateStock,
@@ -668,6 +746,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       saveHeldOrder, loadHeldOrders, loadHeldOrderByTable, deleteHeldOrder,
       loadIngredients, createIngredient, updateIngredient, deleteIngredient, updateIngredientStock,
       loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,
+      exportData, importData, clearData,
     }}>
       {children}
     </DatabaseContext.Provider>

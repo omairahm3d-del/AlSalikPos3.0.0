@@ -74,7 +74,8 @@ type Section =
   | "ingredients"
   | "recipes"
   | "permissions"
-  | "emailSettings";
+  | "emailSettings"
+  | "database";
 
 interface SectionCard {
   id: Section;
@@ -102,6 +103,7 @@ const SECTIONS: SectionCard[] = [
   { id: "tax", icon: "percent", title: "Tax Groups", subtitle: "VAT rates & tax groups", color: "#F39C12", permKey: "boTax" },
   { id: "business", icon: "briefcase", title: "Business Settings", subtitle: "Company info & loyalty", color: "#6C63FF", permKey: "boBusiness" },
   { id: "emailSettings", icon: "mail", title: "Email Settings", subtitle: "Z-Report email delivery", color: "#3498DB", permKey: "boBusiness" },
+  { id: "database", icon: "database", title: "Database", subtitle: "Backup, restore & clear data", color: "#16A085", adminOnly: true },
   { id: "permissions", icon: "shield", title: "Permissions", subtitle: "Configure staff access rights", color: "#E74C3C", adminOnly: true },
 ];
 
@@ -488,6 +490,181 @@ export default function BackOfficeScreen() {
       Alert.alert("Error", e.message || "Failed to save recipe");
     }
   };
+
+  const [clearOpts, setClearOpts] = useState<import("@/types").ClearDataOptions>({});
+  const [dbBusy, setDbBusy] = useState(false);
+
+  const onBackup = useCallback(async () => {
+    try {
+      setDbBusy(true);
+      const data = await db.exportData();
+      const { downloadBackup } = await import("@/lib/backupFile");
+      const res = await downloadBackup(data);
+      if (res.ok) Alert.alert("Backup Created", "Your database backup has been saved.");
+      else Alert.alert("Backup Failed", res.error || "Could not create backup.");
+    } catch (e: any) {
+      Alert.alert("Backup Failed", e?.message || String(e));
+    } finally {
+      setDbBusy(false);
+    }
+  }, [db]);
+
+  const onRestore = useCallback(async () => {
+    Alert.alert(
+      "Restore Database?",
+      "This will REPLACE all current data with the backup file contents. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Restore",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setDbBusy(true);
+              const { pickBackup } = await import("@/lib/backupFile");
+              const picked = await pickBackup();
+              if (!picked.ok || !picked.data) {
+                if (picked.error && picked.error !== "Cancelled" && picked.error !== "No file selected") {
+                  Alert.alert("Restore Failed", picked.error);
+                }
+                return;
+              }
+              await db.importData(picked.data);
+              Alert.alert("Restore Complete", "Database restored successfully. Please restart the app.");
+            } catch (e: any) {
+              Alert.alert("Restore Failed", e?.message || String(e));
+            } finally {
+              setDbBusy(false);
+            }
+          },
+        },
+      ],
+    );
+  }, [db]);
+
+  const onClear = useCallback(() => {
+    const selected = Object.entries(clearOpts).filter(([, v]) => v).map(([k]) => k);
+    if (selected.length === 0) {
+      Alert.alert("Nothing Selected", "Please tick at least one data category to clear.");
+      return;
+    }
+    Alert.alert(
+      "Clear Selected Data?",
+      `This will permanently delete:\n\n• ${selected.join("\n• ")}\n\nBusiness settings, staff, printers and configuration are NOT affected. Continue?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear Data",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setDbBusy(true);
+              await db.clearData(clearOpts);
+              setClearOpts({});
+              Alert.alert("Done", "Selected data has been cleared.");
+            } catch (e: any) {
+              Alert.alert("Clear Failed", e?.message || String(e));
+            } finally {
+              setDbBusy(false);
+            }
+          },
+        },
+      ],
+    );
+  }, [clearOpts, db]);
+
+  const renderClearRow = (
+    key: keyof import("@/types").ClearDataOptions,
+    label: string,
+    refs: string,
+  ) => (
+    <View key={key} style={[s.switchRow, { borderBottomColor: colors.border, alignItems: "flex-start", paddingVertical: 14 }]}>
+      <View style={{ flex: 1, paddingRight: 12 }}>
+        <Text style={[s.switchLabel, { color: colors.foreground }]}>{label}</Text>
+        <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 4 }}>{refs}</Text>
+      </View>
+      <Switch
+        value={!!clearOpts[key]}
+        onValueChange={(v) => setClearOpts((o) => ({ ...o, [key]: v }))}
+        trackColor={{ false: colors.border, true: colors.destructive }}
+      />
+    </View>
+  );
+
+  const renderDatabase = () => (
+    <View style={s.sectionContent}>
+      {renderHeader("Database")}
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
+        <View style={[{ backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, padding: 16, marginBottom: 16 }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+            <Feather name="download" size={18} color={colors.primary} />
+            <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 16, marginLeft: 8 }}>Backup</Text>
+          </View>
+          <Text style={{ color: colors.mutedForeground, fontSize: 13, marginBottom: 12, lineHeight: 18 }}>
+            Download a full snapshot of every table (sales, products, customers, settings, staff…) as a single JSON file.
+          </Text>
+          <TouchableOpacity
+            disabled={dbBusy}
+            onPress={onBackup}
+            style={{ backgroundColor: colors.primary, padding: 14, borderRadius: colors.radius, alignItems: "center", opacity: dbBusy ? 0.6 : 1 }}
+          >
+            <Text style={{ color: "#fff", fontWeight: "700" }}>Download Backup</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[{ backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, padding: 16, marginBottom: 16 }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+            <Feather name="upload" size={18} color="#F39C12" />
+            <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 16, marginLeft: 8 }}>Restore</Text>
+          </View>
+          <Text style={{ color: colors.mutedForeground, fontSize: 13, marginBottom: 12, lineHeight: 18 }}>
+            Restore a previously downloaded backup file. This will REPLACE all existing data.
+          </Text>
+          <TouchableOpacity
+            disabled={dbBusy}
+            onPress={onRestore}
+            style={{ backgroundColor: "#F39C12", padding: 14, borderRadius: colors.radius, alignItems: "center", opacity: dbBusy ? 0.6 : 1 }}
+          >
+            <Text style={{ color: "#fff", fontWeight: "700" }}>Choose Backup File…</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[{ backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, padding: 16, marginBottom: 16 }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+            <Feather name="trash-2" size={18} color={colors.destructive} />
+            <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 16, marginLeft: 8 }}>Clear Data</Text>
+          </View>
+          <Text style={{ color: colors.mutedForeground, fontSize: 13, marginBottom: 8, lineHeight: 18 }}>
+            Tick what you want to wipe. Business details, staff, printers, KOT, receipt design and email settings are always kept.
+          </Text>
+          <View style={{ marginTop: 8 }}>
+            {renderClearRow("sales",      "Sales & Transactions",  "Removes sales, sale items, split payments, resets invoice number")}
+            {renderClearRow("zReports",   "Z-Report History",      "Removes all end-of-day Z-Reports")}
+            {renderClearRow("heldOrders", "Held Orders / KOT",     "Removes parked orders and frees occupied tables")}
+            {renderClearRow("customers",  "Customers",             "Removes customers + their credit payments")}
+            {renderClearRow("products",   "Products",              "Removes products and their recipe links")}
+            {renderClearRow("categories", "Categories",            "Removes product categories")}
+            {renderClearRow("ingredients","Ingredients",           "Removes ingredients and their recipe links")}
+            {renderClearRow("taxGroups",  "Tax Groups",            "Removes VAT/tax group configuration")}
+            {renderClearRow("riders",     "Delivery Riders",       "Removes rider list")}
+            {renderClearRow("tables",     "POS Tables",            "Removes table list and any held orders on them")}
+            {renderClearRow("resetInvoiceCounter", "Reset Invoice Counter", "Restarts invoice numbering at 0001")}
+          </View>
+          <TouchableOpacity
+            disabled={dbBusy}
+            onPress={onClear}
+            style={{ backgroundColor: colors.destructive, padding: 14, borderRadius: colors.radius, alignItems: "center", marginTop: 16, opacity: dbBusy ? 0.6 : 1 }}
+          >
+            <Text style={{ color: "#fff", fontWeight: "700" }}>Clear Selected Data</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={{ color: colors.mutedForeground, fontSize: 12, textAlign: "center", lineHeight: 18 }}>
+          Tip: always download a Backup before clearing or restoring data.
+        </Text>
+      </ScrollView>
+    </View>
+  );
 
   const renderHeader = (title: string) => (
     <View style={[s.sectionHeader, { borderBottomColor: colors.border }]}>
@@ -1480,6 +1657,7 @@ export default function BackOfficeScreen() {
       case "recipes": return renderRecipes();
       case "permissions": return renderPermissions();
       case "emailSettings": return renderEmailSettings();
+      case "database": return renderDatabase();
       case "business": {
         setSection("menu");
         setShowBizSettings(true);

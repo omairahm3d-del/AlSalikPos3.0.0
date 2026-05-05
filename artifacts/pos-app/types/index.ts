@@ -357,6 +357,28 @@ export const DEFAULT_RECEIPT_DESIGN: ReceiptDesignSettings = {
   paperWidth: "80mm",
 };
 
+export interface ClearDataOptions {
+  sales?: boolean;
+  customers?: boolean;
+  products?: boolean;
+  categories?: boolean;
+  ingredients?: boolean;
+  taxGroups?: boolean;
+  riders?: boolean;
+  tables?: boolean;
+  zReports?: boolean;
+  heldOrders?: boolean;
+  resetInvoiceCounter?: boolean;
+}
+
+export interface BackupData {
+  app: "al-salik-pos";
+  version: number;
+  exportedAt: number;
+  tables: Record<string, unknown[]>;
+  meta?: Record<string, unknown>;
+}
+
 export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
   paperWidth: "80mm",
   autoPrintReceipt: false,

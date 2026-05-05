@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import type {
-  BusinessSettings, CartItem, Category, CreditPayment, Customer,
+  BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment, Customer,
   HeldOrder, Ingredient, OrderType, PosTable, Product,
   RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
@@ -94,6 +94,10 @@ export interface DatabaseContextValue {
   loadRecipeIngredients: (productId: string) => Promise<RecipeIngredient[]>;
   saveRecipeIngredients: (productId: string, items: Omit<RecipeIngredient, "id">[]) => Promise<void>;
   deleteRecipeIngredients: (productId: string) => Promise<void>;
+
+  exportData: () => Promise<BackupData>;
+  importData: (data: BackupData) => Promise<void>;
+  clearData: (opts: ClearDataOptions) => Promise<void>;
 }
 
 export const DatabaseContext = createContext<DatabaseContextValue | null>(null);

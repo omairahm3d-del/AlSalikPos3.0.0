@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback } from "react";
 import type {
-  BusinessSettings, CartItem, Category, CreditPayment, Customer,
+  BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment, Customer,
   HeldOrder, HeldOrderItem, Ingredient, PosTable, Product,
   RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
@@ -564,6 +564,73 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     await setJson(K.recipeIngredients, all.filter((r) => r.productId !== productId));
   }, []);
 
+  const exportData = useCallback(async (): Promise<BackupData> => {
+    const tables: Record<string, unknown[]> = {};
+    const meta: Record<string, unknown> = {};
+    for (const [name, key] of Object.entries(K)) {
+      const raw = await AsyncStorage.getItem(key);
+      if (raw == null) { tables[name] = []; continue; }
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) tables[name] = parsed;
+        else { meta[name] = parsed; tables[name] = []; }
+      } catch {
+        meta[name] = raw;
+        tables[name] = [];
+      }
+    }
+    return { app: "al-salik-pos", version: 1, exportedAt: Date.now(), tables, meta };
+  }, []);
+
+  const importData = useCallback(async (data: BackupData): Promise<void> => {
+    if (data.app !== "al-salik-pos") throw new Error("Invalid backup");
+    for (const [name, key] of Object.entries(K)) {
+      const arr = data.tables?.[name];
+      if (Array.isArray(arr)) {
+        await AsyncStorage.setItem(key, JSON.stringify(arr));
+      }
+    }
+    if (data.meta) {
+      for (const [name, val] of Object.entries(data.meta)) {
+        const key = (K as any)[name];
+        if (key) await AsyncStorage.setItem(key, typeof val === "string" ? val : JSON.stringify(val));
+      }
+    }
+  }, []);
+
+  const clearData = useCallback(async (opts: ClearDataOptions): Promise<void> => {
+    const wipe = async (k: string) => { await AsyncStorage.setItem(k, JSON.stringify([])); };
+    if (opts.sales) {
+      await wipe(K.sales);
+      await wipe(K.saleItems);
+      await wipe(K.splitPayments);
+    }
+    if (opts.zReports) await wipe(K.zReports);
+    if (opts.heldOrders) await wipe(K.heldOrders);
+    if (opts.customers) {
+      await wipe(K.customers);
+      await wipe(K.creditPayments);
+    }
+    if (opts.products) {
+      await wipe(K.products);
+      await wipe(K.recipeIngredients);
+    }
+    if (opts.categories) await wipe(K.categories);
+    if (opts.ingredients) {
+      await wipe(K.ingredients);
+      await wipe(K.recipeIngredients);
+    }
+    if (opts.taxGroups) await wipe(K.taxGroups);
+    if (opts.riders) await wipe(K.riders);
+    if (opts.tables) {
+      await wipe(K.tables);
+      await wipe(K.heldOrders);
+    }
+    if (opts.resetInvoiceCounter || opts.sales) {
+      await AsyncStorage.setItem(K.counter, "1");
+    }
+  }, []);
+
   return (
     <DatabaseContext.Provider value={{
       loadProducts, createProduct, updateProduct, deleteProduct, updateStock,
@@ -580,6 +647,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       saveHeldOrder, loadHeldOrders, loadHeldOrderByTable, deleteHeldOrder,
       loadIngredients, createIngredient, updateIngredient, deleteIngredient, updateIngredientStock,
       loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,
+      exportData, importData, clearData,
     }}>
       {children}
     </DatabaseContext.Provider>
