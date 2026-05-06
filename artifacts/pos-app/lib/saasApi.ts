@@ -49,8 +49,11 @@ export function getApiBase(): string {
   // AND in the desktop installer (where it's served from a local origin).
   if (typeof window !== "undefined" && window.location) {
     const host = window.location.hostname;
-    if (host.includes(".expo.pike.replit.dev")) {
-      const proxyHost = host.replace(".expo.pike.replit.dev", ".pike.replit.dev");
+    // Suffix match (not includes) so unrelated hostnames that happen to
+    // contain the substring can't accidentally trigger the rewrite.
+    const expoSuffix = ".expo.pike.replit.dev";
+    if (host.endsWith(expoSuffix)) {
+      const proxyHost = host.slice(0, -expoSuffix.length) + ".pike.replit.dev";
       return `${window.location.protocol}//${proxyHost}`;
     }
   }
