@@ -236,6 +236,78 @@ describe("Manager auth + branch-scoped reads", () => {
     expect(res.body.error.code).toBe("branch_not_found");
   });
 
+  it("admin password reset revokes existing manager tokens", async () => {
+    const login = await request(app)
+      .post("/api/manager/login")
+      .send({
+        companySlug: ctx.companySlug,
+        email: ctx.email,
+        password: ctx.password,
+      });
+    const token = login.body.token as string;
+
+    // Token works before reset
+    const before = await request(app)
+      .get("/api/manager/branches")
+      .set("authorization", `Bearer ${token}`);
+    expect(before.status).toBe(200);
+
+    // Admin resets the password
+    const reset = await request(app)
+      .post(`/api/admin/companies/${ctx.companyId}/managers/${ctx.managerId}/password`)
+      .set("x-admin-api-key", ADMIN_KEY)
+      .send({ newPassword: "brand-new-pw-9999" });
+    expect(reset.status).toBe(200);
+
+    // Existing token is now revoked
+    const after = await request(app)
+      .get("/api/manager/branches")
+      .set("authorization", `Bearer ${token}`);
+    expect(after.status).toBe(401);
+    expect(after.body.error.code).toBe("session_revoked");
+
+    // New password works
+    const relogin = await request(app)
+      .post("/api/manager/login")
+      .send({
+        companySlug: ctx.companySlug,
+        email: ctx.email,
+        password: "brand-new-pw-9999",
+      });
+    expect(relogin.status).toBe(200);
+    // Restore for subsequent tests in case ordering matters.
+    ctx.password = "brand-new-pw-9999";
+  });
+
+  it("admin deactivation revokes existing manager tokens", async () => {
+    const login = await request(app)
+      .post("/api/manager/login")
+      .send({
+        companySlug: ctx.companySlug,
+        email: ctx.email,
+        password: ctx.password,
+      });
+    const token = login.body.token as string;
+
+    const deactivate = await request(app)
+      .patch(`/api/admin/companies/${ctx.companyId}/managers/${ctx.managerId}/active`)
+      .set("x-admin-api-key", ADMIN_KEY)
+      .send({ isActive: false });
+    expect(deactivate.status).toBe(200);
+
+    const after = await request(app)
+      .get("/api/manager/branches")
+      .set("authorization", `Bearer ${token}`);
+    expect(after.status).toBe(401);
+    expect(after.body.error.code).toBe("session_revoked");
+
+    // Re-activate to keep the rest of the suite stable
+    await request(app)
+      .patch(`/api/admin/companies/${ctx.companyId}/managers/${ctx.managerId}/active`)
+      .set("x-admin-api-key", ADMIN_KEY)
+      .send({ isActive: true });
+  });
+
   it("admin can list managers for the company", async () => {
     const list = await request(app)
       .get(`/api/admin/companies/${ctx.companyId}/managers`)

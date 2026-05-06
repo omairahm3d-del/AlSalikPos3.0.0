@@ -50,6 +50,23 @@ export interface UpdateBranchInput {
   isDefault?: boolean;
 }
 
+export interface Manager {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  isActive: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+export interface CreateManagerInput {
+  email: string;
+  name: string;
+  password: string;
+  role?: string;
+}
+
 export interface Device {
   id: string;
   companyId: string;
@@ -184,6 +201,38 @@ export const adminApi = {
     return request(`/companies/${companyId}/branches/${branchId}`, {
       method: "PATCH",
       body: JSON.stringify(input),
+    });
+  },
+  listManagers(companyId: string): Promise<{ managers: Manager[] }> {
+    return request(`/companies/${companyId}/managers`);
+  },
+  createManager(
+    companyId: string,
+    input: CreateManagerInput,
+  ): Promise<{ manager: Pick<Manager, "id" | "email" | "name" | "role"> }> {
+    return request(`/companies/${companyId}/managers`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+  setManagerActive(
+    companyId: string,
+    managerId: string,
+    isActive: boolean,
+  ): Promise<{ manager: Pick<Manager, "id" | "email" | "name" | "role" | "isActive"> }> {
+    return request(`/companies/${companyId}/managers/${managerId}/active`, {
+      method: "PATCH",
+      body: JSON.stringify({ isActive }),
+    });
+  },
+  resetManagerPassword(
+    companyId: string,
+    managerId: string,
+    newPassword: string,
+  ): Promise<{ ok: true }> {
+    return request(`/companies/${companyId}/managers/${managerId}/password`, {
+      method: "POST",
+      body: JSON.stringify({ newPassword }),
     });
   },
   /**

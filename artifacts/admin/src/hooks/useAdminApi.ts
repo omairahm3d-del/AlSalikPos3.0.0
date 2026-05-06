@@ -5,6 +5,7 @@ import {
   IssueLicenseInput,
   CreateBranchInput,
   UpdateBranchInput,
+  CreateManagerInput,
 } from "@/lib/adminApi";
 
 // Auth/401/403 handling is centralized in the QueryClient (see App.tsx),
@@ -97,6 +98,57 @@ export function useUpdateBranch(companyId: string) {
         queryKey: ["admin", "company", companyId, "branches"],
       });
     },
+  });
+}
+
+export function useCompanyManagers(companyId: string) {
+  return useQuery({
+    queryKey: ["admin", "company", companyId, "managers"],
+    queryFn: () => adminApi.listManagers(companyId),
+    enabled: !!companyId,
+  });
+}
+
+export function useCreateManager(companyId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateManagerInput) =>
+      adminApi.createManager(companyId, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["admin", "company", companyId, "managers"],
+      });
+    },
+  });
+}
+
+export function useSetManagerActive(companyId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      managerId,
+      isActive,
+    }: {
+      managerId: string;
+      isActive: boolean;
+    }) => adminApi.setManagerActive(companyId, managerId, isActive),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["admin", "company", companyId, "managers"],
+      });
+    },
+  });
+}
+
+export function useResetManagerPassword(companyId: string) {
+  return useMutation({
+    mutationFn: ({
+      managerId,
+      newPassword,
+    }: {
+      managerId: string;
+      newPassword: string;
+    }) => adminApi.resetManagerPassword(companyId, managerId, newPassword),
   });
 }
 

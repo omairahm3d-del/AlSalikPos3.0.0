@@ -9,8 +9,12 @@ import {
   useCompanyBranches,
   useCreateBranch,
   useUpdateBranch,
+  useCompanyManagers,
+  useCreateManager,
+  useSetManagerActive,
+  useResetManagerPassword,
 } from "@/hooks/useAdminApi";
-import type { Branch, LicenseType } from "@/lib/adminApi";
+import type { Branch, LicenseType, Manager } from "@/lib/adminApi";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +25,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { format, formatDistanceToNow, parseISO } from "date-fns";
-import { ArrowLeft, Copy, Eye, EyeOff, KeyRound, MonitorSmartphone, Plus, ShieldAlert, XCircle, CheckCircle2, Building2, Star } from "lucide-react";
+import { ArrowLeft, Copy, Eye, EyeOff, KeyRound, MonitorSmartphone, Plus, ShieldAlert, XCircle, CheckCircle2, Building2, Star, UserCog } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function maskKey(key: string) {
@@ -37,11 +41,15 @@ export function CompanyDetail() {
   const { data: licensesData, isLoading: licensesLoading } = useCompanyLicenses(companyId || "");
   const { data: devicesData, isLoading: devicesLoading } = useCompanyDevices(companyId || "");
   const { data: branchesData, isLoading: branchesLoading } = useCompanyBranches(companyId || "");
+  const { data: managersData, isLoading: managersLoading } = useCompanyManagers(companyId || "");
 
   const issueLicense = useIssueLicense();
   const revokeLicense = useRevokeLicense();
   const createBranch = useCreateBranch(companyId || "");
   const updateBranch = useUpdateBranch(companyId || "");
+  const createManager = useCreateManager(companyId || "");
+  const setManagerActive = useSetManagerActive(companyId || "");
+  const resetManagerPassword = useResetManagerPassword(companyId || "");
   const { toast } = useToast();
 
   const [issueOpen, setIssueOpen] = useState(false);
@@ -52,6 +60,13 @@ export function CompanyDetail() {
   const [editBranch, setEditBranch] = useState<Branch | null>(null);
   const [branchName, setBranchName] = useState("");
   const [branchAddress, setBranchAddress] = useState("");
+
+  const [managerOpen, setManagerOpen] = useState(false);
+  const [managerEmail, setManagerEmail] = useState("");
+  const [managerName, setManagerName] = useState("");
+  const [managerPassword, setManagerPassword] = useState("");
+  const [resetPwOpen, setResetPwOpen] = useState<Manager | null>(null);
+  const [newPassword, setNewPassword] = useState("");
 
   const [maxDevices, setMaxDevices] = useState(1);
   const [notes, setNotes] = useState("");
@@ -109,6 +124,56 @@ export function CompanyDetail() {
   const licenses = licensesData?.licenses || [];
   const devices = devicesData?.devices || [];
   const branches = branchesData?.branches || [];
+  const managers = managersData?.managers || [];
+
+  const handleCreateManager = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await createManager.mutateAsync({
+        email: managerEmail.trim().toLowerCase(),
+        name: managerName.trim(),
+        password: managerPassword,
+      });
+      toast({
+        title: "Manager created.",
+        description: `${managerEmail} can now sign in to the Back Office.`,
+      });
+      setManagerOpen(false);
+      setManagerEmail("");
+      setManagerName("");
+      setManagerPassword("");
+    } catch (err: any) {
+      toast({ title: "Failed to create manager", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleToggleManagerActive = async (m: Manager) => {
+    try {
+      await setManagerActive.mutateAsync({ managerId: m.id, isActive: !m.isActive });
+      toast({ title: m.isActive ? "Manager deactivated." : "Manager activated." });
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetPwOpen) return;
+    try {
+      await resetManagerPassword.mutateAsync({
+        managerId: resetPwOpen.id,
+        newPassword,
+      });
+      toast({
+        title: "Password reset.",
+        description: "Active back-office sessions for this manager have been signed out.",
+      });
+      setResetPwOpen(null);
+      setNewPassword("");
+    } catch (err: any) {
+      toast({ title: "Failed to reset password", description: err.message, variant: "destructive" });
+    }
+  };
 
   const openCreateBranch = () => {
     setEditBranch(null);
@@ -247,10 +312,11 @@ export function CompanyDetail() {
       </Card>
 
       <Tabs defaultValue="licenses" className="w-full">
-        <TabsList className="grid w-full max-w-[600px] grid-cols-3">
+        <TabsList className="grid w-full max-w-[800px] grid-cols-4">
           <TabsTrigger value="licenses">Licenses ({licenses.length})</TabsTrigger>
           <TabsTrigger value="devices">Devices ({devices.length})</TabsTrigger>
           <TabsTrigger value="branches">Branches ({branches.length})</TabsTrigger>
+          <TabsTrigger value="managers">Managers ({managers.length})</TabsTrigger>
         </TabsList>
         
         <TabsContent value="licenses" className="mt-6 space-y-4">
@@ -593,6 +659,179 @@ export function CompanyDetail() {
               ))}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="managers" className="mt-6 space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold">Back Office Managers</h2>
+            <Dialog open={managerOpen} onOpenChange={setManagerOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm">
+                  <Plus className="mr-2 h-4 w-4" /> Add Manager
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <form onSubmit={handleCreateManager}>
+                  <DialogHeader>
+                    <DialogTitle>New Manager</DialogTitle>
+                    <DialogDescription>
+                      Managers sign in to the Back Office at <code>/back-office</code> using
+                      this company's slug, their email, and the password you set here.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="managerName">Full name</Label>
+                      <Input
+                        id="managerName"
+                        value={managerName}
+                        onChange={(e) => setManagerName(e.target.value)}
+                        required
+                        maxLength={200}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="managerEmail">Email</Label>
+                      <Input
+                        id="managerEmail"
+                        type="email"
+                        value={managerEmail}
+                        onChange={(e) => setManagerEmail(e.target.value)}
+                        required
+                        maxLength={255}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="managerPassword">Initial password</Label>
+                      <Input
+                        id="managerPassword"
+                        type="text"
+                        value={managerPassword}
+                        onChange={(e) => setManagerPassword(e.target.value)}
+                        placeholder="At least 8 characters"
+                        required
+                        minLength={8}
+                        maxLength={200}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Share this with the manager — they can change it after signing in.
+                      </p>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" type="button" onClick={() => setManagerOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={createManager.isPending}>
+                      Create manager
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          {managersLoading ? (
+            <Skeleton className="h-32 w-full" />
+          ) : managers.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="pt-8 pb-8 text-center text-muted-foreground">
+                No managers yet. Add one to grant Back Office access.
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {managers.map((m) => (
+                <Card key={m.id} className={!m.isActive ? "opacity-70 bg-muted/50" : ""}>
+                  <CardHeader className="pb-2 flex flex-row items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <UserCog className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-lg font-semibold">{m.name}</span>
+                        <Badge variant={m.isActive ? "default" : "secondary"}>
+                          {m.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                        <Badge variant="outline">{m.role}</Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{m.email}</p>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Created {format(parseISO(m.createdAt), "PPP")}
+                        {" · "}
+                        {m.lastLoginAt
+                          ? `Last login ${formatDistanceToNow(parseISO(m.lastLoginAt), { addSuffix: true })}`
+                          : "Never signed in"}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2 items-end">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setResetPwOpen(m);
+                          setNewPassword("");
+                        }}
+                      >
+                        <KeyRound className="mr-2 h-4 w-4" /> Reset password
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleToggleManagerActive(m)}
+                        disabled={setManagerActive.isPending}
+                      >
+                        {m.isActive ? "Deactivate" : "Activate"}
+                      </Button>
+                    </div>
+                  </CardHeader>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          <Dialog
+            open={!!resetPwOpen}
+            onOpenChange={(open) => {
+              if (!open) {
+                setResetPwOpen(null);
+                setNewPassword("");
+              }
+            }}
+          >
+            <DialogContent>
+              <form onSubmit={handleResetPassword}>
+                <DialogHeader>
+                  <DialogTitle>Reset password</DialogTitle>
+                  <DialogDescription>
+                    Setting a new password for <strong>{resetPwOpen?.email}</strong> immediately
+                    signs out any active Back Office sessions for this manager.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="newPassword">New password</Label>
+                    <Input
+                      id="newPassword"
+                      type="text"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="At least 8 characters"
+                      required
+                      minLength={8}
+                      maxLength={200}
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" type="button" onClick={() => setResetPwOpen(null)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={resetManagerPassword.isPending}>
+                    Reset password
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
       </Tabs>
     </div>
