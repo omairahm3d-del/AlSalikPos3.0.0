@@ -28,6 +28,7 @@ import { useDatabase } from "@/context/DatabaseCore";
 import { useStaff } from "@/context/StaffContext";
 import { useColors } from "@/hooks/useColors";
 import { generateReceiptHTML } from "@/lib/receiptTemplate";
+import { generateKitchenTicketHTML } from "@/lib/kitchenTicketTemplate";
 import { isElectron, listWindowsPrinters, printHtml } from "@/lib/printBridge";
 import type {
   BusinessSettings,
@@ -1174,7 +1175,34 @@ export default function BackOfficeScreen() {
           </>
         )}
 
-        <TouchableOpacity onPress={() => saveSettings(undefined, printerSettings)} style={[s.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}>
+        <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 24 }]}>On-Screen Keyboard</Text>
+        <Text style={[s.hintText, { color: colors.mutedForeground }]}>Show a keyboard when you tap a text box (useful on touch screens without a physical keyboard).</Text>
+        <View style={s.chipRow}>
+          {([
+            { key: "off" as const, label: "Off" },
+            { key: "builtin" as const, label: "Built-in (EN / ع AR)" },
+            { key: "windows-osk" as const, label: "Windows On-Screen Keyboard" },
+          ]).map((m) => {
+            const cur = (bizSettings?.keyboardMode as any) || "off";
+            const active = cur === m.key;
+            return (
+              <TouchableOpacity
+                key={m.key}
+                onPress={async () => {
+                  const biz = bizSettings ?? await db.loadBusinessSettings();
+                  const updated = { ...biz, keyboardMode: m.key } as BusinessSettings;
+                  await db.saveBusinessSettings(updated);
+                  setBizSettings(updated);
+                }}
+                style={[s.chip, { backgroundColor: active ? colors.primary : colors.secondary, borderColor: active ? colors.primary : colors.border, borderRadius: colors.radius }]}
+              >
+                <Text style={{ color: active ? "#fff" : colors.mutedForeground, fontWeight: "600" }}>{m.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <TouchableOpacity onPress={() => saveSettings(undefined, printerSettings)} style={[s.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius, marginTop: 16 }]}>
           <Feather name="save" size={16} color="#fff" />
           <Text style={s.saveBtnText}>Save Printer Settings</Text>
         </TouchableOpacity>
@@ -1222,10 +1250,44 @@ export default function BackOfficeScreen() {
           </>
         )}
 
-        <TouchableOpacity onPress={() => saveSettings(undefined, undefined, kotSettings)} style={[s.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}>
-          <Feather name="save" size={16} color="#fff" />
-          <Text style={s.saveBtnText}>Save KOT Settings</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+          <TouchableOpacity onPress={() => saveSettings(undefined, undefined, kotSettings)} style={[s.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius, flex: 1 }]}>
+            <Feather name="save" size={16} color="#fff" />
+            <Text style={s.saveBtnText}>Save KOT Settings</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={async () => {
+              const ps = printerSettings;
+              const target = ps?.windowsKOTPrinterName || ps?.windowsReceiptPrinterName || "";
+              if (!target && isElectron()) {
+                Alert.alert("No KOT printer", "Set a Kitchen (KOT) Printer in Printer Settings → Windows Direct Printers first.");
+                return;
+              }
+              const sampleItems: any[] = [
+                { product: { id: "p1", name: "Test Burger", price: 25, category: "Food" }, quantity: 2, taxRate: 0.05 },
+                { product: { id: "p2", name: "Test Fries", price: 10, category: "Food" }, quantity: 1, taxRate: 0.05 },
+                { product: { id: "p3", name: "Test Cola", price: 5, category: "Drinks" }, quantity: 2, taxRate: 0.05 },
+              ];
+              const html = generateKitchenTicketHTML(sampleItems, "KOT-TEST-0001", "Table 1", currentStaff?.name || "Test", kotSettings);
+              const ok = await printHtml(html, {
+                deviceName: target,
+                paperWidth: "80mm",
+                rawMode: !!ps?.rawTextMode,
+                rawText: ps?.rawTextMode
+                  ? `\n  KITCHEN ORDER\n  Order: KOT-TEST-0001\n  Table: Table 1\n  ----------------\n  2x Test Burger\n  1x Test Fries\n  2x Test Cola\n  ----------------\n  *** TEST PRINT ***\n\n\n`
+                  : undefined,
+                autoCut: ps?.autoCutPaper !== false,
+                codepage: ps?.rawCodepage || "cp1252",
+              });
+              if (!ok) Alert.alert("Test KOT", "Could not send to the KOT printer. Check the printer name and connection.");
+              else Alert.alert("Test KOT sent", `Sent a test ticket to "${target || "default printer"}".`);
+            }}
+            style={[s.saveBtn, { backgroundColor: colors.success, borderRadius: colors.radius, flex: 1 }]}
+          >
+            <Feather name="printer" size={16} color="#fff" />
+            <Text style={s.saveBtnText}>Test KOT Print</Text>
+          </TouchableOpacity>
+        </View>
         <View style={{ height: 40 }} />
       </ScrollView>
     </View>

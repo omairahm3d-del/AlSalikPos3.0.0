@@ -168,6 +168,28 @@ const menuTemplate = [
   },
 ];
 
+// ===== Windows On-Screen Keyboard (OSK) =====
+ipcMain.handle('osk:open', async () => {
+  if (process.platform !== 'win32') return { ok: false, error: 'Not on Windows' };
+  try {
+    const { spawn } = require('child_process');
+    spawn('cmd.exe', ['/c', 'start', '', 'osk.exe'], { detached: true, windowsHide: true, stdio: 'ignore' }).unref();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+});
+ipcMain.handle('osk:close', async () => {
+  if (process.platform !== 'win32') return { ok: false };
+  try {
+    const { spawn } = require('child_process');
+    spawn('taskkill', ['/IM', 'osk.exe', '/F'], { windowsHide: true, stdio: 'ignore' }).unref();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false };
+  }
+});
+
 // ===== Printer IPC bridge =====
 ipcMain.handle('printers:list', async () => {
   try {

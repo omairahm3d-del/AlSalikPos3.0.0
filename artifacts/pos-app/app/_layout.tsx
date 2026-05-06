@@ -17,6 +17,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { DatabaseProvider } from "@/context/DatabaseProvider";
 import { StaffProvider, useStaff } from "@/context/StaffContext";
 import { LockScreen } from "@/components/LockScreen";
+import { VirtualKeyboard } from "@/components/VirtualKeyboard";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -30,9 +31,12 @@ function AppContent() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-    </Stack>
+    <>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      </Stack>
+      <VirtualKeyboard />
+    </>
   );
 }
 

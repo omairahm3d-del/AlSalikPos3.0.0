@@ -286,6 +286,7 @@ export interface BusinessSettings {
   zReportEmail?: string;
   smtpConfig?: SmtpConfig;
   lastClosedAt?: number;
+  keyboardMode?: "off" | "builtin" | "windows-osk";
 }
 
 export interface ZReport {
@@ -432,6 +433,7 @@ export const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
   printerSettings: DEFAULT_PRINTER_SETTINGS,
   kotSettings: DEFAULT_KOT_SETTINGS,
   customerDisplay: DEFAULT_CUSTOMER_DISPLAY,
+  keyboardMode: "off",
 };
 
 export const ADMIN_PERMISSIONS: StaffPermissions = {

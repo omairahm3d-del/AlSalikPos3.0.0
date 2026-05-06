@@ -1088,24 +1088,36 @@ export default function POSScreen() {
 
       <Modal visible={showHoldTablePicker} animationType="fade" transparent>
         <View style={styles.paymentOverlay}>
-          <View style={[styles.itemDiscSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2 }]}>
+          <View style={[styles.itemDiscSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2, maxHeight: "85%" }]}>
             <Text style={[styles.paymentTitle, { color: colors.foreground, fontSize: 18 }]}>Select Table to Hold</Text>
-            {availableTables.length === 0 ? (
-              <Text style={{ color: colors.mutedForeground, textAlign: "center", marginBottom: 16 }}>No available tables</Text>
-            ) : (
-              <View style={styles.holdTableGrid}>
-                {availableTables.map((t) => (
-                  <TouchableOpacity
-                    key={t.id}
-                    onPress={() => handleHoldOrder(t)}
-                    style={[styles.holdTableCard, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius }]}
-                  >
-                    <Feather name="layout" size={20} color={colors.primary} />
-                    <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: "600", marginTop: 4 }}>{t.name}</Text>
-                    <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>{t.capacity} seats</Text>
-                  </TouchableOpacity>
-                ))}
+            {tables.length === 0 ? (
+              <View style={{ padding: 16 }}>
+                <Text style={{ color: colors.mutedForeground, textAlign: "center", marginBottom: 8, fontSize: 14 }}>
+                  You haven't added any tables yet.
+                </Text>
+                <Text style={{ color: colors.mutedForeground, textAlign: "center", fontSize: 12 }}>
+                  Open the Tables tab and tap "+ Add Table" to create one, then come back here to hold this order.
+                </Text>
               </View>
+            ) : (
+              <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={styles.holdTableGrid}>
+                {tables.map((t) => {
+                  const isOcc = t.status === "occupied";
+                  return (
+                    <TouchableOpacity
+                      key={t.id}
+                      disabled={isOcc}
+                      onPress={() => handleHoldOrder(t)}
+                      style={[styles.holdTableCard, { backgroundColor: colors.secondary, borderColor: isOcc ? "#E74C3C55" : colors.border, borderRadius: colors.radius, opacity: isOcc ? 0.45 : 1 }]}
+                    >
+                      <Feather name="layout" size={20} color={isOcc ? "#E74C3C" : colors.primary} />
+                      <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: "600", marginTop: 4 }}>{t.name}</Text>
+                      <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>{t.capacity} seats</Text>
+                      <Text style={{ color: isOcc ? "#E74C3C" : "#2ECC71", fontSize: 9, fontWeight: "700", textTransform: "uppercase", marginTop: 2 }}>{t.status}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             )}
             <TouchableOpacity onPress={() => setShowHoldTablePicker(false)} style={[styles.cancelBtn, { borderColor: colors.border, borderRadius: colors.radius, marginTop: 8 }]}>
               <Text style={{ color: colors.mutedForeground, fontWeight: "600" }}>Cancel</Text>
