@@ -1,6 +1,6 @@
 # Al Salik POS
 
-A mobile-first Point of Sale (POS) system for the UAE market, offering comprehensive sales, inventory, and customer management, with offline capabilities and local tax compliance.
+A mobile-first Point of Sale (POS) system for the UAE market, offering sales, inventory, and customer management with offline capabilities and tax compliance.
 
 ## Run & Operate
 
@@ -9,13 +9,8 @@ A mobile-first Point of Sale (POS) system for the UAE market, offering comprehen
 -   **Run POS App**: `pnpm --filter=pos-app start`
 -   **Build POS Web**: `cd artifacts/pos-app && pnpm exec expo export --platform web --output-dir ../../desktop-installer/www-new --clear`
 -   **Build Desktop Installer**: `.cache/electron-builder/nsis/nsis-3.0.4.1/linux/makensis desktop-installer/installer.nsi`
--   **Database Migrations**: _Populate as you build_
 -   **Push SaaS Schema**: `pnpm --filter @workspace/saas-db run push`
--   **Environment Variables**:
-    -   `DATABASE_URL`: Replit Postgres (legacy single-tenant; not used by SaaS layer)
-    -   `SAAS_DATABASE_URL`: Separate cloud Postgres for the multi-tenant SaaS backend
-    -   `SAAS_JWT_SECRET`: Signs device JWTs returned by `/api/license/validate`
-    -   `SAAS_ADMIN_API_KEY`: Required as `x-admin-api-key` header for `/api/admin/*` routes
+-   **Environment Variables**: `DATABASE_URL`, `SAAS_DATABASE_URL`, `SAAS_JWT_SECRET`, `SAAS_ADMIN_API_KEY`
 
 ## Stack
 
@@ -26,66 +21,49 @@ A mobile-first Point of Sale (POS) system for the UAE market, offering comprehen
 -   **Database**: PostgreSQL
 -   **ORM**: Drizzle ORM
 -   **Validation**: Zod (v4), `drizzle-zod`
--   **API Codegen**: Orval (from OpenAPI spec)
--   **Build Tool**: esbuild (for CJS bundles)
+-   **API Codegen**: Orval
+-   **Build Tool**: esbuild
 -   **Frontend**: Expo SDK 54, React Native
 -   **Desktop**: Electron 33.x
 
 ## Where things live
 
--   `artifacts/api-server/`: Backend API. Layered: `routes/` → `controllers/` → `services/` → `repositories/`. Cross-cutting in `middlewares/`, `lib/`, `utils/`.
--   `lib/saas-db/`: Multi-tenant Postgres schema for the cloud SaaS backend (companies, licenses, devices). Uses `SAAS_DATABASE_URL` — separate from Replit's `DATABASE_URL`.
+-   `artifacts/admin/`: SaaS admin console (React + Vite).
+-   `artifacts/api-server/`: Backend API (Express).
+-   `lib/saas-db/`: Multi-tenant Postgres schema.
 -   `artifacts/pos-app/`: Mobile and web POS application (Expo/React Native).
-    -   `app/(tabs)/`: Main application tabs and screens.
-    -   `app/_layout.tsx`: Provider tree. `LicenseProvider` + `LicenseGate` wrap everything; nothing else mounts until the device has a valid SaaS JWT.
-    -   `components/`: Reusable UI components (incl. `ActivationScreen.tsx`, `LockScreen.tsx`).
-    -   `context/LicenseContext.tsx`: Holds `{session, activate, deactivate, refresh}`; ops are sequenced via `opSeq` to ignore stale results.
-    -   `context/SyncContext.tsx`: Drives sales push + catalog push/pull on one timer; tenant-guarded.
-    -   `lib/saasApi.ts`: `getApiBase()`, `validateLicense()`, `authedFetch()` — single place that talks to the SaaS backend.
-    -   `lib/syncEngine.ts`: Sales push engine (Phase 3b).
-    -   `lib/catalogSyncEngine.ts`: Catalog push+pull engine (Phase 3c).
-    -   `lib/saasStorage.ts`: AsyncStorage-backed session + single-flight `getOrCreateDeviceUid()` + catalog pull cursor.
-    -   `assets/images/icon.png`: Source for application icon.
 -   `desktop-installer/`: Electron wrapper and NSIS installer configuration.
-    -   `main.js`: Electron main process.
-    -   `preload.js`: Electron preload script for context bridge.
-    -   `installer.nsi`: NSIS installer script.
-    -   `assets/icon.ico`: Desktop application icon.
--   **SaaS DB Schema**: `lib/saas-db/src/schema/` (one file per table, barrel re-export). Catalog tables: `saas_products`, `saas_categories`.
+-   **SaaS DB Schema**: `lib/saas-db/src/schema/`
 -   **Local POS Schema**: `artifacts/api-server/src/db/schema.ts`
--   **Catalog server layer**: `artifacts/api-server/src/{repositories,services,controllers}/catalog*.ts`
--   **API Contracts**: `artifacts/api-server/src/routes/*.ts` (defined within Express routes)
--   **Theme/Styling**: Defined inline within React Native components and `components/Themed.tsx`.
--   **Receipt Templates**: HTML-based, generated dynamically (e.g., `components/ReceiptModal.tsx`, `components/CloseRegisterModal.tsx`).
+-   **API Contracts**: `artifacts/api-server/src/routes/*.ts`
+-   **Theme/Styling**: Inline within React Native components and `components/Themed.tsx`.
+-   **Receipt Templates**: HTML-based, generated dynamically (e.g., `components/ReceiptModal.tsx`).
 
 ## Architecture decisions
 
--   **Multi-tenant SaaS via license keys**: Every install must call `POST /api/license/validate` with `{licenseKey, deviceUid}` to receive a device JWT. No public signup; the owner issues licenses via admin endpoints (`x-admin-api-key` header). License has `maxDevices` enforced at validation; idempotent re-validation for the same `(licenseId, deviceUid)`.
--   **License gate above all providers**: The Expo client mounts `LicenseProvider`/`LicenseGate` outside `DatabaseProvider`, so the local DB never opens for an unactivated install. Session is restored from AsyncStorage on launch, refreshed once in the background, and only dropped on hard server states (`license_revoked`, `license_expired`, `license_not_found`, `company_suspended`) — network errors keep the POS working offline until the JWT itself expires. `deviceUid` is preserved across `deactivate()` so re-activation reuses the same license slot.
--   **API base resolution (Expo)**: `EXPO_PUBLIC_API_BASE` (build-time override, used by the desktop installer) → native fallback `https://EXPO_PUBLIC_DOMAIN` → web fallback `""` (relative; same-origin proxy on Replit).
--   **Append-only sales sync**: Devices `POST /api/sync/sales` with a batch (≤200) of sales. Idempotency is DB-enforced via `UNIQUE(company_id, client_sale_id)` + `INSERT ... ON CONFLICT DO NOTHING RETURNING`, so retries are safe. The full client `Sale` (incl. items, splits) is preserved in `payload` jsonb; only the columns reporting needs (total, vatAmount, paymentMethod, isRefund, staffId, customerId, timestamps) are extracted. `companyId`/`deviceId` come from the JWT — never from the body — so a device can't push for another tenant. Money is `numeric(14,4)`; the API rejects NaN/Infinity, >4-decimal amounts, and timestamps outside `[2020-01-01, now+24h]`.
--   **Client outbound sync queue**: A local `sync_queue` table (SQLite native / JSON on web) tracks pending pushes. Native enqueues happen *inside* the same `saveSale`/`processRefund` transaction so a sale is never committed without a queue row. `SyncContext` mounts inside `DatabaseProvider`+`LicenseGate`, drains in batches of 50 with exponential backoff (5s × 2^attempts, capped at 5 min), and treats server-confirmed `duplicate` as success (the row is in the cloud either way). 401 from the API does not bump attempt counts — instead it triggers `LicenseContext.refresh()` which either re-mints a JWT or drops the session. `reconcilePendingSync()` on engine startup backfills queue rows for any pre-existing sale (handles legacy installs and backup restores).
--   **Bidirectional catalog sync (LWW)**: Products, categories, and customers sync both ways via `POST /api/sync/catalog/push` + `GET /api/sync/catalog/pull?since=&limit=` (the wire path keeps the historical "catalog" name; customers are a peer stream, Phase 3d). Local edits go through a separate `catalog_outbox` table (native) / `@pos_catalog_outbox` JSON (web) that **upserts per (entity_type, entity_id)** — rapid edits collapse into one pending snapshot instead of piling up, and `attempt_count` resets on each fresh edit. Each entity carries `updatedAt` (wall-clock ms) and the server uses it for last-write-wins via `ON CONFLICT DO UPDATE WHERE clientUpdatedAt < incoming`. Deletes are soft (`deletedAt` tombstone) and propagate as payload `{id}` with `deleted: true`. Pull is cursor-paginated independently per stream using a `(serverUpdatedAt, clientId)` tuple — public cursor format `"<pISO>~<pId>|<cISO>~<cId>|<cuISO>~<cuId>"` (opaque to the client, URL-encoded; backwards-compatible with bare ISO and legacy 2-segment `pISO~pId|cISO~cId` — missing customer segment defaults to epoch and replays existing customers once on first run). Per-stream cursors prevent cross-stream skip; the tuple inside each stream prevents skipping rows that share a millisecond timestamp at a page boundary. The cursor lives in AsyncStorage at `saas.catalogCursor` and is cleared by `clearOwningCompanyId()` so a license swap or backup restore starts fresh. `applyRemoteCatalog()` first checks the outbox (so a pending **unpushed local delete or edit** is never clobbered by a stale pull, even when the local entity row is gone), then falls back to comparing the entity table's `updatedAt`. Native runs the whole pass in `withExclusiveTransactionAsync`; web serializes catalog mutations through a single-writer in-process mutex (`runCatalogExclusive`) to prevent read-modify-write races on the JSON blobs. Apply uses INSERT OR REPLACE / full-replace semantics on both platforms — the incoming payload is authoritative, no field-level merge. The catalog tick runs in the same `SyncContext` loop as sales (sales first, then catalog) and shares the tenant guard; sales 401 short-circuits before catalog, surfacing `pendingCatalogCount` alongside `pendingCount`.
--   **Catalog stock + customer balances are full LWW (v1)**: Pushed product payloads include `stockQuantity`, and pushed customer payloads include `creditBalance` and `loyaltyPoints`, so two devices changing inventory / credit / loyalty between syncs will resolve via wall-clock LWW rather than additively. Concretely: a credit payment on device A and a loyalty redemption on device B between syncs both rewrite the entire customer row, and the later wall-clock write wins — the earlier change to the *other* field is silently lost. Acceptable for v1 because the local POS is the source of truth for sales-driven mutations and the typical pattern is one POS per till; if multi-device editing becomes common, switch to an event/ledger sync (deltas — credit_payments and loyalty_events as their own streams, customer fields derived) instead of full-entity LWW.
--   **Two databases on purpose**: `lib/db` (Replit DATABASE_URL) is the legacy single-tenant DB and is left untouched. `lib/saas-db` (SAAS_DATABASE_URL) is the cloud multi-tenant DB. They never share a connection or table.
--   **Layered API**: Routes only wire URLs; controllers only parse/respond; services hold business rules; repositories own all Drizzle queries. Centralized `errorHandler` translates `HttpError` and `ZodError` into JSON.
--   **Monorepo for Cohesion**: Utilizes pnpm workspaces to manage shared dependencies and facilitate development across API, POS app, and desktop installer.
--   **Offline-First POS**: Employs Expo-SQLite (native) and AsyncStorage (web) to ensure full application functionality without an internet connection, critical for POS operations.
--   **Platform-Specific Printing**: Implements distinct printing mechanisms for web (`window.print()`), native (`expo-print`), and Windows desktop (Electron bridge with `silentPrint`), to accommodate varied environments while centralizing print logic.
--   **HTML-based Receipts**: Uses HTML templates for receipts and KOTs to allow for rich formatting, branding (logos, QR codes), and easy customization compliant with UAE tax regulations.
--   **Embedded Desktop Web Export**: The Electron desktop application serves the Expo web export from an internal HTTP server, avoiding `file://` limitations with Service Workers and ensuring consistent behavior with the web version.
+-   **Multi-tenant SaaS via license keys**: Activation requires `POST /api/license/validate` with `licenseKey` and `deviceUid` to obtain a device JWT. Licenses are issued via admin endpoints.
+-   **License gate above all providers**: The POS client's local database only opens after successful license validation; session restored from AsyncStorage.
+-   **Append-only sales sync**: Sales are pushed to the server in batches, with idempotency enforced by `UNIQUE(company_id, client_sale_id)`.
+-   **Client outbound sync queue**: A local `sync_queue` table tracks pending pushes, processed in batches with exponential backoff.
+-   **Bidirectional catalog sync (LWW)**: Products, categories, and customers sync both ways using last-write-wins based on `updatedAt` timestamps. Deletes are soft.
+-   **Two databases on purpose**: `lib/db` (legacy single-tenant) and `lib/saas-db` (cloud multi-tenant) are distinct and do not share tables.
+-   **Layered API**: Clear separation of concerns with routes, controllers, services, and repositories.
+-   **Offline-First POS**: Utilizes Expo-SQLite (native) and AsyncStorage (web) for full offline functionality.
+-   **Platform-Specific Printing**: Distinct printing mechanisms for web, native, and Windows desktop.
+-   **HTML-based Receipts**: Dynamic HTML templates for rich, customizable receipts compliant with UAE tax regulations.
+-   **Embedded Desktop Web Export**: Electron app serves Expo web export internally to avoid `file://` limitations.
 
 ## Product
 
--   **Mobile-First POS**: Optimized for mobile and tablet, adapting UI layouts based on screen size (single-panel for mobile, split-panel for tablets).
--   **Comprehensive Inventory**: Real-time stock tracking, low stock alerts, ingredient management, and recipe-based deduction.
--   **Flexible Order Management**: Supports Dine-in, Takeaway, Delivery, held orders, and kitchen order tickets (KOT).
--   **Multi-Payment Options**: Card, Cash, Credit, Split payments, loyalty points, and refund capabilities.
--   **Detailed Reporting**: Daily sales, Z-Reports (end-of-day), and a Reports Hub with 6 sub-reports, all with CSV export.
--   **UAE Compliance**: Integrated AED currency, 5% VAT, and specific tax invoice formats.
--   **Staff & Customer Management**: PIN-based staff login with roles, customer CRM with credit and loyalty.
--   **Barcode Integration**: EAN-13/8, UPC-A/E, QR, Code128/39 scanning for products and receipt lookups.
--   **Desktop Application**: Windows wrapper with direct printing, cash drawer control, and integrated on-screen keyboard.
+-   **Mobile-First POS**: Optimized for mobile and tablet, with adaptive UI.
+-   **Comprehensive Inventory**: Real-time stock, low stock alerts, ingredient management.
+-   **Flexible Order Management**: Dine-in, Takeaway, Delivery, held orders, KOT.
+-   **Multi-Payment Options**: Card, Cash, Credit, Split payments, loyalty, refunds.
+-   **Detailed Reporting**: Daily sales, Z-Reports, Reports Hub with CSV export.
+-   **UAE Compliance**: AED currency, 5% VAT, specific tax invoice formats.
+-   **Staff & Customer Management**: PIN-based staff login with roles, customer CRM.
+-   **Barcode Integration**: EAN-13/8, UPC-A/E, QR, Code128/39 scanning.
+-   **Desktop Application**: Windows wrapper with direct printing, cash drawer, on-screen keyboard.
 
 ## User preferences
 
@@ -93,10 +71,10 @@ I prefer iterative development with a focus on delivering functional components 
 
 ## Gotchas
 
--   **Desktop Installer Rebuild**: Any changes to `artifacts/pos-app` that need to be reflected in the Windows installer require manually rebuilding the web export and the NSIS installer.
--   **Printing on Windows**: Ensure POS printers have "Open drawer on print" enabled in their drivers for cash drawer kick to function. Also, printer names configured in settings must exactly match installed Windows printer names for direct printing.
--   **Email Fallbacks**: Understand the logic for Z-Report email (SMTP via API server -> `expo-mail-composer` -> `mailto:`) as it varies by platform and SMTP configuration.
--   **Electron Context Bridge**: Direct manipulation of `window.electronPOS` is limited to the `desktop-installer/preload.js` context for security.
+-   **Desktop Installer Rebuild**: Requires manual rebuild of web export and NSIS installer for `artifacts/pos-app` changes.
+-   **Printing on Windows**: POS printers need "Open drawer on print" enabled; printer names must exactly match configured Windows names.
+-   **Email Fallbacks**: Z-Report email logic varies by platform and SMTP config.
+-   **Electron Context Bridge**: Direct `window.electronPOS` manipulation is limited to `desktop-installer/preload.js` for security.
 
 ## Pointers
 

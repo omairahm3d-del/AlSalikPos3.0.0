@@ -1,0 +1,367 @@
+import { useState } from "react";
+import { Link, useParams } from "wouter";
+import { useCompanies, useCompanyLicenses, useCompanyDevices, useIssueLicense, useRevokeLicense } from "@/hooks/useAdminApi";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { format, formatDistanceToNow, parseISO } from "date-fns";
+import { ArrowLeft, Copy, Eye, EyeOff, KeyRound, MonitorSmartphone, Plus, ShieldAlert, XCircle, CheckCircle2 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+
+function maskKey(key: string) {
+  if (!key) return "";
+  const visible = key.slice(0, 4);
+  return `${visible}${"•".repeat(Math.max(8, key.length - 4))}`;
+}
+
+export function CompanyDetail() {
+  const { companyId } = useParams<{ companyId: string }>();
+  const { data: companiesData, isLoading: companiesLoading, isError: companiesError, error: companiesErr, refetch: refetchCompanies } = useCompanies();
+
+  const { data: licensesData, isLoading: licensesLoading } = useCompanyLicenses(companyId || "");
+  const { data: devicesData, isLoading: devicesLoading } = useCompanyDevices(companyId || "");
+
+  const issueLicense = useIssueLicense();
+  const revokeLicense = useRevokeLicense();
+  const { toast } = useToast();
+
+  const [issueOpen, setIssueOpen] = useState(false);
+  const [revokeOpen, setRevokeOpen] = useState<string | null>(null);
+  const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
+
+  const [maxDevices, setMaxDevices] = useState(1);
+  const [notes, setNotes] = useState("");
+
+  if (companiesLoading) {
+    return (
+      <div className="p-6 max-w-6xl mx-auto space-y-6">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    );
+  }
+
+  if (companiesError) {
+    return (
+      <div className="p-6 max-w-6xl mx-auto">
+        <Card className="border-destructive/40">
+          <CardHeader>
+            <CardTitle className="text-destructive flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5" /> Couldn't load company
+            </CardTitle>
+            <CardDescription>{(companiesErr as Error)?.message ?? "Network error."}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex gap-3">
+            <Button onClick={() => refetchCompanies()}>Retry</Button>
+            <Button variant="outline" asChild><Link href="/">Back to companies</Link></Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const company = companiesData?.companies.find(c => c.id === companyId);
+  if (!company) {
+    return (
+      <div className="p-6 max-w-6xl mx-auto">
+        <Card className="border-dashed">
+          <CardHeader>
+            <CardTitle>Company not found</CardTitle>
+            <CardDescription>
+              No company matches that ID. It may have been removed.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button variant="outline" asChild><Link href="/">Back to companies</Link></Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const licenses = licensesData?.licenses || [];
+  const devices = devicesData?.devices || [];
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast({ title: "Copied to clipboard." });
+  };
+
+  const handleIssue = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await issueLicense.mutateAsync({
+        companyId: company.id,
+        maxDevices,
+        notes: notes || undefined,
+      });
+      toast({ title: "License issued successfully." });
+      setIssueOpen(false);
+      setMaxDevices(1);
+      setNotes("");
+    } catch (err: any) {
+      toast({ title: "Failed to issue license", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleRevoke = async (licenseId: string) => {
+    try {
+      await revokeLicense.mutateAsync({ companyId: company.id, licenseId });
+      toast({ title: "License revoked." });
+      setRevokeOpen(null);
+    } catch (err: any) {
+      toast({ title: "Failed to revoke license", description: err.message, variant: "destructive" });
+    }
+  };
+
+  return (
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="icon" asChild>
+          <Link href="/">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+        </Button>
+        <div className="flex items-center gap-3">
+          <h1 className="text-3xl font-bold tracking-tight">{company.name}</h1>
+          <Badge variant={company.status === "active" ? "default" : "secondary"}>
+            {company.status}
+          </Badge>
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="pt-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Slug</p>
+              <p className="font-mono mt-1">{company.slug}</p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Contact</p>
+              <p className="mt-1">{company.contactEmail || "—"}</p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Created</p>
+              <p className="mt-1">{format(parseISO(company.createdAt), "PPP")}</p>
+            </div>
+            {company.notes && (
+              <div className="md:col-span-3">
+                <p className="text-sm font-medium text-muted-foreground">Notes</p>
+                <p className="mt-1 whitespace-pre-wrap">{company.notes}</p>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Tabs defaultValue="licenses" className="w-full">
+        <TabsList className="grid w-full max-w-[400px] grid-cols-2">
+          <TabsTrigger value="licenses">Licenses ({licenses.length})</TabsTrigger>
+          <TabsTrigger value="devices">Devices ({devices.length})</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="licenses" className="mt-6 space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold">Licenses</h2>
+            <Dialog open={issueOpen} onOpenChange={setIssueOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm">
+                  <Plus className="mr-2 h-4 w-4" /> Issue License
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <form onSubmit={handleIssue}>
+                  <DialogHeader>
+                    <DialogTitle>Issue New License</DialogTitle>
+                    <DialogDescription>
+                      Generate a new license key for {company.name}.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="maxDevices">Max Devices</Label>
+                      <Input
+                        id="maxDevices"
+                        type="number"
+                        min={1}
+                        value={maxDevices}
+                        onChange={(e) => setMaxDevices(parseInt(e.target.value) || 1)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="notes">Notes (Optional)</Label>
+                      <Textarea
+                        id="notes"
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder="Internal notes about this license..."
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" type="button" onClick={() => setIssueOpen(false)}>Cancel</Button>
+                    <Button type="submit" disabled={issueLicense.isPending}>
+                      Issue Key
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          {licensesLoading ? (
+            <Skeleton className="h-32 w-full" />
+          ) : licenses.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="pt-8 pb-8 text-center text-muted-foreground">
+                No licenses found. Issue one to get started.
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {licenses.map(license => {
+                const activeDevices = devices.filter(d => d.licenseId === license.id).length;
+                return (
+                  <Card key={license.id} className={license.status === 'revoked' ? 'opacity-70 bg-muted/50' : ''}>
+                    <CardHeader className="pb-2 flex flex-row items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant={license.status === "active" ? "default" : "destructive"}>
+                            {license.status}
+                          </Badge>
+                          <span className="text-sm text-muted-foreground">
+                            Generated {format(parseISO(license.createdAt), "PPP")}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          <code className="font-mono text-lg font-semibold bg-muted px-2 py-1 rounded">
+                            {revealedKeys[license.id] ? license.key : maskKey(license.key)}
+                          </code>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setRevealedKeys(prev => ({ ...prev, [license.id]: !prev[license.id] }))}
+                            title={revealedKeys[license.id] ? "Hide key" : "Reveal key"}
+                          >
+                            {revealedKeys[license.id] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleCopy(license.key)} title="Copy key">
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                      {license.status === 'active' && (
+                        <Dialog open={revokeOpen === license.id} onOpenChange={(open) => setRevokeOpen(open ? license.id : null)}>
+                          <DialogTrigger asChild>
+                            <Button variant="destructive" size="sm" className="bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground">
+                              <XCircle className="mr-2 h-4 w-4" /> Revoke
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle className="text-destructive flex items-center gap-2">
+                                <ShieldAlert className="h-5 w-5" /> Revoke License
+                              </DialogTitle>
+                              <DialogDescription>
+                                Are you sure you want to revoke this license? This action cannot be undone. Devices using this license will be disconnected.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <div className="py-4">
+                              <code className="font-mono text-center block bg-muted p-2 rounded">{license.key}</code>
+                            </div>
+                            <DialogFooter>
+                              <Button variant="outline" onClick={() => setRevokeOpen(null)}>Cancel</Button>
+                              <Button variant="destructive" onClick={() => handleRevoke(license.id)} disabled={revokeLicense.isPending}>
+                                Yes, Revoke Key
+                              </Button>
+                            </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
+                      )}
+                    </CardHeader>
+                    <CardContent className="pt-2 text-sm">
+                      <div className="flex items-center gap-6 text-muted-foreground">
+                        <div className="flex items-center gap-2">
+                          <MonitorSmartphone className="h-4 w-4" />
+                          <span>{activeDevices} / {license.maxDevices} Devices</span>
+                        </div>
+                        {license.expiresAt && (
+                          <div className="flex items-center gap-2">
+                            <span>Expires {format(parseISO(license.expiresAt), "PPP")}</span>
+                          </div>
+                        )}
+                      </div>
+                      {license.notes && (
+                        <p className="mt-3 text-muted-foreground border-t border-border pt-3">
+                          {license.notes}
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="devices" className="mt-6 space-y-4">
+          <h2 className="text-xl font-semibold">Active Devices</h2>
+          
+          {devicesLoading ? (
+            <Skeleton className="h-32 w-full" />
+          ) : devices.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="pt-8 pb-8 text-center text-muted-foreground">
+                No devices have activated under this company yet.
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="rounded-md border">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="h-10 px-4 text-left font-medium text-muted-foreground">Device Name / ID</th>
+                      <th className="h-10 px-4 text-left font-medium text-muted-foreground">Platform</th>
+                      <th className="h-10 px-4 text-left font-medium text-muted-foreground">Version</th>
+                      <th className="h-10 px-4 text-left font-medium text-muted-foreground">Last Seen</th>
+                      <th className="h-10 px-4 text-left font-medium text-muted-foreground">License</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {devices.map(device => {
+                      const parentLicense = licenses.find(l => l.id === device.licenseId);
+                      return (
+                        <tr key={device.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                          <td className="p-4">
+                            <div className="font-medium">{device.name || "Unknown Device"}</div>
+                            <div className="font-mono text-xs text-muted-foreground">{device.deviceUid.substring(0, 8)}...</div>
+                          </td>
+                          <td className="p-4 capitalize">{device.platform}</td>
+                          <td className="p-4">{device.appVersion || "—"}</td>
+                          <td className="p-4">
+                            {device.lastSeenAt ? formatDistanceToNow(parseISO(device.lastSeenAt), { addSuffix: true }) : "Never"}
+                          </td>
+                          <td className="p-4 font-mono text-xs">
+                            {parentLicense ? parentLicense.key.substring(0, 9) + "..." : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
