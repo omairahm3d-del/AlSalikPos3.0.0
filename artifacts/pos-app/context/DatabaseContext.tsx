@@ -8,7 +8,8 @@ import type {
 } from "@/types";
 import { DEFAULT_BUSINESS_SETTINGS, VAT_RATE } from "@/types";
 import { generateId, generateInvoiceNumber } from "@/lib/database";
-import { DatabaseContext, type SaleOptions } from "./DatabaseCore";
+import { clearOwningCompanyId } from "@/lib/saasStorage";
+import { DatabaseContext, type SaleOptions, type SyncEntityType, type SyncQueueItem, type SyncResultUpdate } from "./DatabaseCore";
 
 export function NativeDatabaseProvider({ children }: { children: React.ReactNode }) {
   const db = useSQLiteContext();
@@ -128,6 +129,13 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         await tx.runAsync("DELETE FROM held_orders WHERE table_id=?", [tableId]);
       }
 
+      // Enqueue for cloud sync inside the same transaction so a sale is never
+      // saved without a corresponding queue entry.
+      await tx.runAsync(
+        "INSERT OR IGNORE INTO sync_queue (id, entity_type, entity_id, enqueued_at, status) VALUES (?, 'sale', ?, ?, 'pending')",
+        [generateId(), saleId, createdAt]
+      );
+
       const recipes = await tx.getAllAsync<{ product_id: string; ingredient_id: string; quantity: number }>(
         "SELECT * FROM recipe_ingredients"
       );
@@ -244,6 +252,12 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       if (orig.customer_id && (orig.loyalty_points_earned ?? 0) > 0) {
         await tx.runAsync("UPDATE customers SET loyalty_points=MAX(0, loyalty_points-?) WHERE id=?", [orig.loyalty_points_earned, orig.customer_id]);
       }
+
+      // Refunds are sales too — enqueue for cloud sync.
+      await tx.runAsync(
+        "INSERT OR IGNORE INTO sync_queue (id, entity_type, entity_id, enqueued_at, status) VALUES (?, 'sale', ?, ?, 'pending')",
+        [generateId(), refundId, createdAt]
+      );
 
       return {
         id: refundId, invoiceNumber, createdAt, subtotal: -orig.subtotal,
@@ -677,6 +691,9 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       for (const t of ALL_TABLES) {
         try { await db.runAsync(`DELETE FROM ${t}`); } catch {}
       }
+      // Backup contains foreign data — drop the queue too so we don't try to
+      // push imported sales as if they were our own.
+      try { await db.runAsync("DELETE FROM sync_queue"); } catch {}
       for (const t of ALL_TABLES) {
         const rows = data.tables?.[t];
         if (!Array.isArray(rows) || rows.length === 0) continue;
@@ -689,6 +706,11 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         }
       }
     });
+    // Clear the tenant ownership stamp so the next sync run treats this as
+    // unverified data. SyncContext will refuse to push because sales now
+    // exist with no stamp — operator must explicitly wipe and re-activate
+    // before any cloud push happens.
+    try { await clearOwningCompanyId(); } catch {}
   }, [db]);
 
   const clearData = useCallback(async (opts: ClearDataOptions): Promise<void> => {
@@ -724,10 +746,93 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         await db.runAsync("DELETE FROM held_orders");
         await db.runAsync("DELETE FROM pos_tables");
       }
+      if (opts.sales) {
+        // Sales were wiped — drop their queue entries too so we don't push
+        // ghosts to the cloud.
+        await db.runAsync("DELETE FROM sync_queue WHERE entity_type='sale'");
+      }
       if (opts.resetInvoiceCounter || opts.sales) {
         await db.runAsync("UPDATE invoice_counter SET next_value=1 WHERE id=1");
       }
     });
+  }, [db]);
+
+  // ---- Phase 3b: outbound sync queue ----
+
+  const enqueueSync = useCallback(async (entityType: SyncEntityType, entityId: string): Promise<void> => {
+    await db.runAsync(
+      "INSERT OR IGNORE INTO sync_queue (id, entity_type, entity_id, enqueued_at, status) VALUES (?, ?, ?, ?, 'pending')",
+      [generateId(), entityType, entityId, Date.now()]
+    );
+  }, [db]);
+
+  const reconcilePendingSync = useCallback(async (): Promise<number> => {
+    // Add a queue row for any sale that doesn't already have one. Catches
+    // legacy sales (made before this feature) and any sale that was somehow
+    // committed without an enqueue.
+    const before = await db.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM sync_queue WHERE entity_type='sale'"
+    );
+    await db.runAsync(
+      `INSERT OR IGNORE INTO sync_queue (id, entity_type, entity_id, enqueued_at, status)
+       SELECT lower(hex(randomblob(16))), 'sale', s.id, ?, 'pending'
+       FROM sales s
+       WHERE NOT EXISTS (
+         SELECT 1 FROM sync_queue q WHERE q.entity_type='sale' AND q.entity_id=s.id
+       )`,
+      [Date.now()]
+    );
+    const after = await db.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM sync_queue WHERE entity_type='sale'"
+    );
+    return (after?.count ?? 0) - (before?.count ?? 0);
+  }, [db]);
+
+  const loadSyncBatch = useCallback(async (entityType: SyncEntityType, limit: number): Promise<SyncQueueItem[]> => {
+    const rows = await db.getAllAsync<{
+      id: string; entity_type: string; entity_id: string;
+      attempt_count: number; last_attempt_at: number | null;
+    }>(
+      `SELECT id, entity_type, entity_id, attempt_count, last_attempt_at
+       FROM sync_queue
+       WHERE entity_type=? AND status='pending'
+       ORDER BY enqueued_at ASC
+       LIMIT ?`,
+      [entityType, limit]
+    );
+    return rows.map((r) => ({
+      queueId: r.id,
+      entityType: r.entity_type as SyncEntityType,
+      entityId: r.entity_id,
+      attemptCount: r.attempt_count,
+      lastAttemptAt: r.last_attempt_at ?? null,
+    }));
+  }, [db]);
+
+  const markSyncResults = useCallback(async (results: SyncResultUpdate[]): Promise<void> => {
+    if (results.length === 0) return;
+    const now = Date.now();
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      for (const r of results) {
+        if (r.ok) {
+          // Server has the row — drop it from the queue.
+          await tx.runAsync("DELETE FROM sync_queue WHERE id=?", [r.queueId]);
+        } else {
+          await tx.runAsync(
+            "UPDATE sync_queue SET attempt_count=attempt_count+1, last_attempt_at=?, last_error=? WHERE id=?",
+            [now, r.error ?? null, r.queueId]
+          );
+        }
+      }
+    });
+  }, [db]);
+
+  const countPendingSync = useCallback(async (entityType: SyncEntityType): Promise<number> => {
+    const row = await db.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM sync_queue WHERE entity_type=? AND status='pending'",
+      [entityType]
+    );
+    return row?.count ?? 0;
   }, [db]);
 
   return (
@@ -747,6 +852,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       loadIngredients, createIngredient, updateIngredient, deleteIngredient, updateIngredientStock,
       loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,
       exportData, importData, clearData,
+      enqueueSync, reconcilePendingSync, loadSyncBatch, markSyncResults, countPendingSync,
     }}>
       {children}
     </DatabaseContext.Provider>

@@ -6,6 +6,23 @@ import type {
   Staff, TaxGroup,
 } from "@/types";
 
+/** Phase 3b: outbound sync queue entry visible to the sync engine. */
+export type SyncEntityType = "sale";
+
+export interface SyncQueueItem {
+  queueId: string;
+  entityType: SyncEntityType;
+  entityId: string;
+  attemptCount: number;
+  lastAttemptAt: number | null;
+}
+
+export interface SyncResultUpdate {
+  queueId: string;
+  ok: boolean;
+  error?: string;
+}
+
 export interface SaleOptions {
   paymentMethod: string;
   orderType?: OrderType;
@@ -98,6 +115,18 @@ export interface DatabaseContextValue {
   exportData: () => Promise<BackupData>;
   importData: (data: BackupData) => Promise<void>;
   clearData: (opts: ClearDataOptions) => Promise<void>;
+
+  // ---- Phase 3b: outbound sync queue ----
+  /** Mark an entity as needing to be pushed to the cloud. Idempotent. */
+  enqueueSync: (entityType: SyncEntityType, entityId: string) => Promise<void>;
+  /** Backfill the queue with any existing entities not yet tracked. */
+  reconcilePendingSync: () => Promise<number>;
+  /** Load up to `limit` pending items (caller filters out backoff). */
+  loadSyncBatch: (entityType: SyncEntityType, limit: number) => Promise<SyncQueueItem[]>;
+  /** Apply ok/failed verdicts to queued items. */
+  markSyncResults: (results: SyncResultUpdate[]) => Promise<void>;
+  /** How many pending items remain (for status UI). */
+  countPendingSync: (entityType: SyncEntityType) => Promise<number>;
 }
 
 export const DatabaseContext = createContext<DatabaseContextValue | null>(null);

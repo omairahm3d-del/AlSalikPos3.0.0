@@ -17,9 +17,11 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { DatabaseProvider } from "@/context/DatabaseProvider";
 import { StaffProvider, useStaff } from "@/context/StaffContext";
 import { LicenseProvider, useLicense } from "@/context/LicenseContext";
+import { SyncProvider } from "@/context/SyncContext";
 import { LockScreen } from "@/components/LockScreen";
 import { ActivationScreen } from "@/components/ActivationScreen";
 import { VirtualKeyboard } from "@/components/VirtualKeyboard";
+import { SyncStatusPill } from "@/components/SyncStatusPill";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -38,6 +40,7 @@ function AppContent() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       </Stack>
       <VirtualKeyboard />
+      <SyncStatusPill />
     </>
   );
 }
@@ -88,11 +91,13 @@ export default function RootLayout() {
               <LicenseProvider>
                 <LicenseGate>
                   <DatabaseProvider>
-                    <CartProvider>
-                      <StaffProvider>
-                        <AppContent />
-                      </StaffProvider>
-                    </CartProvider>
+                    <SyncProvider>
+                      <CartProvider>
+                        <StaffProvider>
+                          <AppContent />
+                        </StaffProvider>
+                      </CartProvider>
+                    </SyncProvider>
                   </DatabaseProvider>
                 </LicenseGate>
               </LicenseProvider>

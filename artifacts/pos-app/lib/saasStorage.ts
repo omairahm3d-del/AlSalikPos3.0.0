@@ -6,6 +6,26 @@ const K_TOKEN_EXPIRES = "saas.tokenExpiresAt";
 const K_COMPANY = "saas.company";
 const K_LICENSE = "saas.license";
 const K_LICENSE_KEY = "saas.licenseKey";
+/**
+ * Identity of the company whose data currently lives in this device's local
+ * DB. Stamped the first time we sync (or first reconcile) under a given
+ * license. Used to refuse cross-tenant pushes after a license swap or
+ * backup-restore: if the current license's company doesn't match this stamp,
+ * the sync engine will not auto-push historical sales into the wrong tenant.
+ */
+const K_OWNING_COMPANY = "saas.owningCompanyId";
+
+export async function getOwningCompanyId(): Promise<string | null> {
+  return AsyncStorage.getItem(K_OWNING_COMPANY);
+}
+
+export async function setOwningCompanyId(id: string): Promise<void> {
+  await AsyncStorage.setItem(K_OWNING_COMPANY, id);
+}
+
+export async function clearOwningCompanyId(): Promise<void> {
+  await AsyncStorage.removeItem(K_OWNING_COMPANY);
+}
 
 export interface StoredCompany {
   id: string;

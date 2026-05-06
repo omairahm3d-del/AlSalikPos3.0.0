@@ -195,6 +195,24 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
       ingredient_id TEXT NOT NULL,
       quantity REAL NOT NULL DEFAULT 1
     );
+
+    -- Phase 3b: outbound sync queue. One row per (entity_type, entity_id) that
+    -- still needs to be pushed to the cloud. The actual data lives in the
+    -- existing tables (sales, sale_items, ...); this is just bookkeeping.
+    CREATE TABLE IF NOT EXISTS sync_queue (
+      id TEXT PRIMARY KEY,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      enqueued_at INTEGER NOT NULL,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      last_attempt_at INTEGER,
+      last_error TEXT,
+      status TEXT NOT NULL DEFAULT 'pending'
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS sync_queue_entity_uniq
+      ON sync_queue(entity_type, entity_id);
+    CREATE INDEX IF NOT EXISTS sync_queue_status_idx
+      ON sync_queue(status, enqueued_at);
   `);
 
   const migrations: string[] = [

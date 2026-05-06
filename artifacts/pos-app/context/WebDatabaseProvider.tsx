@@ -8,7 +8,8 @@ import type {
 } from "@/types";
 import { DEFAULT_BUSINESS_SETTINGS, SEED_CATEGORIES, SEED_PRODUCTS, SEED_STAFF, SEED_TABLES, SEED_TAX_GROUPS, SEED_CUSTOMERS, VAT_RATE } from "@/types";
 import { generateId, generateInvoiceNumber } from "@/lib/database";
-import { DatabaseContext, type SaleOptions } from "./DatabaseCore";
+import { clearOwningCompanyId } from "@/lib/saasStorage";
+import { DatabaseContext, type SaleOptions, type SyncEntityType, type SyncQueueItem, type SyncResultUpdate } from "./DatabaseCore";
 
 const K = {
   products: "@pos_products", sales: "@pos_sales", saleItems: "@pos_sale_items",
@@ -19,7 +20,35 @@ const K = {
   categories: "@pos_categories", riders: "@pos_riders",
   heldOrders: "@pos_held_orders", ingredients: "@pos_ingredients",
   recipeIngredients: "@pos_recipe_ingredients",
+  syncQueue: "@pos_sync_queue",
 };
+
+interface WebSyncQueueRow {
+  id: string;
+  entityType: SyncEntityType;
+  entityId: string;
+  enqueuedAt: number;
+  attemptCount: number;
+  lastAttemptAt: number | null;
+  lastError: string | null;
+  status: "pending";
+}
+
+async function enqueueSyncWeb(entityType: SyncEntityType, entityId: string): Promise<void> {
+  const queue = await getJson<WebSyncQueueRow[]>(K.syncQueue, []);
+  if (queue.some((q) => q.entityType === entityType && q.entityId === entityId)) return;
+  queue.push({
+    id: generateId(),
+    entityType,
+    entityId,
+    enqueuedAt: Date.now(),
+    attemptCount: 0,
+    lastAttemptAt: null,
+    lastError: null,
+    status: "pending",
+  });
+  await setJson(K.syncQueue, queue);
+}
 
 async function getJson<T>(key: string, fallback: T): Promise<T> {
   const raw = await AsyncStorage.getItem(key);
@@ -121,6 +150,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     await setJson(K.sales, [sale, ...existing]);
     const existingItems = await getJson<SaleItem[]>(K.saleItems, []);
     await setJson(K.saleItems, [...saleItems, ...existingItems]);
+    await enqueueSyncWeb("sale", saleId);
 
     if (splitPayments && splitPayments.length > 0) {
       const existSP = await getJson<any[]>(K.splitPayments, []);
@@ -263,6 +293,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       ));
     }
 
+    await enqueueSyncWeb("sale", refundId);
     return refund;
   }, []);
 
@@ -626,6 +657,11 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
         if (key) await AsyncStorage.setItem(key, typeof val === "string" ? val : JSON.stringify(val));
       }
     }
+    // Drop the queue and the tenant-ownership stamp — see DatabaseContext.tsx
+    // importData for the rationale. Restored backups are foreign data until
+    // the operator explicitly wipes and re-activates.
+    await AsyncStorage.setItem(K.syncQueue, JSON.stringify([]));
+    try { await clearOwningCompanyId(); } catch {}
   }, []);
 
   const clearData = useCallback(async (opts: ClearDataOptions): Promise<void> => {
@@ -656,9 +692,89 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       await wipe(K.tables);
       await wipe(K.heldOrders);
     }
+    if (opts.sales) {
+      // Sales were wiped — drop sale entries from the queue too.
+      const queue = await getJson<WebSyncQueueRow[]>(K.syncQueue, []);
+      await setJson(K.syncQueue, queue.filter((q) => q.entityType !== "sale"));
+    }
     if (opts.resetInvoiceCounter || opts.sales) {
       await AsyncStorage.setItem(K.counter, "1");
     }
+  }, []);
+
+  // ---- Phase 3b: outbound sync queue ----
+
+  const enqueueSync = useCallback(async (entityType: SyncEntityType, entityId: string): Promise<void> => {
+    await enqueueSyncWeb(entityType, entityId);
+  }, []);
+
+  const reconcilePendingSync = useCallback(async (): Promise<number> => {
+    const queue = await getJson<WebSyncQueueRow[]>(K.syncQueue, []);
+    const tracked = new Set(
+      queue.filter((q) => q.entityType === "sale").map((q) => q.entityId)
+    );
+    const sales = await getJson<Sale[]>(K.sales, []);
+    const additions: WebSyncQueueRow[] = [];
+    const now = Date.now();
+    for (const s of sales) {
+      if (!tracked.has(s.id)) {
+        additions.push({
+          id: generateId(),
+          entityType: "sale",
+          entityId: s.id,
+          enqueuedAt: now,
+          attemptCount: 0,
+          lastAttemptAt: null,
+          lastError: null,
+          status: "pending",
+        });
+      }
+    }
+    if (additions.length > 0) {
+      await setJson(K.syncQueue, [...queue, ...additions]);
+    }
+    return additions.length;
+  }, []);
+
+  const loadSyncBatch = useCallback(async (entityType: SyncEntityType, limit: number): Promise<SyncQueueItem[]> => {
+    const queue = await getJson<WebSyncQueueRow[]>(K.syncQueue, []);
+    return queue
+      .filter((q) => q.entityType === entityType && q.status === "pending")
+      .sort((a, b) => a.enqueuedAt - b.enqueuedAt)
+      .slice(0, limit)
+      .map((q) => ({
+        queueId: q.id,
+        entityType: q.entityType,
+        entityId: q.entityId,
+        attemptCount: q.attemptCount,
+        lastAttemptAt: q.lastAttemptAt,
+      }));
+  }, []);
+
+  const markSyncResults = useCallback(async (results: SyncResultUpdate[]): Promise<void> => {
+    if (results.length === 0) return;
+    const queue = await getJson<WebSyncQueueRow[]>(K.syncQueue, []);
+    const now = Date.now();
+    const okIds = new Set(results.filter((r) => r.ok).map((r) => r.queueId));
+    const failedById = new Map(results.filter((r) => !r.ok).map((r) => [r.queueId, r] as const));
+    const next = queue
+      .filter((q) => !okIds.has(q.id))
+      .map((q) => {
+        const fail = failedById.get(q.id);
+        if (!fail) return q;
+        return {
+          ...q,
+          attemptCount: q.attemptCount + 1,
+          lastAttemptAt: now,
+          lastError: fail.error ?? null,
+        };
+      });
+    await setJson(K.syncQueue, next);
+  }, []);
+
+  const countPendingSync = useCallback(async (entityType: SyncEntityType): Promise<number> => {
+    const queue = await getJson<WebSyncQueueRow[]>(K.syncQueue, []);
+    return queue.filter((q) => q.entityType === entityType && q.status === "pending").length;
   }, []);
 
   return (
@@ -678,6 +794,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       loadIngredients, createIngredient, updateIngredient, deleteIngredient, updateIngredientStock,
       loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,
       exportData, importData, clearData,
+      enqueueSync, reconcilePendingSync, loadSyncBatch, markSyncResults, countPendingSync,
     }}>
       {children}
     </DatabaseContext.Provider>
