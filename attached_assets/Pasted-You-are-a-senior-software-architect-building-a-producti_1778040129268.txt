@@ -1,0 +1,169 @@
+You are a senior software architect building a production SaaS POS backend.
+
+I already have:
+- Flutter POS app using Isar Database (offline-first)
+- Cloud PostgreSQL database already created
+- Goal: convert into scalable multi-tenant SaaS POS with licensing + multi-terminal support
+
+---
+
+# 🚀 CORE GOAL
+Build a production-ready backend that supports:
+- Multi-tenant architecture (many shops)
+- Multi-terminal per shop (multiple tablets)
+- License-based access control
+- Offline-first sync system
+
+---
+
+# 🏗️ REQUIRED ARCHITECTURE (STRICT)
+
+Use clean modular structure:
+
+- /src
+  - /controllers
+  - /services
+  - /repositories
+  - /middlewares
+  - /routes
+  - /utils
+
+No business logic inside routes.
+
+---
+
+# 🧠 DATABASE RULES (PostgreSQL)
+
+All tables MUST include:
+- id (UUID)
+- company_id (tenant isolation)
+- created_at
+- updated_at
+
+Tables:
+- companies
+- devices
+- users
+- licenses
+- products
+- sales
+- sale_items
+
+---
+
+# 🔐 LICENSE SYSTEM (CRITICAL)
+
+### POST /api/license/validate
+
+Input:
+- license_key
+- device_id
+
+Logic:
+- Validate license exists
+- Check status = active
+- Check expiry_date
+- Check device_limit per company
+- Register device if new and allowed
+
+Return:
+- success/failure
+- company_id
+- terminal_id
+- JWT token
+- expiry_date
+
+---
+
+# 📱 MULTI-TERMINAL LOGIC
+
+Each device:
+- Gets unique device_id
+- Assigned terminal_id
+- Bound to company_id
+
+Rules:
+- Max devices controlled by license
+- All devices share same company data
+- Each terminal logs sales separately
+
+---
+
+# 🔄 SYNC SYSTEM (ISAR → CLOUD)
+
+## PUSH SYNC
+POST /api/sync/push
+
+Receives:
+- sales
+- sale_items
+
+Rules:
+- Use UUID for all records
+- Prevent duplicates
+- Append-only sales (never update sales)
+
+---
+
+## PULL SYNC
+GET /api/sync/pull
+
+Returns:
+- updated products
+- price changes
+- stock updates
+
+---
+
+# 🔐 SECURITY (MANDATORY)
+
+- Use JWT authentication
+- Extract company_id from token ONLY
+- Never trust client-provided company_id
+- Apply middleware for tenant isolation
+- Hash passwords using bcrypt
+
+---
+
+# 📡 FLUTTER INTEGRATION REQUIREMENTS
+
+In app:
+- On startup → validate license
+- Store locally in Isar:
+  - company_id
+  - terminal_id
+  - token
+- Sync interval: 30–60 seconds
+- Retry sync if offline
+- Mark synced records in Isar
+
+---
+
+# ⚠️ BUSINESS RULES
+
+- Sales = append only
+- Products = controlled updates (server wins)
+- Stock = controlled by server only
+- No cross-company data access allowed
+
+---
+
+# 🎯 FINAL OUTPUT
+
+Generate:
+1. Full Node.js backend (clean architecture)
+2. PostgreSQL schema
+3. All API endpoints
+4. Middleware (auth + tenant isolation)
+5. Sync logic
+6. Setup instructions
+
+---
+
+# 🚀 QUALITY REQUIREMENTS
+
+- Production-ready code
+- Scalable architecture
+- Clean separation of concerns
+- No messy or inline logic
+- Optimized for SaaS deploymen
