@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSync } from "@/context/SyncContext";
 
 /**
@@ -29,9 +29,24 @@ export function SyncStatusPill() {
     color = "#EF4444";
   }
 
+  const onPress = () => {
+    if (lastError) {
+      Alert.alert(
+        "Sync details",
+        lastError,
+        [
+          { text: "Close", style: "cancel" },
+          { text: "Retry now", onPress: () => { syncNow().catch(() => {}); } },
+        ],
+      );
+      return;
+    }
+    syncNow().catch(() => {});
+  };
+
   return (
     <View pointerEvents="box-none" style={styles.wrap}>
-      <Pressable onPress={() => { syncNow().catch(() => {}); }} style={[styles.pill, { backgroundColor: color }]}>
+      <Pressable onPress={onPress} style={[styles.pill, { backgroundColor: color }]}>
         <Text style={styles.text}>{label}</Text>
       </Pressable>
     </View>
