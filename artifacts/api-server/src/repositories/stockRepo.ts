@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   saasDb,
   stockMovementsTable,
@@ -38,15 +38,16 @@ export const stockRepo = {
   },
 
   /**
-   * Stock-on-hand per product for a given branch. Computed by SUM(delta)
-   * grouped by product. Includes products that net to zero so the UI can
-   * surface them, and excludes products with no movements at all (those
-   * have never been purchased or sold from this branch).
+   * Stock-on-hand per product for a given branch (or null for unbranched
+   * devices). Computed by SUM(delta) grouped by product.
    */
   async onHandForBranch(
     companyId: string,
-    branchId: string,
+    branchId: string | null,
   ): Promise<StockOnHandRow[]> {
+    const branchCond = branchId
+      ? eq(stockMovementsTable.branchId, branchId)
+      : isNull(stockMovementsTable.branchId);
     const rows = await saasDb
       .select({
         productClientId: stockMovementsTable.productClientId,
@@ -55,24 +56,22 @@ export const stockRepo = {
         onHand: sql<string>`coalesce(sum(${stockMovementsTable.delta}), 0)::text`,
       })
       .from(stockMovementsTable)
-      .where(
-        and(
-          eq(stockMovementsTable.companyId, companyId),
-          eq(stockMovementsTable.branchId, branchId),
-        ),
-      )
+      .where(and(eq(stockMovementsTable.companyId, companyId), branchCond))
       .groupBy(stockMovementsTable.productClientId);
     return rows;
   },
 
   async movementsForBranch(
     companyId: string,
-    branchId: string,
+    branchId: string | null,
     opts: { productClientId?: string; limit?: number } = {},
   ): Promise<StockMovement[]> {
+    const branchCond = branchId
+      ? eq(stockMovementsTable.branchId, branchId)
+      : isNull(stockMovementsTable.branchId);
     const conds = [
       eq(stockMovementsTable.companyId, companyId),
-      eq(stockMovementsTable.branchId, branchId),
+      branchCond,
     ];
     if (opts.productClientId) {
       conds.push(eq(stockMovementsTable.productClientId, opts.productClientId));

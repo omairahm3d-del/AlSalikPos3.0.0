@@ -162,6 +162,21 @@ export default function ReceiveStockScreen() {
           vatAmount: l.vatAmount,
         })),
       });
+
+      // Mirror the received quantities into the local product catalog so
+      // the POS product grid immediately reflects the new stock level.
+      // Only real products (non-custom lines matched by id) are updated.
+      const productIds = new Set(products.map((p) => p.id));
+      for (const l of lines) {
+        if (productIds.has(l.productClientId) && l.quantity > 0) {
+          try {
+            await db.updateStock(l.productClientId, l.quantity);
+          } catch {
+            // Non-fatal — cloud stock_movements are the source of truth.
+          }
+        }
+      }
+
       Alert.alert("Stock received", `Received ${lines.length} item(s).`, [
         { text: "OK", onPress: () => router.back() },
       ]);

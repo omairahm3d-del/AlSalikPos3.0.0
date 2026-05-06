@@ -281,13 +281,16 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       await setJson(K.splitPayments, [...newSP, ...existSP]);
     }
 
-    // Stock decrement on sale: serialize with catalog ops so it doesn't
-    // race with applyRemoteCatalog or a concurrent product edit.
+    // Stock decrement on sale: only reduce products that already have a
+    // tracked (non-null) stockQuantity. Untracked products (null) are left
+    // alone — they will start tracking once stock is received via Receive Stock.
     await runCatalogExclusive(async () => {
       const products = await getProducts();
       await setJson(K.products, products.map((p) => {
         const cartItem = items.find((i) => i.product.id === p.id);
-        if (cartItem) return { ...p, stockQuantity: Math.max(0, (p.stockQuantity ?? 999) - cartItem.quantity) };
+        if (cartItem && p.stockQuantity != null) {
+          return { ...p, stockQuantity: Math.max(0, p.stockQuantity - cartItem.quantity) };
+        }
         return p;
       }));
     });

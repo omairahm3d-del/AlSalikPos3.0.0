@@ -125,6 +125,11 @@ export const syncService = {
     // sale ID with new product IDs and arbitrarily move stock). Lines are
     // also aggregated by productClientId so the same product appearing
     // twice in one sale isn't dropped by `onConflictDoNothing`.
+    // Mirror sale lines into stock_movements. Requires a branchId because the
+    // stock_movements table has branchId NOT NULL (FK to branches). Devices
+    // activated before branches were introduced have no branchId and must
+    // re-activate to get stock tracking. Unbranched sales still record
+    // correctly in saas_sales; only the inventory side is skipped.
     if (ctx.branchId) {
       const insertedIds = new Set(
         results.filter((r) => r.status === "inserted").map((r) => r.clientSaleId),

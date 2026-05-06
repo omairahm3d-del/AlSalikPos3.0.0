@@ -125,7 +125,13 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
           "INSERT INTO sale_items (id, sale_id, product_id, product_name, product_price, quantity, line_total, discount_amount) VALUES (?,?,?,?,?,?,?,?)",
           [itemId, saleId, item.product.id, item.product.name, item.product.price, item.quantity, lineTotal, item.discountAmount ?? 0]
         );
-        await tx.runAsync("UPDATE products SET stock_quantity=stock_quantity-? WHERE id=?", [item.quantity, item.product.id]);
+        // Only reduce stock for products that already have a tracked qty.
+        // NULL stock_quantity means the product is untracked — leave it alone
+        // so Receive Stock can initialize it without a negative phantom count.
+        await tx.runAsync(
+          "UPDATE products SET stock_quantity=stock_quantity-? WHERE id=? AND stock_quantity IS NOT NULL",
+          [item.quantity, item.product.id]
+        );
       }
 
       if (splitPayments && splitPayments.length > 0) {
