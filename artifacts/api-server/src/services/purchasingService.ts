@@ -324,6 +324,73 @@ export const purchasingService = {
     return { purchase: p, items };
   },
 
+  async getSupplierStatement(
+    companyId: string,
+    supplierId: string,
+    opts: { branchId?: string; from?: string; to?: string; limit?: number },
+  ): Promise<{
+    supplier: Supplier;
+    purchases: Purchase[];
+    totals: {
+      count: number;
+      subtotal: string;
+      vatAmount: string;
+      total: string;
+      missingReferenceCount: number;
+    };
+  }> {
+    const supplier = await supplierRepo.findById(supplierId);
+    if (!supplier || supplier.companyId !== companyId) {
+      throw notFound("supplier_not_found", "Supplier not found");
+    }
+    if (opts.branchId) await assertBranchInCompany(companyId, opts.branchId);
+    // A supplier may be branch-private: don't let a caller pull purchases
+    // for it from a different branch even if the manager has company access.
+    if (
+      supplier.branchId &&
+      opts.branchId &&
+      supplier.branchId !== opts.branchId
+    ) {
+      throw badRequest(
+        "supplier_branch_mismatch",
+        "Supplier is private to a different branch",
+      );
+    }
+    const purchases = await purchaseRepo.listForSupplier(
+      companyId,
+      supplierId,
+      {
+        branchId: opts.branchId,
+        from: opts.from ? new Date(opts.from) : undefined,
+        to: opts.to ? new Date(opts.to) : undefined,
+        limit: opts.limit,
+      },
+    );
+    let subtotal = 0;
+    let vatAmount = 0;
+    let total = 0;
+    let missingReferenceCount = 0;
+    for (const p of purchases) {
+      subtotal += Number(p.subtotal);
+      vatAmount += Number(p.vatAmount);
+      total += Number(p.total);
+      const ref = p.referenceNumber?.trim();
+      if (!ref) missingReferenceCount += 1;
+    }
+    const round4 = (n: number) => (Math.round(n * 10000) / 10000).toString();
+    return {
+      supplier,
+      purchases,
+      totals: {
+        count: purchases.length,
+        subtotal: round4(subtotal),
+        vatAmount: round4(vatAmount),
+        total: round4(total),
+        missingReferenceCount,
+      },
+    };
+  },
+
   /* ----- Stock ----- */
 
   async listOnHand(companyId: string, branchId: string) {

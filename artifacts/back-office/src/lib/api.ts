@@ -299,6 +299,31 @@ export const api = {
       token,
       body: JSON.stringify(body),
     }),
+  supplierStatement: (
+    token: string,
+    supplierId: string,
+    opts: { branchId?: string; from?: string; to?: string } = {},
+  ) => {
+    const qs = new URLSearchParams();
+    if (opts.branchId) qs.set("branchId", opts.branchId);
+    if (opts.from) qs.set("from", opts.from);
+    if (opts.to) qs.set("to", opts.to);
+    const suffix = qs.toString();
+    return request<{
+      supplier: Supplier;
+      purchases: Purchase[];
+      totals: {
+        count: number;
+        subtotal: string;
+        vatAmount: string;
+        total: string;
+        missingReferenceCount: number;
+      };
+    }>(
+      `/api/manager/suppliers/${supplierId}/statement${suffix ? `?${suffix}` : ""}`,
+      { token },
+    );
+  },
   purchases: (
     token: string,
     branchId: string,

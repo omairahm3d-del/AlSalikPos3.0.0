@@ -417,6 +417,72 @@ describe("Purchasing & stock — happy paths", () => {
     expect(evil).toBeUndefined();
   });
 
+  it("supplier statement: aggregates totals + filters by date + rejects cross-company", async () => {
+    // Create a branch-private supplier and 3 purchases for it (one outside
+    // the date window, one without a reference number).
+    const supRes = await request(app)
+      .post("/api/manager/suppliers")
+      .set("authorization", `Bearer ${ctx.token}`)
+      .send({ name: `StmtCo ${Date.now()}`, branchId: ctx.branchId });
+    expect(supRes.status).toBe(201);
+    const supplierId = supRes.body.supplier.id as string;
+
+    const mkPurchase = async (
+      receivedAt: string,
+      referenceNumber: string | null,
+    ) => {
+      const r = await request(app)
+        .post("/api/manager/purchases")
+        .set("authorization", `Bearer ${ctx.token}`)
+        .send({
+          branchId: ctx.branchId,
+          supplierId,
+          supplierName: "StmtCo",
+          referenceNumber,
+          receivedAt,
+          idempotencyKey: `stmt-${crypto.randomUUID()}`,
+          items: [
+            {
+              productClientId: `stmt-prod-${Math.random()}`,
+              productName: "Salt",
+              quantity: 1,
+              unitCost: 10,
+              vatAmount: 0.5,
+            },
+          ],
+        });
+      expect(r.status).toBe(201);
+    };
+
+    await mkPurchase("2025-12-01T10:00:00.000Z", "INV-A");
+    await mkPurchase("2025-12-15T10:00:00.000Z", null); // missing ref
+    await mkPurchase("2025-11-01T10:00:00.000Z", "INV-OLD"); // out of range
+
+    const stmt = await request(app)
+      .get(`/api/manager/suppliers/${supplierId}/statement`)
+      .query({
+        branchId: ctx.branchId,
+        from: "2025-12-01T00:00:00.000Z",
+        to: "2025-12-31T23:59:59.999Z",
+      })
+      .set("authorization", `Bearer ${ctx.token}`);
+    expect(stmt.status).toBe(200);
+    expect(stmt.body.purchases).toHaveLength(2);
+    expect(stmt.body.totals.count).toBe(2);
+    expect(Number(stmt.body.totals.subtotal)).toBe(20);
+    expect(Number(stmt.body.totals.vatAmount)).toBe(1);
+    expect(Number(stmt.body.totals.total)).toBe(21);
+    expect(stmt.body.totals.missingReferenceCount).toBe(1);
+
+    // Another company must not be able to read this supplier's statement.
+    const other = await setup();
+    const cross = await request(app)
+      .get(`/api/manager/suppliers/${supplierId}/statement`)
+      .query({ branchId: other.branchId })
+      .set("authorization", `Bearer ${other.token}`);
+    expect(cross.status).toBe(404);
+  });
+
   it("rejects purchases against another company's branch", async () => {
     const other = await createTestFixture();
     const otherBranch = await branchService.ensureDefault(other.companyId);

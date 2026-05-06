@@ -62,6 +62,26 @@ export const purchasingController = {
     res.json({ supplier });
   },
 
+  async getSupplierStatement(req: Request, res: Response) {
+    const m = req.manager!;
+    const id = z.string().uuid().parse(req.params.id);
+    const q = z
+      .object({
+        branchId: z.string().uuid().optional(),
+        from: z.string().datetime().optional(),
+        to: z.string().datetime().optional(),
+        limit: z.coerce.number().int().min(1).max(5000).optional(),
+      })
+      .parse(req.query);
+    if (q.branchId) requireBranchAccess(req, q.branchId);
+    const result = await purchasingService.getSupplierStatement(
+      m.companyId,
+      id,
+      q,
+    );
+    res.json(result);
+  },
+
   /* ---- Purchases ---- */
   async listPurchases(req: Request, res: Response) {
     const m = req.manager!;

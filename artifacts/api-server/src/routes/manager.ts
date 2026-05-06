@@ -37,6 +37,10 @@ router.patch(
   asyncHandler(purchasingController.updateSupplier),
 );
 router.get(
+  "/manager/suppliers/:id/statement",
+  asyncHandler(purchasingController.getSupplierStatement),
+);
+router.get(
   "/manager/purchases",
   asyncHandler(purchasingController.listPurchases),
 );

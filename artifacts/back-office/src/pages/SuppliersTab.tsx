@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type Supplier, type SupplierInput } from "@/lib/api";
+import { api, type Purchase, type Supplier, type SupplierInput } from "@/lib/api";
 
 interface Props {
   token: string;
@@ -24,6 +24,7 @@ export default function SuppliersTab({ token, branchId }: Props) {
   });
 
   const [editing, setEditing] = useState<Supplier | "new" | null>(null);
+  const [statementFor, setStatementFor] = useState<Supplier | null>(null);
 
   const create = useMutation({
     mutationFn: (body: SupplierInput) =>
@@ -93,7 +94,13 @@ export default function SuppliersTab({ token, branchId }: Props) {
                     <td className="px-4 py-2 text-gray-500 text-xs">
                       {s.branchId ? "Branch" : "Company-wide"}
                     </td>
-                    <td className="px-4 py-2 text-right">
+                    <td className="px-4 py-2 text-right space-x-3">
+                      <button
+                        onClick={() => setStatementFor(s)}
+                        className="text-sm text-gray-700 hover:text-gray-900 underline"
+                      >
+                        Statement
+                      </button>
                       <button
                         onClick={() => setEditing(s)}
                         className="text-sm text-gray-700 hover:text-gray-900 underline"
@@ -108,6 +115,15 @@ export default function SuppliersTab({ token, branchId }: Props) {
           </div>
         )}
       </div>
+
+      {statementFor && (
+        <SupplierStatementModal
+          token={token}
+          branchId={branchId}
+          supplier={statementFor}
+          onClose={() => setStatementFor(null)}
+        />
+      )}
 
       {editing && (
         <SupplierModal
@@ -235,6 +251,237 @@ function SupplierModal({
       </div>
     </div>
   );
+}
+
+function SupplierStatementModal({
+  token,
+  branchId,
+  supplier,
+  onClose,
+}: {
+  token: string;
+  branchId: string;
+  supplier: Supplier;
+  onClose: () => void;
+}) {
+  // Default range: last 90 days. Date inputs are local YYYY-MM-DD; we widen
+  // to the day's UTC bounds when querying so a single calendar day is
+  // inclusive on both ends.
+  const today = new Date();
+  const ninety = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const [from, setFrom] = useState(toIsoDate(ninety));
+  const [to, setTo] = useState(toIsoDate(today));
+  const [scope, setScope] = useState<"branch" | "company">(
+    supplier.branchId ? "branch" : "company",
+  );
+  const branchScopeAllowed = !supplier.branchId; // company-wide suppliers can flip
+
+  const queryBranchId =
+    scope === "branch" || supplier.branchId ? branchId : undefined;
+
+  const q = useQuery({
+    queryKey: [
+      "supplier-statement",
+      supplier.id,
+      queryBranchId ?? "all",
+      from,
+      to,
+    ],
+    queryFn: () =>
+      api.supplierStatement(token, supplier.id, {
+        branchId: queryBranchId,
+        from: from ? `${from}T00:00:00.000Z` : undefined,
+        to: to ? `${to}T23:59:59.999Z` : undefined,
+      }),
+  });
+
+  const csvHref = useMemo(() => {
+    if (!q.data) return null;
+    const rows: string[][] = [
+      ["Received", "Reference", "Supplier", "Subtotal", "VAT", "Total", "Notes"],
+      ...q.data.purchases.map((p: Purchase) => [
+        new Date(p.receivedAt).toISOString(),
+        p.referenceNumber ?? "",
+        p.supplierName,
+        p.subtotal,
+        p.vatAmount,
+        p.total,
+        (p.notes ?? "").replace(/\s+/g, " "),
+      ]),
+    ];
+    const csv = rows
+      .map((r) =>
+        r
+          .map((c) => {
+            const s = String(c);
+            return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+          })
+          .join(","),
+      )
+      .join("\n");
+    return URL.createObjectURL(
+      new Blob([csv], { type: "text/csv;charset=utf-8" }),
+    );
+  }, [q.data]);
+
+  const csvName = `supplier-statement-${supplier.name.replace(/[^a-z0-9]+/gi, "_")}-${from}_to_${to}.csv`;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded shadow-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto p-5 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-base font-semibold text-gray-900">
+              Statement — {supplier.name}
+            </div>
+            <div className="text-xs text-gray-500">
+              {supplier.branchId ? "Branch-private supplier" : "Company-wide supplier"}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-800"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-sm">
+            <div className="text-gray-700 mb-1">From</div>
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1 text-sm"
+            />
+          </label>
+          <label className="text-sm">
+            <div className="text-gray-700 mb-1">To</div>
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1 text-sm"
+            />
+          </label>
+          {branchScopeAllowed && (
+            <label className="text-sm">
+              <div className="text-gray-700 mb-1">Scope</div>
+              <select
+                value={scope}
+                onChange={(e) =>
+                  setScope(e.target.value === "branch" ? "branch" : "company")
+                }
+                className="border border-gray-300 rounded px-2 py-1 text-sm"
+              >
+                <option value="company">All branches</option>
+                <option value="branch">Current branch only</option>
+              </select>
+            </label>
+          )}
+          {csvHref && (
+            <a
+              href={csvHref}
+              download={csvName}
+              className="ml-auto px-3 py-1.5 text-sm rounded bg-gray-900 text-white hover:bg-gray-800"
+            >
+              Export CSV
+            </a>
+          )}
+        </div>
+
+        {q.isLoading && (
+          <div className="text-sm text-gray-500">Loading…</div>
+        )}
+        {q.error && (
+          <div className="text-sm text-red-600">
+            {(q.error as Error).message}
+          </div>
+        )}
+        {q.data && (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Stat label="Receipts" value={String(q.data.totals.count)} />
+              <Stat label="Subtotal" value={`AED ${q.data.totals.subtotal}`} />
+              <Stat label="VAT" value={`AED ${q.data.totals.vatAmount}`} />
+              <Stat label="Total" value={`AED ${q.data.totals.total}`} />
+            </div>
+            {q.data.totals.missingReferenceCount > 0 && (
+              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                {q.data.totals.missingReferenceCount} receipt
+                {q.data.totals.missingReferenceCount === 1 ? "" : "s"} in this
+                range have no supplier reference number.
+              </div>
+            )}
+
+            <div className="overflow-x-auto border border-gray-200 rounded">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 text-gray-600 text-left">
+                  <tr>
+                    <th className="px-3 py-2">Received</th>
+                    <th className="px-3 py-2">Reference</th>
+                    <th className="px-3 py-2 text-right">Subtotal</th>
+                    <th className="px-3 py-2 text-right">VAT</th>
+                    <th className="px-3 py-2 text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {q.data.purchases.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="px-3 py-6 text-center text-gray-500"
+                      >
+                        No receipts in this range.
+                      </td>
+                    </tr>
+                  )}
+                  {q.data.purchases.map((p: Purchase) => (
+                    <tr key={p.id} className="border-t border-gray-100">
+                      <td className="px-3 py-2 text-gray-700">
+                        {new Date(p.receivedAt).toLocaleDateString()}
+                      </td>
+                      <td className="px-3 py-2 text-gray-700">
+                        {p.referenceNumber ?? (
+                          <span className="text-amber-700">— missing —</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {p.subtotal}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {p.vatAmount}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium">
+                        {p.total}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border border-gray-200 rounded px-3 py-2">
+      <div className="text-xs text-gray-500">{label}</div>
+      <div className="text-sm font-semibold text-gray-900">{value}</div>
+    </div>
+  );
+}
+
+function toIsoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function Field({

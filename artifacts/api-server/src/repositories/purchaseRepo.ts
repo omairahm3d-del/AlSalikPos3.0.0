@@ -91,6 +91,26 @@ export const purchaseRepo = {
     });
   },
 
+  async listForSupplier(
+    companyId: string,
+    supplierId: string,
+    opts: { branchId?: string; from?: Date; to?: Date; limit?: number } = {},
+  ): Promise<Purchase[]> {
+    const conds = [
+      eq(purchasesTable.companyId, companyId),
+      eq(purchasesTable.supplierId, supplierId),
+    ];
+    if (opts.branchId) conds.push(eq(purchasesTable.branchId, opts.branchId));
+    if (opts.from) conds.push(gte(purchasesTable.receivedAt, opts.from));
+    if (opts.to) conds.push(lte(purchasesTable.receivedAt, opts.to));
+    return saasDb
+      .select()
+      .from(purchasesTable)
+      .where(and(...conds))
+      .orderBy(desc(purchasesTable.receivedAt))
+      .limit(Math.min(opts.limit ?? 1000, 5000));
+  },
+
   async findByIdempotencyKey(
     companyId: string,
     idempotencyKey: string,
