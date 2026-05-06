@@ -38,6 +38,7 @@ export function BusinessSettingsModal({ visible, onClose }: Props) {
   const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined);
   const [loyaltyPointsPerAed, setLoyaltyPointsPerAed] = useState("1");
   const [loyaltyRedemptionRate, setLoyaltyRedemptionRate] = useState("0.01");
+  const [keyboardMode, setKeyboardMode] = useState<"off" | "builtin" | "windows-osk">("off");
   const [existingSettings, setExistingSettings] = useState<BusinessSettings | null>(null);
 
   const load = useCallback(async () => {
@@ -51,6 +52,7 @@ export function BusinessSettingsModal({ visible, onClose }: Props) {
     setLogoBase64(s.logoBase64);
     setLoyaltyPointsPerAed(String(s.loyaltyPointsPerAed ?? 1));
     setLoyaltyRedemptionRate(String(s.loyaltyRedemptionRate ?? 0.01));
+    setKeyboardMode((s.keyboardMode as any) ?? "off");
   }, [loadBusinessSettings]);
 
   useEffect(() => { if (visible) load(); }, [visible, load]);
@@ -71,6 +73,7 @@ export function BusinessSettingsModal({ visible, onClose }: Props) {
       logoBase64,
       loyaltyPointsPerAed: parseFloat(loyaltyPointsPerAed) || 1,
       loyaltyRedemptionRate: parseFloat(loyaltyRedemptionRate) || 0.01,
+      keyboardMode,
     };
     await saveBusinessSettings(settings);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -183,6 +186,40 @@ export function BusinessSettingsModal({ visible, onClose }: Props) {
 
           {renderField("Points Earned per AED Spent", loyaltyPointsPerAed, setLoyaltyPointsPerAed, "1", "e.g. 1 = earn 1 point for every AED 1 spent", "decimal-pad")}
           {renderField("Point Redemption Value (AED)", loyaltyRedemptionRate, setLoyaltyRedemptionRate, "0.01", "e.g. 0.01 = each point is worth AED 0.01", "decimal-pad")}
+
+          <View style={[styles.sectionDivider, { borderBottomColor: colors.border }]} />
+
+          <View style={[styles.notice, { backgroundColor: "#3B82F6" + "15", borderRadius: colors.radius }]}>
+            <Feather name="type" size={14} color="#3B82F6" />
+            <Text style={[styles.noticeText, { color: "#3B82F6" }]}>On-Screen Keyboard — pops up when you tap any text box. Useful on touch screens without a physical keyboard.</Text>
+          </View>
+
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Keyboard Mode</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+            {([
+              { key: "off" as const, label: "Off" },
+              { key: "builtin" as const, label: "Built-in (EN / ع AR)" },
+              { key: "windows-osk" as const, label: "Windows On-Screen Keyboard" },
+            ]).map((m) => {
+              const active = keyboardMode === m.key;
+              return (
+                <TouchableOpacity
+                  key={m.key}
+                  onPress={() => setKeyboardMode(m.key)}
+                  style={{
+                    paddingHorizontal: 14, paddingVertical: 10, borderRadius: colors.radius,
+                    backgroundColor: active ? colors.primary : colors.secondary,
+                    borderWidth: 1, borderColor: active ? colors.primary : colors.border,
+                  }}
+                >
+                  <Text style={{ color: active ? "#fff" : colors.mutedForeground, fontWeight: "600" }}>{m.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={[styles.hint, { color: colors.mutedForeground, marginTop: 8 }]}>
+            Tap "Save" at the top right to apply. The keyboard works on every text box across the app.
+          </Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </Modal>

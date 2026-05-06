@@ -554,13 +554,18 @@ export default function BackOfficeScreen() {
       setDbBusy(true);
       await db.clearData(clearOpts);
       setClearOpts({});
-      notify("Done", "Selected data has been cleared.");
+      // Force re-load of in-memory state so screens reflect the wipe immediately
+      try { await loadCats(); } catch {}
+      try { await loadProductsList(); } catch {}
+      try { await loadIngredientList(); } catch {}
+      try { await loadAllSettings(); } catch {}
+      notify("Done", "Selected data has been cleared. Other open screens will refresh next time you open them.");
     } catch (e: any) {
       notify("Clear Failed", e?.message || String(e));
     } finally {
       setDbBusy(false);
     }
-  }, [clearOpts, db]);
+  }, [clearOpts, db, loadCats, loadAllSettings]);
 
   const renderClearRow = (
     key: keyof import("@/types").ClearDataOptions,
@@ -1162,33 +1167,6 @@ export default function BackOfficeScreen() {
             </ScrollView>
           </>
         )}
-
-        <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 24 }]}>On-Screen Keyboard</Text>
-        <Text style={[s.hintText, { color: colors.mutedForeground }]}>Show a keyboard when you tap a text box (useful on touch screens without a physical keyboard).</Text>
-        <View style={s.chipRow}>
-          {([
-            { key: "off" as const, label: "Off" },
-            { key: "builtin" as const, label: "Built-in (EN / ع AR)" },
-            { key: "windows-osk" as const, label: "Windows On-Screen Keyboard" },
-          ]).map((m) => {
-            const cur = (bizSettings?.keyboardMode as any) || "off";
-            const active = cur === m.key;
-            return (
-              <TouchableOpacity
-                key={m.key}
-                onPress={async () => {
-                  const biz = bizSettings ?? await db.loadBusinessSettings();
-                  const updated = { ...biz, keyboardMode: m.key } as BusinessSettings;
-                  await db.saveBusinessSettings(updated);
-                  setBizSettings(updated);
-                }}
-                style={[s.chip, { backgroundColor: active ? colors.primary : colors.secondary, borderColor: active ? colors.primary : colors.border, borderRadius: colors.radius }]}
-              >
-                <Text style={{ color: active ? "#fff" : colors.mutedForeground, fontWeight: "600" }}>{m.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
 
         <TouchableOpacity onPress={() => saveSettings(undefined, printerSettings)} style={[s.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius, marginTop: 16 }]}>
           <Feather name="save" size={16} color="#fff" />

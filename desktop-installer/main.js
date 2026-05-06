@@ -24,7 +24,19 @@ const MIME = {
   '.map':  'application/json',
 };
 
-function getFreePort() {
+// Use a STABLE port so localStorage/IndexedDB origin doesn't change between launches.
+// (A different port = different origin = fresh storage = "all my data disappeared".)
+// Falls back to a random port only if 47817 is busy.
+const STABLE_PORT = 47817;
+function tryListen(port) {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.once('error', () => resolve(false));
+    srv.listen(port, '127.0.0.1', () => srv.close(() => resolve(true)));
+  });
+}
+async function getStablePort() {
+  if (await tryListen(STABLE_PORT)) return STABLE_PORT;
   return new Promise((resolve) => {
     const srv = net.createServer();
     srv.listen(0, '127.0.0.1', () => {
@@ -69,7 +81,7 @@ let mainWindow;
 let localServer;
 
 async function createWindow() {
-  const port = await getFreePort();
+  const port = await getStablePort();
   localServer = startLocalServer(port);
 
   mainWindow = new BrowserWindow({
