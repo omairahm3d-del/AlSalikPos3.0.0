@@ -9,6 +9,7 @@ router.use("/pos", requireDevice);
 
 router.get("/pos/suppliers", asyncHandler(posPurchasingController.listSuppliers));
 router.post("/pos/suppliers", asyncHandler(posPurchasingController.createSupplier));
+router.patch("/pos/suppliers/:id", asyncHandler(posPurchasingController.updateSupplier));
 
 router.get("/pos/purchases", asyncHandler(posPurchasingController.listPurchases));
 router.post("/pos/purchases", asyncHandler(posPurchasingController.createPurchase));

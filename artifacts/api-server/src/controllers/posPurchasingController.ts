@@ -56,6 +56,17 @@ export const posPurchasingController = {
     res.status(201).json({ supplier });
   },
 
+  async updateSupplier(req: Request, res: Response) {
+    const companyId = req.device!.companyId;
+    const id = String(req.params.id);
+    // Partial update — only fields present in the body are applied.
+    // branchId is stripped so the POS can never move a supplier to a
+    // different branch (that's a manager-only operation).
+    const patch = supplierInput.partial().omit({ branchId: true }).parse(req.body);
+    const supplier = await purchasingService.updateSupplier(companyId, id, patch);
+    res.json({ supplier });
+  },
+
   /* ---- Purchases ---- */
   async listPurchases(req: Request, res: Response) {
     const companyId = req.device!.companyId;

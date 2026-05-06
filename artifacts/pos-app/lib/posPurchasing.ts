@@ -85,12 +85,32 @@ export const posApi = {
 
   createSupplier: async (
     token: string,
-    body: { name: string; phone?: string | null; email?: string | null },
+    body: { name: string; phone?: string | null; email?: string | null; address?: string | null; paymentTerms?: string | null; notes?: string | null },
   ) =>
     jsonOk<{ supplier: PosSupplier }>(
       await authedFetch("/api/pos/suppliers", token, {
         method: "POST",
         body: JSON.stringify(body),
+      }),
+    ),
+
+  updateSupplier: async (
+    token: string,
+    id: string,
+    patch: Partial<{
+      name: string;
+      phone: string | null;
+      email: string | null;
+      address: string | null;
+      paymentTerms: string | null;
+      notes: string | null;
+      isActive: boolean;
+    }>,
+  ) =>
+    jsonOk<{ supplier: PosSupplier }>(
+      await authedFetch(`/api/pos/suppliers/${id}`, token, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
       }),
     ),
 
