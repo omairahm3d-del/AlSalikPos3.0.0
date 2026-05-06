@@ -60,6 +60,7 @@ export default function POSScreen() {
     itemCount,
     subtotal,
     itemDiscountTotal,
+    netSubtotal,
     effectiveSubtotal,
     vatAmount,
     total,
@@ -731,14 +732,8 @@ export default function POSScreen() {
         <View style={[styles.cartFooter, { borderTopColor: colors.border }]}>
           <View style={styles.totalsRow}>
             <Text style={[styles.totalLabel, { color: colors.mutedForeground }]}>Subtotal</Text>
-            <Text style={[styles.totalValue, { color: colors.foreground }]}>{formatCurrency(subtotal)}</Text>
+            <Text style={[styles.totalValue, { color: colors.foreground }]}>{formatCurrency(netSubtotal)}</Text>
           </View>
-          {itemDiscountTotal > 0 && (
-            <View style={styles.totalsRow}>
-              <Text style={[styles.totalLabel, { color: colors.success }]}>Item Discounts</Text>
-              <Text style={[styles.totalValue, { color: colors.success }]}>-{formatCurrency(itemDiscountTotal)}</Text>
-            </View>
-          )}
           <View style={styles.totalsRow}>
             <Text style={[styles.totalLabel, { color: colors.mutedForeground }]}>VAT</Text>
             <Text style={[styles.totalValue, { color: colors.foreground }]}>{formatCurrency(vatAmount)}</Text>
@@ -1113,8 +1108,8 @@ export default function POSScreen() {
 
               <View style={[styles.summaryBox, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}>
                 <View style={styles.summaryRow}>
-                  <Text style={{ color: colors.mutedForeground }}>Subtotal</Text>
-                  <Text style={{ color: colors.foreground }}>{formatCurrency(effectiveSubtotal)}</Text>
+                  <Text style={{ color: colors.mutedForeground }}>Subtotal (excl. VAT)</Text>
+                  <Text style={{ color: colors.foreground }}>{formatCurrency(netSubtotal)}</Text>
                 </View>
                 {orderDiscAmt > 0 && (
                   <View style={styles.summaryRow}>

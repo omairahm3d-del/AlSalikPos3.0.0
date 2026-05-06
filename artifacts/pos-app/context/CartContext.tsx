@@ -26,6 +26,7 @@ interface CartContextValue {
   items: CartItem[];
   itemCount: number;
   subtotal: number;
+  netSubtotal: number;
   itemDiscountTotal: number;
   effectiveSubtotal: number;
   vatAmount: number;
@@ -167,6 +168,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const perLine = useMemo(() => state.items.map(computeLineNetVat), [state.items]);
   const vatAmount = useMemo(() => perLine.reduce((s, p) => s + p.vat, 0), [perLine]);
+  // Net amount excl. VAT, after per-line item discounts. For vatInclusive items
+  // this is price/1.05; for vatExclusive items it equals the line gross after discount.
+  // Satisfies: netSubtotal + vatAmount === total (always, for any mix of vatInclusive/exclusive).
+  const netSubtotal = useMemo(() => perLine.reduce((s, p) => s + p.net, 0), [perLine]);
 
   // For inclusive items the gross already contains VAT, so total =
   // gross. For exclusive items, total = net + vat = gross + vat. Doing
@@ -207,9 +212,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     state.items.find((i) => i.product.id === productId)?.quantity ?? 0, [state.items]);
 
   const value = useMemo(() => ({
-    items: state.items, itemCount, subtotal, itemDiscountTotal, effectiveSubtotal,
+    items: state.items, itemCount, subtotal, netSubtotal, itemDiscountTotal, effectiveSubtotal,
     vatAmount, total, quantityMap, heldOrderInfo, addItem, removeItem, updateQuantity, setItemDiscount, setItemPrice, restoreCart, clearCart, getItemQuantity,
-  }), [state.items, itemCount, subtotal, itemDiscountTotal, effectiveSubtotal,
+  }), [state.items, itemCount, subtotal, netSubtotal, itemDiscountTotal, effectiveSubtotal,
     vatAmount, total, quantityMap, heldOrderInfo, addItem, removeItem, updateQuantity, setItemDiscount, setItemPrice, restoreCart, clearCart, getItemQuantity]);
 
   return (
