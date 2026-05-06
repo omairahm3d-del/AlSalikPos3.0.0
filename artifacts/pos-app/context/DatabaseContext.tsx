@@ -7,6 +7,7 @@ import type {
   Staff, TaxGroup,
 } from "@/types";
 import { DEFAULT_BUSINESS_SETTINGS, VAT_RATE } from "@/types";
+import { computeLineNetVat } from "./CartContext";
 import { generateId, generateInvoiceNumber } from "@/lib/database";
 import { notifySyncQueueChanged } from "@/lib/syncEvents";
 import { clearOwningCompanyId } from "@/lib/saasStorage";
@@ -80,7 +81,6 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     // `vatEnabled=false` business setting (taxRate already 0 in that case).
     // We compute net + vat per line first, then apply the order-level
     // discount as a uniform ratio to each line so VAT scales with it.
-    const { computeLineNetVat } = await import("./CartContext");
     const lineCalcs = items.map(computeLineNetVat);
     let netSum = 0;
     let vatSum = 0;
@@ -369,6 +369,15 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       logoBase64: map.logoBase64 ?? undefined,
       loyaltyPointsPerAed: parseFloat(map.loyaltyPointsPerAed || "1"),
       loyaltyRedemptionRate: parseFloat(map.loyaltyRedemptionRate || "0.01"),
+      // vatEnabled: default true; only false when explicitly stored as "false"
+      vatEnabled: map.vatEnabled !== undefined ? map.vatEnabled !== "false" : true,
+      // registerOpen: default true for back-compat (existing DBs with no key
+      // stored should not lock out users on first upgrade).
+      registerOpen: map.registerOpen !== undefined ? map.registerOpen === "true" : true,
+      openingFloat: parseFloat(map.openingFloat || "0"),
+      openedAt: map.openedAt ? parseInt(map.openedAt, 10) : undefined,
+      lastClosingCash: parseFloat(map.lastClosingCash || "0"),
+      zReportEmail: map.zReportEmail ?? undefined,
     };
 
     if (map.receiptDesign) {
@@ -383,6 +392,12 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     if (map.customerDisplay) {
       try { base.customerDisplay = JSON.parse(map.customerDisplay); } catch {}
     }
+    if (map.rolePermissions) {
+      try { base.rolePermissions = JSON.parse(map.rolePermissions); } catch {}
+    }
+    if (map.smtpConfig) {
+      try { base.smtpConfig = JSON.parse(map.smtpConfig); } catch {}
+    }
 
     return base;
   }, [db]);
@@ -393,7 +408,17 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       ["address", settings.address], ["phone", settings.phone], ["email", settings.email],
       ["loyaltyPointsPerAed", String(settings.loyaltyPointsPerAed)],
       ["loyaltyRedemptionRate", String(settings.loyaltyRedemptionRate)],
+      ["vatEnabled", String(settings.vatEnabled !== false)],
+      ["registerOpen", String(settings.registerOpen === true)],
+      ["openingFloat", String(settings.openingFloat ?? 0)],
+      ["lastClosingCash", String(settings.lastClosingCash ?? 0)],
     ];
+    if (settings.openedAt != null) {
+      entries.push(["openedAt", String(settings.openedAt)]);
+    }
+    if (settings.zReportEmail != null) {
+      entries.push(["zReportEmail", settings.zReportEmail]);
+    }
     if (settings.logoBase64) {
       entries.push(["logoBase64", settings.logoBase64]);
     } else {
@@ -410,6 +435,12 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     }
     if (settings.customerDisplay) {
       entries.push(["customerDisplay", JSON.stringify(settings.customerDisplay)]);
+    }
+    if (settings.rolePermissions) {
+      entries.push(["rolePermissions", JSON.stringify(settings.rolePermissions)]);
+    }
+    if (settings.smtpConfig) {
+      entries.push(["smtpConfig", JSON.stringify(settings.smtpConfig)]);
     }
     for (const [key, value] of entries) {
       await db.runAsync("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", [key, value]);
@@ -1222,6 +1253,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       loadIngredients, createIngredient, updateIngredient, deleteIngredient, updateIngredientStock,
       loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,
       exportData, importData, clearData,
+      loadExpenses, createExpense, deleteExpense,
       enqueueSync, reconcilePendingSync, loadSyncBatch, markSyncResults, countPendingSync,
       loadCatalogBatch, markCatalogResults, countPendingCatalog, applyRemoteCatalog,
     }}>

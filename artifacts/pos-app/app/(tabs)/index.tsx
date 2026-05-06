@@ -22,6 +22,7 @@ import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
 import { CartItemRow } from "@/components/CartItemRow";
 import { CategoryFilter } from "@/components/CategoryFilter";
 import { CloseRegisterModal } from "@/components/CloseRegisterModal";
+import { OpenRegisterModal } from "@/components/OpenRegisterModal";
 import { CreditCollectionModal } from "@/components/CreditCollectionModal";
 import { EmptyState } from "@/components/EmptyState";
 import { ProductCard } from "@/components/ProductCard";
@@ -86,6 +87,7 @@ export default function POSScreen() {
   const [showPayment, setShowPayment] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [showCloseRegister, setShowCloseRegister] = useState(false);
+  const [showOpenRegister, setShowOpenRegister] = useState(false);
   const [showCreditCollection, setShowCreditCollection] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Card");
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
@@ -615,15 +617,27 @@ export default function POSScreen() {
     </TouchableOpacity>
   ), [colors, handleOpenCashDrawer]);
 
+  const registerOpen = businessSettings?.registerOpen !== false;
+
   const EndOfDayButton = useMemo(() => (
-    <TouchableOpacity
-      onPress={() => setShowCloseRegister(true)}
-      style={[styles.endOfDayBtn, { backgroundColor: colors.destructive + "18", borderColor: colors.destructive + "40", borderRadius: colors.radius }]}
-    >
-      <Feather name="moon" size={15} color={colors.destructive} />
-      <Text style={[styles.endOfDayText, { color: colors.destructive }]}>End of Day</Text>
-    </TouchableOpacity>
-  ), [colors]);
+    registerOpen ? (
+      <TouchableOpacity
+        onPress={() => setShowCloseRegister(true)}
+        style={[styles.endOfDayBtn, { backgroundColor: colors.destructive + "18", borderColor: colors.destructive + "40", borderRadius: colors.radius }]}
+      >
+        <Feather name="moon" size={15} color={colors.destructive} />
+        <Text style={[styles.endOfDayText, { color: colors.destructive }]}>End of Day</Text>
+      </TouchableOpacity>
+    ) : (
+      <TouchableOpacity
+        onPress={() => setShowOpenRegister(true)}
+        style={[styles.endOfDayBtn, { backgroundColor: colors.primary + "18", borderColor: colors.primary + "40", borderRadius: colors.radius }]}
+      >
+        <Feather name="unlock" size={15} color={colors.primary} />
+        <Text style={[styles.endOfDayText, { color: colors.primary }]}>Open Register</Text>
+      </TouchableOpacity>
+    )
+  ), [colors, registerOpen]);
 
   const CollectCreditButton = useMemo(() => (
     <TouchableOpacity
@@ -737,13 +751,23 @@ export default function POSScreen() {
                 <Text style={styles.holdBtnText}>Hold</Text>
               </TouchableOpacity>
             )}
-            <TouchableOpacity
-              onPress={openPayment}
-              style={[styles.chargeBtn, { backgroundColor: colors.success, borderRadius: colors.radius, flex: 1 }]}
-            >
-              <Feather name="credit-card" size={18} color="#fff" />
-              <Text style={styles.chargeBtnText}>Charge {formatCurrency(total)}</Text>
-            </TouchableOpacity>
+            {registerOpen ? (
+              <TouchableOpacity
+                onPress={openPayment}
+                style={[styles.chargeBtn, { backgroundColor: colors.success, borderRadius: colors.radius, flex: 1 }]}
+              >
+                <Feather name="credit-card" size={18} color="#fff" />
+                <Text style={styles.chargeBtnText}>Charge {formatCurrency(total)}</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={() => setShowOpenRegister(true)}
+                style={[styles.chargeBtn, { backgroundColor: colors.primary, borderRadius: colors.radius, flex: 1 }]}
+              >
+                <Feather name="unlock" size={18} color="#fff" />
+                <Text style={styles.chargeBtnText}>Open Register to Charge</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       )}
@@ -819,14 +843,14 @@ export default function POSScreen() {
           </View>
           {itemCount > 0 && (
             <TouchableOpacity
-              onPress={openCart}
-              style={[styles.cartBar, { backgroundColor: colors.success, paddingBottom: insets.bottom + 14 }]}
+              onPress={registerOpen ? openCart : () => setShowOpenRegister(true)}
+              style={[styles.cartBar, { backgroundColor: registerOpen ? colors.success : colors.primary, paddingBottom: insets.bottom + 14 }]}
             >
               <View style={styles.cartBarLeft}>
                 <View style={styles.cartBarBadge}><Text style={styles.cartBarBadgeText}>{itemCount}</Text></View>
-                <Text style={styles.cartBarText}>View Order</Text>
+                <Text style={styles.cartBarText}>{registerOpen ? "View Order" : "Open Register"}</Text>
               </View>
-              <Text style={styles.cartBarTotal}>{formatCurrency(total)}</Text>
+              <Text style={styles.cartBarTotal}>{registerOpen ? formatCurrency(total) : "🔒"}</Text>
             </TouchableOpacity>
           )}
           <Modal visible={showCart} animationType="slide" presentationStyle="pageSheet">
@@ -1191,6 +1215,12 @@ export default function POSScreen() {
       <CloseRegisterModal
         visible={showCloseRegister}
         onClose={() => setShowCloseRegister(false)}
+        onSuccess={fetchData}
+      />
+      <OpenRegisterModal
+        visible={showOpenRegister}
+        onClose={() => setShowOpenRegister(false)}
+        onSuccess={fetchData}
       />
       <CreditCollectionModal
         visible={showCreditCollection}

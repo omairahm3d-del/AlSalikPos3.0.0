@@ -2,11 +2,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback } from "react";
 import type {
   BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment, Customer,
-  HeldOrder, HeldOrderItem, Ingredient, PosTable, Product,
+  Expense, HeldOrder, HeldOrderItem, Ingredient, PosTable, Product,
   RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
 } from "@/types";
 import { DEFAULT_BUSINESS_SETTINGS, SEED_CATEGORIES, SEED_PRODUCTS, SEED_STAFF, SEED_TABLES, SEED_TAX_GROUPS, SEED_CUSTOMERS, VAT_RATE } from "@/types";
+import { computeLineNetVat } from "./CartContext";
 import { generateId, generateInvoiceNumber } from "@/lib/database";
 import { notifySyncQueueChanged } from "@/lib/syncEvents";
 import { clearOwningCompanyId } from "@/lib/saasStorage";
@@ -23,6 +24,7 @@ const K = {
   recipeIngredients: "@pos_recipe_ingredients",
   syncQueue: "@pos_sync_queue",
   catalogOutbox: "@pos_catalog_outbox",
+  expenses: "@pos_expenses",
 };
 
 interface WebCatalogOutboxRow {
@@ -458,8 +460,39 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
 
   const loadBusinessSettings = useCallback(async (): Promise<BusinessSettings> => {
     const raw = await AsyncStorage.getItem(K.settings);
-    if (!raw) return { ...DEFAULT_BUSINESS_SETTINGS };
-    return { ...DEFAULT_BUSINESS_SETTINGS, ...JSON.parse(raw) } as BusinessSettings;
+    if (!raw) return { ...DEFAULT_BUSINESS_SETTINGS, registerOpen: true };
+    const stored = JSON.parse(raw) as BusinessSettings;
+    // Back-compat: if registerOpen was never persisted, default to true
+    // so existing users aren't suddenly locked out after an upgrade.
+    if (stored.registerOpen === undefined) stored.registerOpen = true;
+    return { ...DEFAULT_BUSINESS_SETTINGS, ...stored };
+  }, []);
+
+  const loadExpenses = useCallback(async (fromMs?: number, toMs?: number): Promise<Expense[]> => {
+    const all = await getJson<Expense[]>(K.expenses, []);
+    if (fromMs == null || toMs == null) return [...all].sort((a, b) => b.createdAt - a.createdAt);
+    return all
+      .filter((e) => e.createdAt >= fromMs && e.createdAt < toMs)
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }, []);
+
+  const createExpense = useCallback(async (expense: Omit<Expense, "id" | "createdAt"> & { createdAt?: number }): Promise<Expense> => {
+    const all = await getJson<Expense[]>(K.expenses, []);
+    const row: Expense = {
+      id: generateId(),
+      amount: expense.amount,
+      note: expense.note ?? "",
+      staffId: expense.staffId,
+      staffName: expense.staffName,
+      createdAt: expense.createdAt ?? Date.now(),
+    };
+    await setJson(K.expenses, [row, ...all]);
+    return row;
+  }, []);
+
+  const deleteExpense = useCallback(async (id: string): Promise<void> => {
+    const all = await getJson<Expense[]>(K.expenses, []);
+    await setJson(K.expenses, all.filter((e) => e.id !== id));
   }, []);
 
   const saveBusinessSettings = useCallback(async (settings: BusinessSettings): Promise<void> => {
@@ -1168,6 +1201,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       loadIngredients, createIngredient, updateIngredient, deleteIngredient, updateIngredientStock,
       loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,
       exportData, importData, clearData,
+      loadExpenses, createExpense, deleteExpense,
       enqueueSync, reconcilePendingSync, loadSyncBatch, markSyncResults, countPendingSync,
       loadCatalogBatch, markCatalogResults, countPendingCatalog, applyRemoteCatalog,
     }}>

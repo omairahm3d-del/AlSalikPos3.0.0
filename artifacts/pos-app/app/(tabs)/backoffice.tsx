@@ -79,7 +79,8 @@ type Section =
   | "database"
   | "stock"
   | "purchases"
-  | "receiveStock";
+  | "receiveStock"
+  | "expenses";
 
 interface SectionCard {
   id: Section;
@@ -95,6 +96,7 @@ const SECTIONS: SectionCard[] = [
   { id: "stock", icon: "box", title: "Stock", subtitle: "On-hand, history & adjust", color: "#16A085", permKey: "boProducts" },
   { id: "purchases", icon: "shopping-bag", title: "Purchases", subtitle: "Recent goods received", color: "#9B59B6", permKey: "boProducts" },
   { id: "receiveStock", icon: "plus-square", title: "Receive Stock", subtitle: "Record a goods received note", color: "#27AE60", permKey: "boProducts" },
+  { id: "expenses", icon: "minus-circle", title: "Cash-Out / Expenses", subtitle: "Record & review petty cash", color: "#E74C3C" },
   { id: "products", icon: "package", title: "Products", subtitle: "Manage items, pricing & stock", color: "#4F8EF7", permKey: "boProducts" },
   { id: "customers", icon: "users", title: "Customers", subtitle: "Manage customer profiles", color: "#1ABC9C", permKey: "boCustomers" },
   { id: "reports", icon: "bar-chart-2", title: "Reports", subtitle: "View sales summaries", color: "#F39C12", permKey: "boReports" },
@@ -267,6 +269,7 @@ export default function BackOfficeScreen() {
     if (sec === "stock") { router.push("/stock"); return; }
     if (sec === "purchases") { router.push("/purchases"); return; }
     if (sec === "receiveStock") { router.push("/receive-stock"); return; }
+    if (sec === "expenses") { router.push("/expenses"); return; }
     setSection(sec);
     if (sec === "staff") loadStaffList();
     if (sec === "tax") loadTaxList();
