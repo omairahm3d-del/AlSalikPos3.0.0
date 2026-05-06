@@ -23,6 +23,7 @@ interface PushResponseRow {
 interface PushResponse {
   products: PushResponseRow[];
   categories: PushResponseRow[];
+  customers: PushResponseRow[];
 }
 
 interface PullResponseRow {
@@ -35,6 +36,7 @@ interface PullResponseRow {
 interface PullResponse {
   products: PullResponseRow[];
   categories: PullResponseRow[];
+  customers: PullResponseRow[];
   cursor: string;
   hasMore: boolean;
 }
@@ -87,6 +89,10 @@ export async function catalogSyncOnce(
     const categories = ready
       .filter((r) => r.entityType === "category")
       .map(toPushEntry);
+    // Phase 3d: customers ride the same endpoint as a third stream.
+    const customers = ready
+      .filter((r) => r.entityType === "customer")
+      .map(toPushEntry);
 
     const updates: CatalogResultUpdate[] = [];
     let pushUnauthorized = false;
@@ -95,7 +101,7 @@ export async function catalogSyncOnce(
     try {
       res = await authedFetch("/api/sync/catalog/push", token, {
         method: "POST",
-        body: JSON.stringify({ products, categories }),
+        body: JSON.stringify({ products, categories, customers }),
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "network unreachable";
@@ -137,6 +143,7 @@ export async function catalogSyncOnce(
       const verdict = new Map<string, PushResponseRow>();
       for (const r of json.products) verdict.set(`product:${r.clientId}`, r);
       for (const r of json.categories) verdict.set(`category:${r.clientId}`, r);
+      for (const r of json.customers ?? []) verdict.set(`customer:${r.clientId}`, r);
       for (const r of ready) {
         const v = verdict.get(`${r.entityType}:${r.entityId}`);
         if (v) {
@@ -199,13 +206,20 @@ export async function catalogSyncOnce(
     const apply: CatalogApplyInput = {
       products: pull.products.map(toApplyEntry),
       categories: pull.categories.map(toApplyEntry),
+      // Older servers may omit `customers` from the pull response; default
+      // to [] so the engine remains backwards compatible during a rollout.
+      customers: (pull.customers ?? []).map(toApplyEntry),
     };
-    if ((apply.products?.length ?? 0) + (apply.categories?.length ?? 0) > 0) {
+    const applyCount =
+      (apply.products?.length ?? 0) +
+      (apply.categories?.length ?? 0) +
+      (apply.customers?.length ?? 0);
+    if (applyCount > 0) {
       await db.applyRemoteCatalog(apply);
       hadReadyItems = true;
       // Don't double-count succeeded; pulls aren't push successes. But it's
       // fair to surface the volume so the status pill doesn't look stuck.
-      succeeded += (apply.products?.length ?? 0) + (apply.categories?.length ?? 0);
+      succeeded += applyCount;
     }
     if (pull.cursor && pull.cursor !== cursor) {
       await setCatalogCursor(pull.cursor);

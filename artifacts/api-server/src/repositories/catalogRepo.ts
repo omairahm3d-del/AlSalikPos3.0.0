@@ -3,8 +3,10 @@ import {
   saasDb,
   productsTable,
   categoriesTable,
+  customersTable,
   type ProductRow,
   type CategoryRow,
+  type CustomerRow,
 } from "@workspace/saas-db";
 import type { PgTable } from "drizzle-orm/pg-core";
 
@@ -58,7 +60,7 @@ const PULL_LIMIT_MAX = 1000;
  * the row. If RETURNING is empty, the conflict was rejected (stale).
  */
 async function upsertOne(
-  table: typeof productsTable | typeof categoriesTable,
+  table: typeof productsTable | typeof categoriesTable | typeof customersTable,
   companyId: string,
   deviceId: string,
   input: CatalogUpsertInput,
@@ -102,7 +104,7 @@ async function upsertOne(
 }
 
 async function upsertMany(
-  table: typeof productsTable | typeof categoriesTable,
+  table: typeof productsTable | typeof categoriesTable | typeof customersTable,
   companyId: string,
   deviceId: string,
   inputs: CatalogUpsertInput[],
@@ -121,7 +123,7 @@ async function upsertMany(
 }
 
 async function listSince(
-  table: typeof productsTable | typeof categoriesTable,
+  table: typeof productsTable | typeof categoriesTable | typeof customersTable,
   companyId: string,
   since: Date,
   sinceClientId: string,
@@ -208,6 +210,17 @@ export const catalogRepo = {
     sinceClientId: string,
     limit: number,
   ) => listSince(categoriesTable, companyId, since, sinceClientId, limit),
+  upsertCustomers: (
+    companyId: string,
+    deviceId: string,
+    inputs: CatalogUpsertInput[],
+  ) => upsertMany(customersTable, companyId, deviceId, inputs),
+  listCustomersSince: (
+    companyId: string,
+    since: Date,
+    sinceClientId: string,
+    limit: number,
+  ) => listSince(customersTable, companyId, since, sinceClientId, limit),
 };
 
-export type { ProductRow, CategoryRow };
+export type { ProductRow, CategoryRow, CustomerRow };

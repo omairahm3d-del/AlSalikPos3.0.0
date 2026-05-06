@@ -159,6 +159,13 @@ export interface Customer {
   creditBalance: number;
   loyaltyPoints: number;
   createdAt: number;
+  /**
+   * Wall-clock ms epoch of the last local edit, used by Phase 3d catalog
+   * sync for last-write-wins resolution. Optional because legacy SQLite
+   * rows pre-Phase-3d may not have it (treated as 0 by the LWW comparison
+   * so any real cloud edit wins over those rows).
+   */
+  updatedAt?: number;
 }
 
 export interface CreditPayment {

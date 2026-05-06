@@ -11,7 +11,13 @@ import { companiesTable } from "./companies";
 import { devicesTable } from "./devices";
 
 /**
- * Cloud-side mirror of POS catalog (products + categories).
+ * Cloud-side mirror of POS catalog (products + categories + customers).
+ *
+ * NOTE: customers ride the same `/api/sync/catalog/*` endpoints as a third
+ * stream — the wire path is named "catalog" for historical reasons (it
+ * launched with just products + categories) but the sync semantics are
+ * identical so we reuse the same table shape, repo, and engine machinery
+ * rather than spinning up a parallel `/api/sync/customers/*` endpoint.
  *
  * Sync model:
  * - Each row keyed by `(companyId, clientId)` where `clientId` is the local
@@ -88,5 +94,37 @@ export const categoriesTable = pgTable(
   }),
 );
 
+export const customersTable = pgTable(
+  "saas_customers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companiesTable.id, { onDelete: "cascade" }),
+    clientId: text("client_id").notNull(),
+    payload: jsonb("payload").notNull(),
+    clientUpdatedAt: timestamp("client_updated_at", { withTimezone: true }).notNull(),
+    serverUpdatedAt: timestamp("server_updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    lastWriterDeviceId: uuid("last_writer_device_id").references(
+      () => devicesTable.id,
+      { onDelete: "set null" },
+    ),
+  },
+  (t) => ({
+    clientUnique: uniqueIndex("saas_customers_company_client_unique").on(
+      t.companyId,
+      t.clientId,
+    ),
+    cursorIdx: index("saas_customers_company_server_updated_idx").on(
+      t.companyId,
+      t.serverUpdatedAt,
+    ),
+  }),
+);
+
 export type ProductRow = typeof productsTable.$inferSelect;
 export type CategoryRow = typeof categoriesTable.$inferSelect;
+export type CustomerRow = typeof customersTable.$inferSelect;

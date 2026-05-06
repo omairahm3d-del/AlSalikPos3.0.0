@@ -142,6 +142,35 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         await tx.runAsync("UPDATE customers SET loyalty_points=loyalty_points-? WHERE id=?", [loyaltyPointsRedeemed, customerId]);
       }
 
+      // Phase 3d: any sales-driven customer mutation (credit balance or
+      // loyalty change) needs to ride the catalog sync to the cloud.
+      // Bump updated_at and snapshot the post-mutation row into the
+      // catalog outbox so the SyncContext loop pushes it. Inside the
+      // same tx so a sale never commits without its customer-sync row.
+      const customerTouched =
+        customerId &&
+        (paymentMethod === "Credit" || pointsEarned > 0 || (loyaltyPointsRedeemed ?? 0) > 0);
+      if (customerTouched) {
+        await tx.runAsync("UPDATE customers SET updated_at=? WHERE id=?", [createdAt, customerId]);
+        const cu = await tx.getFirstAsync<{
+          id: string; name: string; phone: string | null; email: string | null;
+          company: string | null; credit_balance: number; loyalty_points: number | null;
+          created_at: number;
+        }>(
+          "SELECT id, name, phone, email, company, credit_balance, loyalty_points, created_at FROM customers WHERE id=?",
+          [customerId!]
+        );
+        if (cu) {
+          const updatedCustomer: Customer = {
+            id: cu.id, name: cu.name, phone: cu.phone ?? "", email: cu.email ?? "",
+            company: cu.company ?? "", creditBalance: cu.credit_balance,
+            loyaltyPoints: cu.loyalty_points ?? 0, createdAt: cu.created_at,
+            updatedAt: createdAt,
+          };
+          await enqueueCatalogTx(tx, "customer", cu.id, updatedCustomer, false, createdAt);
+        }
+      }
+
       if (tableId) {
         await tx.runAsync("UPDATE pos_tables SET status='available', current_order_id=NULL WHERE id=?", [tableId]);
         await tx.runAsync("DELETE FROM held_order_items WHERE held_order_id IN (SELECT id FROM held_orders WHERE table_id=?)", [tableId]);
@@ -272,6 +301,32 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         await tx.runAsync("UPDATE customers SET loyalty_points=MAX(0, loyalty_points-?) WHERE id=?", [orig.loyalty_points_earned, orig.customer_id]);
       }
 
+      // Phase 3d: refund-driven customer mutations (credit reversal,
+      // loyalty clawback) also need to ride catalog sync.
+      const refundCustomerTouched =
+        orig.customer_id &&
+        (orig.payment_method === "Credit" || (orig.loyalty_points_earned ?? 0) > 0);
+      if (refundCustomerTouched) {
+        await tx.runAsync("UPDATE customers SET updated_at=? WHERE id=?", [createdAt, orig.customer_id]);
+        const cu = await tx.getFirstAsync<{
+          id: string; name: string; phone: string | null; email: string | null;
+          company: string | null; credit_balance: number; loyalty_points: number | null;
+          created_at: number;
+        }>(
+          "SELECT id, name, phone, email, company, credit_balance, loyalty_points, created_at FROM customers WHERE id=?",
+          [orig.customer_id]
+        );
+        if (cu) {
+          const updatedCustomer: Customer = {
+            id: cu.id, name: cu.name, phone: cu.phone ?? "", email: cu.email ?? "",
+            company: cu.company ?? "", creditBalance: cu.credit_balance,
+            loyaltyPoints: cu.loyalty_points ?? 0, createdAt: cu.created_at,
+            updatedAt: createdAt,
+          };
+          await enqueueCatalogTx(tx, "customer", cu.id, updatedCustomer, false, createdAt);
+        }
+      }
+
       // Refunds are sales too — enqueue for cloud sync.
       await tx.runAsync(
         "INSERT OR IGNORE INTO sync_queue (id, entity_type, entity_id, enqueued_at, status) VALUES (?, 'sale', ?, ?, 'pending')",
@@ -353,28 +408,43 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       id: r.id, name: r.name, phone: r.phone ?? "", email: r.email ?? "",
       company: r.company ?? "", creditBalance: r.credit_balance,
       loyaltyPoints: r.loyalty_points ?? 0, createdAt: r.created_at,
+      updatedAt: r.updated_at ?? undefined,
     }));
   }, [db]);
 
   const createCustomer = useCallback(async (customer: Omit<Customer, "id" | "creditBalance" | "loyaltyPoints" | "createdAt">): Promise<Customer> => {
     const id = generateId();
     const createdAt = Date.now();
-    await db.runAsync(
-      "INSERT INTO customers (id, name, phone, email, company, credit_balance, loyalty_points, created_at) VALUES (?,?,?,?,?,0,0,?)",
-      [id, customer.name, customer.phone, customer.email, customer.company, createdAt]
-    );
-    return { ...customer, id, creditBalance: 0, loyaltyPoints: 0, createdAt };
+    const updatedAt = createdAt;
+    const created: Customer = { ...customer, id, creditBalance: 0, loyaltyPoints: 0, createdAt, updatedAt };
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      await tx.runAsync(
+        "INSERT INTO customers (id, name, phone, email, company, credit_balance, loyalty_points, created_at, updated_at) VALUES (?,?,?,?,?,0,0,?,?)",
+        [id, customer.name, customer.phone, customer.email, customer.company, createdAt, updatedAt]
+      );
+      await enqueueCatalogTx(tx, "customer", id, created, false, updatedAt);
+    });
+    return created;
   }, [db]);
 
   const updateCustomer = useCallback(async (customer: Customer): Promise<void> => {
-    await db.runAsync("UPDATE customers SET name=?, phone=?, email=?, company=? WHERE id=?",
-      [customer.name, customer.phone, customer.email, customer.company, customer.id]);
+    const updatedAt = Date.now();
+    const next: Customer = { ...customer, updatedAt };
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      await tx.runAsync("UPDATE customers SET name=?, phone=?, email=?, company=?, updated_at=? WHERE id=?",
+        [customer.name, customer.phone, customer.email, customer.company, updatedAt, customer.id]);
+      await enqueueCatalogTx(tx, "customer", customer.id, next, false, updatedAt);
+    });
   }, [db]);
 
   const deleteCustomer = useCallback(async (id: string): Promise<void> => {
-    const c = await db.getFirstAsync<{ credit_balance: number }>("SELECT credit_balance FROM customers WHERE id=?", [id]);
-    if (c && c.credit_balance > 0) throw new Error("Cannot delete customer with outstanding balance");
-    await db.runAsync("DELETE FROM customers WHERE id=?", [id]);
+    const updatedAt = Date.now();
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      const c = await tx.getFirstAsync<{ credit_balance: number }>("SELECT credit_balance FROM customers WHERE id=?", [id]);
+      if (c && c.credit_balance > 0) throw new Error("Cannot delete customer with outstanding balance");
+      await tx.runAsync("DELETE FROM customers WHERE id=?", [id]);
+      await enqueueCatalogTx(tx, "customer", id, { id }, true, updatedAt);
+    });
   }, [db]);
 
   const recordCreditPayment = useCallback(async (customerId: string, amount: number, note: string): Promise<CreditPayment> => {
@@ -382,11 +452,28 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     const id = generateId();
     const createdAt = Date.now();
     return await db.withExclusiveTransactionAsync(async (tx) => {
-      const c = await tx.getFirstAsync<{ credit_balance: number }>("SELECT credit_balance FROM customers WHERE id=?", [customerId]);
+      const c = await tx.getFirstAsync<{ id: string; name: string; phone: string | null; email: string | null; company: string | null; credit_balance: number; loyalty_points: number | null; created_at: number }>(
+        "SELECT id, name, phone, email, company, credit_balance, loyalty_points, created_at FROM customers WHERE id=?",
+        [customerId]
+      );
       if (!c) throw new Error("Customer not found");
       if (amount > c.credit_balance) throw new Error("Payment exceeds outstanding balance");
       await tx.runAsync("INSERT INTO credit_payments (id, customer_id, amount, note, created_at) VALUES (?,?,?,?,?)", [id, customerId, amount, note, createdAt]);
-      await tx.runAsync("UPDATE customers SET credit_balance=credit_balance-? WHERE id=?", [amount, customerId]);
+      // Bump customer.updated_at because credit_balance changed — credit
+      // balance is part of the synced payload (full LWW v1, see replit.md).
+      await tx.runAsync("UPDATE customers SET credit_balance=credit_balance-?, updated_at=? WHERE id=?", [amount, createdAt, customerId]);
+      const updatedCustomer: Customer = {
+        id: c.id,
+        name: c.name,
+        phone: c.phone ?? "",
+        email: c.email ?? "",
+        company: c.company ?? "",
+        creditBalance: c.credit_balance - amount,
+        loyaltyPoints: c.loyalty_points ?? 0,
+        createdAt: c.created_at,
+        updatedAt: createdAt,
+      };
+      await enqueueCatalogTx(tx, "customer", customerId, updatedCustomer, false, createdAt);
       return { id, customerId, amount, note, createdAt };
     });
   }, [db]);
@@ -397,7 +484,27 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
   }, [db]);
 
   const updateLoyaltyPoints = useCallback(async (customerId: string, delta: number): Promise<void> => {
-    await db.runAsync("UPDATE customers SET loyalty_points=MAX(0, loyalty_points+?) WHERE id=?", [delta, customerId]);
+    const updatedAt = Date.now();
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      await tx.runAsync("UPDATE customers SET loyalty_points=MAX(0, loyalty_points+?), updated_at=? WHERE id=?", [delta, updatedAt, customerId]);
+      const c = await tx.getFirstAsync<{ id: string; name: string; phone: string | null; email: string | null; company: string | null; credit_balance: number; loyalty_points: number; created_at: number }>(
+        "SELECT id, name, phone, email, company, credit_balance, loyalty_points, created_at FROM customers WHERE id=?",
+        [customerId]
+      );
+      if (!c) return;
+      const updatedCustomer: Customer = {
+        id: c.id,
+        name: c.name,
+        phone: c.phone ?? "",
+        email: c.email ?? "",
+        company: c.company ?? "",
+        creditBalance: c.credit_balance,
+        loyaltyPoints: c.loyalty_points,
+        createdAt: c.created_at,
+        updatedAt,
+      };
+      await enqueueCatalogTx(tx, "customer", customerId, updatedCustomer, false, updatedAt);
+    });
   }, [db]);
 
   const loadStaff = useCallback(async (): Promise<Staff[]> => {
@@ -778,6 +885,12 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         await db.runAsync("DELETE FROM categories");
         await db.runAsync("DELETE FROM catalog_outbox WHERE entity_type='category'");
       }
+      if (opts.customers) {
+        // Wiping customers locally — drop pending pushes for them too so
+        // the cloud doesn't see ghost edits/tombstones for rows the user
+        // explicitly cleared.
+        await db.runAsync("DELETE FROM catalog_outbox WHERE entity_type='customer'");
+      }
       if (opts.ingredients) {
         await db.runAsync("DELETE FROM recipe_ingredients");
         await db.runAsync("DELETE FROM ingredients");
@@ -895,7 +1008,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     );
     return rows.map((r) => ({
       outboxId: r.id,
-      entityType: r.entity_type as "product" | "category",
+      entityType: r.entity_type as "product" | "category" | "customer",
       entityId: r.entity_id,
       payload: safeParse(r.payload),
       deleted: r.deleted === 1,
@@ -942,7 +1055,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
   const applyRemoteCatalog = useCallback(async (input: CatalogApplyInput): Promise<void> => {
     const products = input.products ?? [];
     const categories = input.categories ?? [];
-    if (products.length === 0 && categories.length === 0) return;
+    const customers = input.customers ?? [];
+    if (products.length === 0 && categories.length === 0 && customers.length === 0) return;
     await db.withExclusiveTransactionAsync(async (tx) => {
       // Pre-load any pending outbox snapshots for entities in this batch.
       // A pending unpushed local edit (including a delete — where the row
@@ -952,6 +1066,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       const outboxByKey = await loadOutboxIndex(tx, [
         ...products.map((e) => ["product", e.id] as const),
         ...categories.map((e) => ["category", e.id] as const),
+        ...customers.map((e) => ["customer", e.id] as const),
       ]);
 
       for (const e of products) {
@@ -1005,6 +1120,33 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
            c.sortOrder ?? 0, e.updatedAt]
         );
       }
+      for (const e of customers) {
+        const pending = outboxByKey.get(`customer:${e.id}`);
+        if (pending !== undefined && pending >= e.updatedAt) continue;
+        const existing = await tx.getFirstAsync<{ updated_at: number | null }>(
+          "SELECT updated_at FROM customers WHERE id=?", [e.id]
+        );
+        const localUpdatedAt = existing?.updated_at ?? 0;
+        if (existing && localUpdatedAt >= e.updatedAt) continue;
+        if (e.deleted) {
+          await tx.runAsync("DELETE FROM customers WHERE id=?", [e.id]);
+          continue;
+        }
+        const cu = e.payload as Partial<Customer>;
+        // Stamp the customer's `created_at` from the remote payload if
+        // present; fall back to the remote updatedAt for legacy rows that
+        // didn't carry it. Never lose an existing local created_at value.
+        const incomingCreatedAt = typeof cu.createdAt === "number" ? cu.createdAt : e.updatedAt;
+        await tx.runAsync(
+          `INSERT OR REPLACE INTO customers
+           (id, name, phone, email, company, credit_balance, loyalty_points, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [e.id, cu.name ?? "", cu.phone ?? "", cu.email ?? "", cu.company ?? "",
+           typeof cu.creditBalance === "number" ? cu.creditBalance : 0,
+           typeof cu.loyaltyPoints === "number" ? cu.loyaltyPoints : 0,
+           incomingCreatedAt, e.updatedAt]
+        );
+      }
     });
   }, [db]);
 
@@ -1041,7 +1183,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
 async function enqueueCatalogTx(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx: any,
-  entityType: "product" | "category",
+  entityType: "product" | "category" | "customer",
   entityId: string,
   payload: unknown,
   deleted: boolean,

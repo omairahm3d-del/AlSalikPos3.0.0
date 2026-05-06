@@ -265,6 +265,10 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     // by the comparison logic so any real cloud edit wins).
     "ALTER TABLE products ADD COLUMN updated_at INTEGER DEFAULT NULL",
     "ALTER TABLE categories ADD COLUMN updated_at INTEGER DEFAULT NULL",
+    // Phase 3d: customers join the catalog sync streams. NULL on legacy
+    // rows (treated as 0 by the LWW comparison so any real cloud edit
+    // wins).
+    "ALTER TABLE customers ADD COLUMN updated_at INTEGER DEFAULT NULL",
   ];
 
   for (const sql of migrations) {

@@ -36,23 +36,33 @@ export const pushCatalogInputSchema = z
   .object({
     products: z.array(catalogEntrySchema).max(200).optional(),
     categories: z.array(catalogEntrySchema).max(200).optional(),
+    // Phase 3d: customers ride the same endpoint as a third stream. Same
+    // shape, same LWW semantics — see schema/catalog.ts header comment.
+    customers: z.array(catalogEntrySchema).max(200).optional(),
   })
   .refine(
-    (v) => (v.products?.length ?? 0) + (v.categories?.length ?? 0) > 0,
-    "at least one of products or categories must be non-empty",
+    (v) =>
+      (v.products?.length ?? 0) +
+        (v.categories?.length ?? 0) +
+        (v.customers?.length ?? 0) >
+      0,
+    "at least one of products, categories, or customers must be non-empty",
   );
 
 // `since` is an opaque cursor from a previous pull's `cursor`. The current
-// format is `"<productServerISO>~<productClientId>|<categoryServerISO>~<categoryClientId>"`.
-// Per-stream so pagination cannot outrun an unfinished stream, with a
-// (serverUpdatedAt, clientId) tuple inside each stream so rows sharing a
-// timestamp aren't skipped when a page boundary splits them.
+// format is
+//   `"<pServerISO>~<pClientId>|<cServerISO>~<cClientId>|<cuServerISO>~<cuClientId>"`
+// — three pipe-separated segments, one per stream (products | categories |
+// customers). Per-stream so pagination cannot outrun an unfinished stream,
+// with a (serverUpdatedAt, clientId) tuple inside each stream so rows
+// sharing a timestamp aren't skipped when a page boundary splits them.
 //
-// Backwards-compatible inputs:
-//   - missing / "" / "0" / 0       → both streams default to epoch 0, no clientId floor
-//   - bare ISO or ms epoch         → applied to BOTH streams as serverUpdatedAt with no clientId floor (legacy single cursor)
-//   - "<pISO>|<cISO>"              → legacy per-stream timestamp-only cursor; no clientId floor
-//   - "<pISO>~<pId>|<cISO>~<cId>"  → current tuple form
+// Backwards-compatible inputs (clients that predate Phase 3d):
+//   - missing / "" / "0" / 0       → all 3 streams default to epoch 0
+//   - bare ISO or ms epoch         → applied to ALL 3 streams as serverUpdatedAt with no clientId floor
+//   - "<pISO>|<cISO>"              → legacy 2-segment per-stream timestamp; customer defaults to epoch
+//   - "<pISO>~<pId>|<cISO>~<cId>"  → Phase 3c 2-segment tuple; customer defaults to epoch
+//   - 3-segment current form        → all three streams parsed independently
 //
 // Cursors are URL-encoded by the client when sent as a query string. We
 // don't restrict clientId charset on push, so an old client could in
@@ -63,46 +73,61 @@ interface StreamSince {
   sinceClientId: string;
 }
 
+const EMPTY_SINCE: StreamSince = { since: new Date(0), sinceClientId: "" };
+
+function parseStream(s: string): StreamSince {
+  if (s === "" || s === "0") return EMPTY_SINCE;
+  // Split on FIRST `~` only — clientId may itself contain `~` (we don't
+  // sanitize push). The serverUpdatedAt half is always a well-formed ISO,
+  // never contains `~`, so the first occurrence is unambiguous.
+  const tildeIdx = s.indexOf("~");
+  const tsPart = tildeIdx >= 0 ? s.slice(0, tildeIdx) : s;
+  const idPart = tildeIdx >= 0 ? s.slice(tildeIdx + 1) : "";
+  const iso = new Date(tsPart);
+  if (!Number.isNaN(iso.getTime())) {
+    return { since: iso, sinceClientId: idPart };
+  }
+  const n = Number(tsPart);
+  if (Number.isFinite(n)) return { since: new Date(n), sinceClientId: idPart };
+  throw badRequest(
+    "invalid_since",
+    "since must be ISO-8601, ms epoch, or '<pISO>~<pId>|<cISO>~<cId>|<cuISO>~<cuId>'",
+  );
+}
+
 function parseSinceToken(v: string | number | undefined | null): {
   product: StreamSince;
   category: StreamSince;
+  customer: StreamSince;
 } {
-  const empty: StreamSince = { since: new Date(0), sinceClientId: "" };
   if (v === undefined || v === null || v === "" || v === "0" || v === 0) {
-    return { product: empty, category: empty };
+    return { product: EMPTY_SINCE, category: EMPTY_SINCE, customer: EMPTY_SINCE };
   }
-  const parseStream = (s: string): StreamSince => {
-    if (s === "" || s === "0") return empty;
-    // Split on FIRST `~` only — clientId may itself contain `~` (we don't
-    // sanitize push). The serverUpdatedAt half is always a well-formed ISO,
-    // never contains `~`, so the first occurrence is unambiguous.
-    const tildeIdx = s.indexOf("~");
-    const tsPart = tildeIdx >= 0 ? s.slice(0, tildeIdx) : s;
-    const idPart = tildeIdx >= 0 ? s.slice(tildeIdx + 1) : "";
-    const iso = new Date(tsPart);
-    if (!Number.isNaN(iso.getTime())) {
-      return { since: iso, sinceClientId: idPart };
-    }
-    const n = Number(tsPart);
-    if (Number.isFinite(n)) return { since: new Date(n), sinceClientId: idPart };
-    throw badRequest(
-      "invalid_since",
-      "since must be ISO-8601, ms epoch, or '<pISO>~<pId>|<cISO>~<cId>'",
-    );
-  };
   if (typeof v === "number") {
     const d = new Date(v);
     return {
       product: { since: d, sinceClientId: "" },
       category: { since: d, sinceClientId: "" },
+      customer: { since: d, sinceClientId: "" },
     };
   }
   if (v.includes("|")) {
-    const [p, c] = v.split("|", 2);
-    return { product: parseStream(p), category: parseStream(c) };
+    // Split into up to 3 segments. Use a manual split rather than
+    // String.prototype.split's limit param (which discards trailing
+    // segments) so a missing trailing customer segment defaults cleanly
+    // to epoch on legacy 2-segment cursors.
+    const parts = v.split("|");
+    const p = parts[0] ?? "";
+    const c = parts[1] ?? "";
+    const cu = parts[2] ?? "";
+    return {
+      product: parseStream(p),
+      category: parseStream(c),
+      customer: cu === "" ? EMPTY_SINCE : parseStream(cu),
+    };
   }
   const s = parseStream(v);
-  return { product: s, category: s };
+  return { product: s, category: s, customer: s };
 }
 
 export const pullCatalogQuerySchema = z.object({
@@ -143,6 +168,7 @@ export interface PushCatalogContext {
 export interface PushCatalogResult {
   products: CatalogUpsertResult[];
   categories: CatalogUpsertResult[];
+  customers: CatalogUpsertResult[];
 }
 
 function toUpsertInputs(entries: CatalogEntry[]) {
@@ -161,7 +187,8 @@ export const catalogService = {
   ): Promise<PushCatalogResult> {
     const products = dedupe(input.products ?? []);
     const categories = dedupe(input.categories ?? []);
-    const [productResults, categoryResults] = await Promise.all([
+    const customers = dedupe(input.customers ?? []);
+    const [productResults, categoryResults, customerResults] = await Promise.all([
       catalogRepo.upsertProducts(
         ctx.companyId,
         ctx.deviceId,
@@ -172,16 +199,25 @@ export const catalogService = {
         ctx.deviceId,
         toUpsertInputs(categories),
       ),
+      catalogRepo.upsertCustomers(
+        ctx.companyId,
+        ctx.deviceId,
+        toUpsertInputs(customers),
+      ),
     ]);
-    return { products: productResults, categories: categoryResults };
+    return {
+      products: productResults,
+      categories: categoryResults,
+      customers: customerResults,
+    };
   },
 
   async pull(
     query: z.infer<typeof pullCatalogQuerySchema>,
     ctx: { companyId: string },
   ) {
-    const { product: pSince, category: cSince } = query.since;
-    const [productsPage, categoriesPage] = await Promise.all([
+    const { product: pSince, category: cSince, customer: cuSince } = query.since;
+    const [productsPage, categoriesPage, customersPage] = await Promise.all([
       catalogRepo.listProductsSince(
         ctx.companyId,
         pSince.since,
@@ -194,12 +230,21 @@ export const catalogService = {
         cSince.sinceClientId,
         query.limit,
       ),
+      catalogRepo.listCustomersSince(
+        ctx.companyId,
+        cuSince.since,
+        cuSince.sinceClientId,
+        query.limit,
+      ),
     ]);
     // Per-stream tuple cursor: each stream advances independently as
     // (serverUpdatedAt, clientId). If a stream returned no rows, its
     // cursor echoes the requested since so the next pull asks for the
     // same window again (cheap empty round-trip, safe convergence).
-    const encodeStream = (page: typeof productsPage, fallback: StreamSince) => {
+    const encodeStream = (
+      page: { nextCursor: { serverUpdatedAt: string; clientId: string } | null },
+      fallback: StreamSince,
+    ) => {
       if (page.nextCursor) {
         return `${page.nextCursor.serverUpdatedAt}~${page.nextCursor.clientId}`;
       }
@@ -208,11 +253,13 @@ export const catalogService = {
     return {
       products: productsPage.rows,
       categories: categoriesPage.rows,
+      customers: customersPage.rows,
       cursor: `${encodeStream(productsPage, pSince)}|${encodeStream(
         categoriesPage,
         cSince,
-      )}`,
-      hasMore: productsPage.hasMore || categoriesPage.hasMore,
+      )}|${encodeStream(customersPage, cuSince)}`,
+      hasMore:
+        productsPage.hasMore || categoriesPage.hasMore || customersPage.hasMore,
     };
   },
 };

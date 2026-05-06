@@ -28,8 +28,12 @@ export interface SyncResultUpdate {
  * categories), so re-edits collapse into a single pending push instead of
  * piling up. Payload + deleted flag are captured at enqueue time so deletes
  * survive the source row going away.
+ *
+ * Phase 3d: extended with `customer` as a third stream — same outbox table,
+ * same engine, same wire endpoint (`/api/sync/catalog/*`). The "catalog"
+ * naming is historical; treat customers as a peer.
  */
-export type CatalogEntityType = "product" | "category";
+export type CatalogEntityType = "product" | "category" | "customer";
 
 export interface CatalogOutboxItem {
   outboxId: string;
@@ -70,6 +74,7 @@ export interface CatalogApplyEntry {
 export interface CatalogApplyInput {
   products?: CatalogApplyEntry[];
   categories?: CatalogApplyEntry[];
+  customers?: CatalogApplyEntry[];
 }
 
 export interface SaleOptions {

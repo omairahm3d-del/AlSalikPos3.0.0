@@ -283,23 +283,36 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       }));
     });
 
-    if (paymentMethod === "Credit" && customerId) {
-      const customers = await getJson<Customer[]>(K.customers, []);
-      if (!customers.find((c) => c.id === customerId)) throw new Error("Customer not found");
-      await setJson(K.customers, customers.map((c) =>
-        c.id === customerId ? { ...c, creditBalance: c.creditBalance + total } : c
-      ));
-    }
-
-    if (customerId) {
-      const customers = await getJson<Customer[]>(K.customers, []);
-      await setJson(K.customers, customers.map((c) => {
-        if (c.id !== customerId) return c;
-        let pts = c.loyaltyPoints ?? 0;
+    // Phase 3d: any sales-driven customer mutation needs to ride catalog
+    // sync. Wrap the whole customer block in `runCatalogExclusive` so the
+    // read-modify-write is consistent with applyRemoteCatalog and the
+    // outbox snapshot we enqueue, and so credit + loyalty fold into a
+    // single write+outbox round-trip per sale.
+    const customerTouched =
+      !!customerId &&
+      (paymentMethod === "Credit" || pointsEarned > 0 || (loyaltyPointsRedeemed ?? 0) > 0);
+    if (customerTouched) {
+      await runCatalogExclusive(async () => {
+        const customers = await getJson<Customer[]>(K.customers, []);
+        const target = customers.find((c) => c.id === customerId);
+        if (paymentMethod === "Credit" && !target) throw new Error("Customer not found");
+        if (!target) return;
+        const newCreditBalance =
+          paymentMethod === "Credit" ? target.creditBalance + total : target.creditBalance;
+        let pts = target.loyaltyPoints ?? 0;
         if (pointsEarned > 0) pts += pointsEarned;
         if ((loyaltyPointsRedeemed ?? 0) > 0) pts -= (loyaltyPointsRedeemed ?? 0);
-        return { ...c, loyaltyPoints: Math.max(0, pts) };
-      }));
+        const updatedAt = createdAt;
+        const updatedCustomer: Customer = {
+          ...target,
+          creditBalance: newCreditBalance,
+          loyaltyPoints: Math.max(0, pts),
+          updatedAt,
+        };
+        const next = customers.map((c) => (c.id === customerId ? updatedCustomer : c));
+        const outbox = await buildOutboxUpsert("customer", customerId!, updatedCustomer, false, updatedAt);
+        await writeEntityAndOutbox(K.customers, next, outbox);
+      });
     }
 
     if (tableId) {
@@ -400,18 +413,36 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       }));
     });
 
-    if (orig.paymentMethod === "Credit" && orig.customerId) {
-      const customers = await getJson<Customer[]>(K.customers, []);
-      await setJson(K.customers, customers.map((c) =>
-        c.id === orig.customerId ? { ...c, creditBalance: c.creditBalance - orig.total } : c
-      ));
-    }
-
-    if (orig.customerId && (orig.loyaltyPointsEarned ?? 0) > 0) {
-      const customers = await getJson<Customer[]>(K.customers, []);
-      await setJson(K.customers, customers.map((c) =>
-        c.id === orig.customerId ? { ...c, loyaltyPoints: Math.max(0, (c.loyaltyPoints ?? 0) - (orig.loyaltyPointsEarned ?? 0)) } : c
-      ));
+    // Phase 3d: refund-driven customer mutations (credit reversal,
+    // loyalty clawback) ride catalog sync via outbox snapshot. Same
+    // mutex pattern as saveSale.
+    const refundCustomerTouched =
+      !!orig.customerId &&
+      (orig.paymentMethod === "Credit" || (orig.loyaltyPointsEarned ?? 0) > 0);
+    if (refundCustomerTouched) {
+      await runCatalogExclusive(async () => {
+        const customers = await getJson<Customer[]>(K.customers, []);
+        const target = customers.find((c) => c.id === orig.customerId);
+        if (!target) return;
+        const newCreditBalance =
+          orig.paymentMethod === "Credit"
+            ? target.creditBalance - orig.total
+            : target.creditBalance;
+        const newLoyaltyPoints =
+          (orig.loyaltyPointsEarned ?? 0) > 0
+            ? Math.max(0, (target.loyaltyPoints ?? 0) - (orig.loyaltyPointsEarned ?? 0))
+            : (target.loyaltyPoints ?? 0);
+        const updatedAt = createdAt;
+        const updatedCustomer: Customer = {
+          ...target,
+          creditBalance: newCreditBalance,
+          loyaltyPoints: newLoyaltyPoints,
+          updatedAt,
+        };
+        const next = customers.map((c) => (c.id === orig.customerId ? updatedCustomer : c));
+        const outbox = await buildOutboxUpsert("customer", orig.customerId!, updatedCustomer, false, updatedAt);
+        await writeEntityAndOutbox(K.customers, next, outbox);
+      });
     }
 
     await enqueueSyncWeb("sale", refundId);
@@ -441,40 +472,63 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const createCustomer = useCallback(async (customer: Omit<Customer, "id" | "creditBalance" | "loyaltyPoints" | "createdAt">): Promise<Customer> => {
-    const customers = await getJson<Customer[]>(K.customers, []);
-    const nc: Customer = { ...customer, id: generateId(), creditBalance: 0, loyaltyPoints: 0, createdAt: Date.now() };
-    await setJson(K.customers, [...customers, nc]);
-    return nc;
+    return runCatalogExclusive(async () => {
+      const customers = await getJson<Customer[]>(K.customers, []);
+      const updatedAt = Date.now();
+      const nc: Customer = { ...customer, id: generateId(), creditBalance: 0, loyaltyPoints: 0, createdAt: updatedAt, updatedAt };
+      const outbox = await buildOutboxUpsert("customer", nc.id, nc, false, updatedAt);
+      await writeEntityAndOutbox(K.customers, [...customers, nc], outbox);
+      return nc;
+    });
   }, []);
 
   const updateCustomer = useCallback(async (customer: Customer): Promise<void> => {
-    const customers = await getJson<Customer[]>(K.customers, []);
-    await setJson(K.customers, customers.map((c) => c.id === customer.id ? customer : c));
+    return runCatalogExclusive(async () => {
+      const customers = await getJson<Customer[]>(K.customers, []);
+      const updatedAt = Date.now();
+      const next: Customer = { ...customer, updatedAt };
+      const outbox = await buildOutboxUpsert("customer", customer.id, next, false, updatedAt);
+      await writeEntityAndOutbox(K.customers, customers.map((c) => c.id === customer.id ? next : c), outbox);
+    });
   }, []);
 
   const deleteCustomer = useCallback(async (id: string): Promise<void> => {
-    const customers = await getJson<Customer[]>(K.customers, []);
-    const t = customers.find((c) => c.id === id);
-    if (t && t.creditBalance > 0) throw new Error("Cannot delete customer with outstanding balance");
-    await setJson(K.customers, customers.filter((c) => c.id !== id));
+    return runCatalogExclusive(async () => {
+      const customers = await getJson<Customer[]>(K.customers, []);
+      const t = customers.find((c) => c.id === id);
+      if (t && t.creditBalance > 0) throw new Error("Cannot delete customer with outstanding balance");
+      const updatedAt = Date.now();
+      const outbox = await buildOutboxUpsert("customer", id, { id }, true, updatedAt);
+      await writeEntityAndOutbox(K.customers, customers.filter((c) => c.id !== id), outbox);
+    });
   }, []);
 
   const recordCreditPayment = useCallback(async (customerId: string, amount: number, note: string): Promise<CreditPayment> => {
     if (amount <= 0) throw new Error("Payment amount must be positive");
-    const customers = await getJson<Customer[]>(K.customers, []);
-    const t = customers.find((c) => c.id === customerId);
-    if (!t) throw new Error("Customer not found");
-    const roundedAmount = Math.round(amount * 100) / 100;
-    const roundedBalance = Math.round(t.creditBalance * 100) / 100;
-    if (roundedAmount > roundedBalance) throw new Error("Payment exceeds outstanding balance");
-    const newBalance = Math.round((roundedBalance - roundedAmount) * 100) / 100;
-    const payment: CreditPayment = { id: generateId(), customerId, amount: roundedAmount, note, createdAt: Date.now() };
-    const existing = await getJson<CreditPayment[]>(K.creditPayments, []);
-    await setJson(K.creditPayments, [payment, ...existing]);
-    await setJson(K.customers, customers.map((c) =>
-      c.id === customerId ? { ...c, creditBalance: newBalance } : c
-    ));
-    return payment;
+    return runCatalogExclusive(async () => {
+      const customers = await getJson<Customer[]>(K.customers, []);
+      const t = customers.find((c) => c.id === customerId);
+      if (!t) throw new Error("Customer not found");
+      const roundedAmount = Math.round(amount * 100) / 100;
+      const roundedBalance = Math.round(t.creditBalance * 100) / 100;
+      if (roundedAmount > roundedBalance) throw new Error("Payment exceeds outstanding balance");
+      const newBalance = Math.round((roundedBalance - roundedAmount) * 100) / 100;
+      const updatedAt = Date.now();
+      const payment: CreditPayment = { id: generateId(), customerId, amount: roundedAmount, note, createdAt: updatedAt };
+      const existing = await getJson<CreditPayment[]>(K.creditPayments, []);
+      // Credit payment ledger isn't in the catalog outbox — only the
+      // customer snapshot needs to sync (creditBalance is part of the LWW
+      // payload, see replit.md "Catalog stock is full LWW (v1)" caveat
+      // which applies the same way to credit balance).
+      await setJson(K.creditPayments, [payment, ...existing]);
+      const nextCustomers = customers.map((c) =>
+        c.id === customerId ? { ...c, creditBalance: newBalance, updatedAt } : c
+      );
+      const updatedCustomer = nextCustomers.find((c) => c.id === customerId)!;
+      const outbox = await buildOutboxUpsert("customer", customerId, updatedCustomer, false, updatedAt);
+      await writeEntityAndOutbox(K.customers, nextCustomers, outbox);
+      return payment;
+    });
   }, []);
 
   const loadCreditPayments = useCallback(async (customerId: string): Promise<CreditPayment[]> => {
@@ -483,10 +537,20 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const updateLoyaltyPoints = useCallback(async (customerId: string, delta: number): Promise<void> => {
-    const customers = await getJson<Customer[]>(K.customers, []);
-    await setJson(K.customers, customers.map((c) =>
-      c.id === customerId ? { ...c, loyaltyPoints: Math.max(0, (c.loyaltyPoints ?? 0) + delta) } : c
-    ));
+    return runCatalogExclusive(async () => {
+      const customers = await getJson<Customer[]>(K.customers, []);
+      const updatedAt = Date.now();
+      const nextCustomers = customers.map((c) =>
+        c.id === customerId ? { ...c, loyaltyPoints: Math.max(0, (c.loyaltyPoints ?? 0) + delta), updatedAt } : c
+      );
+      const updatedCustomer = nextCustomers.find((c) => c.id === customerId);
+      if (!updatedCustomer) {
+        await setJson(K.customers, nextCustomers);
+        return;
+      }
+      const outbox = await buildOutboxUpsert("customer", customerId, updatedCustomer, false, updatedAt);
+      await writeEntityAndOutbox(K.customers, nextCustomers, outbox);
+    });
   }, []);
 
   const loadStaff = useCallback(async (): Promise<Staff[]> => {
@@ -812,6 +876,11 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     if (opts.customers) {
       await wipe(K.customers);
       await wipe(K.creditPayments);
+      // Phase 3d: drop pending customer pushes alongside the rows themselves
+      // so the cloud doesn't see ghost edits/tombstones for rows the user
+      // explicitly cleared. Mirrors the native clearData behavior.
+      const outbox = await getJson<WebCatalogOutboxRow[]>(K.catalogOutbox, []);
+      await setJson(K.catalogOutbox, outbox.filter((o) => o.entityType !== "customer"));
     }
     if (opts.products) {
       await wipe(K.products);
@@ -977,7 +1046,8 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
   const applyRemoteCatalog = useCallback(async (input: CatalogApplyInput): Promise<void> => {
     const incomingProducts = input.products ?? [];
     const incomingCategories = input.categories ?? [];
-    if (incomingProducts.length === 0 && incomingCategories.length === 0) return;
+    const incomingCustomers = input.customers ?? [];
+    if (incomingProducts.length === 0 && incomingCategories.length === 0 && incomingCustomers.length === 0) return;
     // Take the catalog mutex for the whole apply pass so the outbox snapshot
     // we use for the LWW skip-check is consistent with the entity tables we
     // then read+rewrite. Without this, a local edit completing mid-pass
@@ -1035,6 +1105,41 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
         byId.set(e.id, { ...(c as unknown as Category), id: e.id, updatedAt: e.updatedAt });
       }
       await setJson(K.categories, Array.from(byId.values()));
+    }
+
+    if (incomingCustomers.length > 0) {
+      const local = await getJson<Customer[]>(K.customers, []);
+      const byId = new Map(local.map((c) => [c.id, c] as const));
+      for (const e of incomingCustomers) {
+        const pending = pendingUpdatedAt.get(`customer:${e.id}`);
+        if (pending !== undefined && pending >= e.updatedAt) continue;
+        const existing = byId.get(e.id);
+        const localUpdatedAt = existing?.updatedAt ?? 0;
+        if (existing && localUpdatedAt >= e.updatedAt) continue;
+        if (e.deleted) {
+          byId.delete(e.id);
+          continue;
+        }
+        // Full replace (matches native INSERT OR REPLACE). Don't merge with
+        // `existing` — the cloud payload IS the authoritative state, and
+        // merging would resurrect locally-cleared optional fields.
+        const cu = e.payload as Partial<Customer>;
+        byId.set(e.id, {
+          id: e.id,
+          name: cu.name ?? "",
+          phone: cu.phone ?? "",
+          email: cu.email ?? "",
+          company: cu.company ?? "",
+          creditBalance: typeof cu.creditBalance === "number" ? cu.creditBalance : 0,
+          loyaltyPoints: typeof cu.loyaltyPoints === "number" ? cu.loyaltyPoints : 0,
+          // Keep existing local createdAt if present (don't lose first-seen
+          // time on a remote-driven update); fall back to the remote value
+          // for new rows.
+          createdAt: existing?.createdAt ?? (typeof cu.createdAt === "number" ? cu.createdAt : e.updatedAt),
+          updatedAt: e.updatedAt,
+        });
+      }
+      await setJson(K.customers, Array.from(byId.values()));
     }
     });
   }, []);
