@@ -31,6 +31,13 @@ interface SyncContextValue {
   lastError: string | null;
   /** Force a sync attempt right now. */
   syncNow: () => Promise<void>;
+  /**
+   * Stamp existing local data as belonging to the currently-activated
+   * license's company and resume sync. Only succeeds when the owner stamp
+   * is genuinely unset — this never overwrites an existing stamp, so it
+   * cannot be used to push one tenant's data into another.
+   */
+  adoptLocalDataForCurrentLicense: () => Promise<{ ok: boolean; error?: string }>;
 }
 
 const SyncContext = createContext<SyncContextValue | null>(null);
@@ -241,9 +248,45 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     await drain();
   }, [drain]);
 
+  const adoptLocalDataForCurrentLicense = useCallback(async () => {
+    const currentCompanyId = sessionCompanyIdRef.current;
+    if (!currentCompanyId) return { ok: false, error: "No active license session." };
+    try {
+      // Re-check ownership at the moment of action. We refuse to overwrite
+      // an existing stamp — that's the whole point of the safety check.
+      const owner = await getOwningCompanyId();
+      if (owner && owner !== currentCompanyId) {
+        return {
+          ok: false,
+          error: "Local data already belongs to a different company. Cannot adopt.",
+        };
+      }
+      if (!owner) {
+        await setOwningCompanyId(currentCompanyId);
+      }
+      await db.reconcilePendingSync();
+      verifiedCompanyIdRef.current = currentCompanyId;
+      setLastError(null);
+      await refreshCount();
+      // Kick off a sync immediately.
+      drain().catch(() => {});
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "adopt failed" };
+    }
+  }, [db, drain, refreshCount]);
+
   return (
     <SyncContext.Provider
-      value={{ pendingCount, pendingCatalogCount, isSyncing, lastSyncedAt, lastError, syncNow }}
+      value={{
+        pendingCount,
+        pendingCatalogCount,
+        isSyncing,
+        lastSyncedAt,
+        lastError,
+        syncNow,
+        adoptLocalDataForCurrentLicense,
+      }}
     >
       {children}
     </SyncContext.Provider>

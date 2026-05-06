@@ -9,8 +9,10 @@ import { useSync } from "@/context/SyncContext";
  * queue drains and stays hidden.
  */
 export function SyncStatusPill() {
-  const { pendingCount, isSyncing, lastError, syncNow } = useSync();
+  const { pendingCount, isSyncing, lastError, syncNow, adoptLocalDataForCurrentLicense } = useSync();
   const [expanded, setExpanded] = useState(false);
+  const [adopting, setAdopting] = useState(false);
+  const canAdopt = !!lastError && lastError.includes("no tenant stamp");
 
   if (pendingCount === 0 && !isSyncing && !lastError) return null;
 
@@ -48,6 +50,23 @@ export function SyncStatusPill() {
           <Text style={styles.errorTitle}>Sync error</Text>
           <Text style={styles.errorBody} selectable>{lastError}</Text>
           <View style={styles.errorActions}>
+            {canAdopt ? (
+              <Pressable
+                disabled={adopting}
+                onPress={async () => {
+                  setAdopting(true);
+                  try {
+                    const r = await adoptLocalDataForCurrentLicense();
+                    if (r.ok) setExpanded(false);
+                  } finally {
+                    setAdopting(false);
+                  }
+                }}
+                style={[styles.errorBtn, { backgroundColor: "#10B981", opacity: adopting ? 0.6 : 1 }]}
+              >
+                <Text style={styles.errorBtnText}>{adopting ? "Adopting…" : "Adopt sales"}</Text>
+              </Pressable>
+            ) : null}
             <Pressable
               onPress={() => { syncNow().catch(() => {}); }}
               style={[styles.errorBtn, { backgroundColor: "#3B82F6" }]}
