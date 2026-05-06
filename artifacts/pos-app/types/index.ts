@@ -12,6 +12,18 @@ export interface Product {
   imageUri?: string;
   printerId?: string;
   /**
+   * If true, the cashier can override the unit price during a sale via
+   * a popup. When false (default), the price is fixed. Stored as 0/1
+   * in SQLite; absent on legacy rows is treated as false.
+   */
+  priceChangeAllowed?: boolean;
+  /**
+   * If true, the product's `price` already INCLUDES VAT (gross). VAT is
+   * back-calculated when computing line totals. When false (default),
+   * VAT is added on top (the legacy behavior). Stored as 0/1 in SQLite.
+   */
+  vatInclusive?: boolean;
+  /**
    * Wall-clock ms epoch of the last edit. Used for last-write-wins
    * conflict resolution when syncing the catalog with the cloud. Optional
    * for back-compat with seed data; absent / 0 is treated as "older than
@@ -304,6 +316,37 @@ export interface BusinessSettings {
   smtpConfig?: SmtpConfig;
   lastClosedAt?: number;
   keyboardMode?: "off" | "builtin" | "windows-osk";
+  /**
+   * Master VAT switch. When false, all sales are zero-VAT regardless of
+   * per-product taxGroup, the TRN field is hidden in Business Settings,
+   * and "TRN" / "SIMPLIFIED TAX INVOICE" / "Prices inclusive" lines are
+   * suppressed from receipts. Default true (back-compat).
+   */
+  vatEnabled?: boolean;
+  /**
+   * Cash drawer / register session state. `registerOpen===false` blocks
+   * the Charge button; opening the register records `openingFloat` and
+   * `openedAt` and unblocks sales. `lastClosingCash` is captured on
+   * close so the next Open Register modal can pre-fill it.
+   */
+  registerOpen?: boolean;
+  openingFloat?: number;
+  openedAt?: number;
+  lastClosingCash?: number;
+}
+
+/**
+ * Cash-out / petty-cash record. Subtracted from expected cash at close
+ * and shown in the Z-Report. One row per outflow (e.g. "Paid milkman
+ * 25 AED"); deletes are hard.
+ */
+export interface Expense {
+  id: string;
+  amount: number;
+  note: string;
+  staffId?: string;
+  staffName?: string;
+  createdAt: number;
 }
 
 export interface ZReport {
@@ -322,6 +365,12 @@ export interface ZReport {
   paymentBreakdown: { method: string; amount: number }[];
   categorySales: { category: string; amount: number }[];
   staffSales: { staffName: string; amount: number; count: number }[];
+  /** Sum of cash-out expenses recorded during the session. Subtracted from
+   * expected cash so an over/short calc reflects petty-cash withdrawals. */
+  totalExpenses?: number;
+  /** Per-row breakdown for receipt audit. Optional for back-compat with
+   * pre-feature reports that have no expense data. */
+  expenses?: { id: string; amount: number; note: string; staffName?: string; createdAt: number }[];
 }
 
 export const VAT_RATE = 0.05;
@@ -421,6 +470,7 @@ export interface ClearDataOptions {
   tables?: boolean;
   zReports?: boolean;
   heldOrders?: boolean;
+  expenses?: boolean;
   resetInvoiceCounter?: boolean;
 }
 
@@ -476,6 +526,10 @@ export const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
   kotSettings: DEFAULT_KOT_SETTINGS,
   customerDisplay: DEFAULT_CUSTOMER_DISPLAY,
   keyboardMode: "off",
+  vatEnabled: true,
+  registerOpen: false,
+  openingFloat: 0,
+  lastClosingCash: 0,
 };
 
 export const ADMIN_PERMISSIONS: StaffPermissions = {

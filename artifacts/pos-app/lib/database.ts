@@ -269,7 +269,26 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     // rows (treated as 0 by the LWW comparison so any real cloud edit
     // wins).
     "ALTER TABLE customers ADD COLUMN updated_at INTEGER DEFAULT NULL",
+    // Per-product flags powering the in-cart "edit price" prompt and the
+    // VAT-inclusive vs VAT-on-top math. Both default to 0 (off) so legacy
+    // rows behave exactly as before this feature shipped.
+    "ALTER TABLE products ADD COLUMN price_change_allowed INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE products ADD COLUMN vat_inclusive INTEGER NOT NULL DEFAULT 0",
   ];
+
+  // Cash-out / petty-cash log. Created outside the migrations array so it
+  // executes via execAsync (CREATE TABLE IF NOT EXISTS is idempotent).
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS expenses (
+      id TEXT PRIMARY KEY,
+      amount REAL NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      staff_id TEXT DEFAULT NULL,
+      staff_name TEXT DEFAULT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS expenses_created_idx ON expenses(created_at);
+  `);
 
   for (const sql of migrations) {
     try {

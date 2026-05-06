@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react";
 import type {
   BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment, Customer,
-  HeldOrder, Ingredient, OrderType, PosTable, Product,
+  Expense, HeldOrder, Ingredient, OrderType, PosTable, Product,
   RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
 } from "@/types";
@@ -169,6 +169,14 @@ export interface DatabaseContextValue {
   exportData: () => Promise<BackupData>;
   importData: (data: BackupData) => Promise<void>;
   clearData: (opts: ClearDataOptions) => Promise<void>;
+
+  // ---- Cash-out / petty-cash ledger ----
+  /** Load expenses, optionally restricted to a [from, to) ms window. */
+  loadExpenses: (fromMs?: number, toMs?: number) => Promise<Expense[]>;
+  /** Insert a new expense; returns the persisted row including generated id. */
+  createExpense: (expense: Omit<Expense, "id" | "createdAt"> & { createdAt?: number }) => Promise<Expense>;
+  /** Hard-delete a single expense row. */
+  deleteExpense: (id: string) => Promise<void>;
 
   // ---- Phase 3b: outbound sync queue ----
   /** Mark an entity as needing to be pushed to the cloud. Idempotent. */

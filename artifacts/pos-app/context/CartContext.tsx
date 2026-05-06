@@ -14,6 +14,7 @@ type CartAction =
   | { type: "REMOVE_ITEM"; productId: string }
   | { type: "UPDATE_QUANTITY"; productId: string; quantity: number }
   | { type: "SET_ITEM_DISCOUNT"; productId: string; discountType?: "percentage" | "fixed"; discountValue?: number }
+  | { type: "SET_ITEM_PRICE"; productId: string; price: number }
   | { type: "RESTORE"; items: CartItem[] }
   | { type: "CLEAR" };
 
@@ -35,6 +36,7 @@ interface CartContextValue {
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   setItemDiscount: (productId: string, discountType?: "percentage" | "fixed", discountValue?: number) => void;
+  setItemPrice: (productId: string, price: number) => void;
   restoreCart: (items: CartItem[], heldInfo?: HeldOrderInfo) => void;
   clearCart: () => void;
   getItemQuantity: (productId: string) => number;
@@ -47,6 +49,26 @@ function computeItemDiscount(item: CartItem): number {
     return Math.min(lineBase, lineBase * item.discountValue / 100);
   }
   return Math.min(lineBase, item.discountValue);
+}
+
+/**
+ * Per-line net + VAT calculation respecting the per-product
+ * `vatInclusive` flag. When the flag is on, the displayed price already
+ * includes VAT and we back-calculate to derive the net component for
+ * UAE-compliant tax invoices (VAT must always be shown as a separate
+ * line). When off, VAT is added on top.
+ */
+export function computeLineNetVat(item: CartItem): { net: number; vat: number; gross: number } {
+  const lineBase = item.product.price * item.quantity;
+  const disc = item.discountAmount ?? 0;
+  const lineGross = Math.max(0, lineBase - disc);
+  const rate = Math.max(0, item.taxRate ?? VAT_RATE);
+  if (rate <= 0) return { net: lineGross, vat: 0, gross: lineGross };
+  if (item.product.vatInclusive) {
+    const vat = lineGross * rate / (1 + rate);
+    return { net: lineGross - vat, vat, gross: lineGross };
+  }
+  return { net: lineGross, vat: lineGross * rate, gross: lineGross };
 }
 
 function cartReducer(state: CartState, action: CartAction): CartState {
@@ -90,6 +112,23 @@ function cartReducer(state: CartState, action: CartAction): CartState {
         }),
       };
     }
+    case "SET_ITEM_PRICE": {
+      // Clone the product so the override is scoped to THIS cart line —
+      // the underlying catalog row is never mutated. Recompute the
+      // existing item discount against the new price.
+      return {
+        items: state.items.map((i) => {
+          if (i.product.id !== action.productId) return i;
+          const newPrice = Math.max(0, action.price);
+          const updated: CartItem = {
+            ...i,
+            product: { ...i.product, price: newPrice },
+          };
+          updated.discountAmount = computeItemDiscount(updated);
+          return updated;
+        }),
+      };
+    }
     case "RESTORE":
       return { items: action.items };
     case "CLEAR":
@@ -110,6 +149,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     [state.items]
   );
 
+  // `subtotal` is the gross sum (price × qty before any discount). Kept
+  // as a display-only value for the cart UI's "Subtotal" line so users
+  // see the total they typed in. The accounting subtotal (net of VAT)
+  // is computed in saveSale() via computeLineNetVat per line.
   const subtotal = useMemo(
     () => state.items.reduce((sum, i) => sum + i.product.price * i.quantity, 0),
     [state.items]
@@ -121,16 +164,20 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   );
 
   const effectiveSubtotal = useMemo(() => Math.max(0, subtotal - itemDiscountTotal), [subtotal, itemDiscountTotal]);
-  const vatAmount = useMemo(() => {
-    let vat = 0;
-    for (const item of state.items) {
-      const lineAfterDisc = item.product.price * item.quantity - (item.discountAmount ?? 0);
-      const rate = item.taxRate ?? VAT_RATE;
-      vat += Math.max(0, lineAfterDisc) * rate;
-    }
-    return vat;
-  }, [state.items]);
-  const total = useMemo(() => effectiveSubtotal + vatAmount, [effectiveSubtotal, vatAmount]);
+
+  const perLine = useMemo(() => state.items.map(computeLineNetVat), [state.items]);
+  const vatAmount = useMemo(() => perLine.reduce((s, p) => s + p.vat, 0), [perLine]);
+
+  // For inclusive items the gross already contains VAT, so total =
+  // gross. For exclusive items, total = net + vat = gross + vat. Doing
+  // it per-line keeps mixed carts correct.
+  const total = useMemo(
+    () => state.items.reduce((sum, i, idx) => {
+      const line = perLine[idx];
+      return sum + (i.product.vatInclusive ? line.gross : line.net + line.vat);
+    }, 0),
+    [state.items, perLine]
+  );
 
   const quantityMap = useMemo(() => {
     const map: Record<string, number> = {};
@@ -146,6 +193,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: "UPDATE_QUANTITY", productId, quantity }), []);
   const setItemDiscount = useCallback((productId: string, discountType?: "percentage" | "fixed", discountValue?: number) =>
     dispatch({ type: "SET_ITEM_DISCOUNT", productId, discountType, discountValue }), []);
+  const setItemPrice = useCallback((productId: string, price: number) =>
+    dispatch({ type: "SET_ITEM_PRICE", productId, price }), []);
   const restoreCart = useCallback((items: CartItem[], heldInfo?: HeldOrderInfo) => {
     dispatch({ type: "RESTORE", items });
     setHeldOrderInfo(heldInfo ?? null);
@@ -159,9 +208,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(() => ({
     items: state.items, itemCount, subtotal, itemDiscountTotal, effectiveSubtotal,
-    vatAmount, total, quantityMap, heldOrderInfo, addItem, removeItem, updateQuantity, setItemDiscount, restoreCart, clearCart, getItemQuantity,
+    vatAmount, total, quantityMap, heldOrderInfo, addItem, removeItem, updateQuantity, setItemDiscount, setItemPrice, restoreCart, clearCart, getItemQuantity,
   }), [state.items, itemCount, subtotal, itemDiscountTotal, effectiveSubtotal,
-    vatAmount, total, quantityMap, heldOrderInfo, addItem, removeItem, updateQuantity, setItemDiscount, restoreCart, clearCart, getItemQuantity]);
+    vatAmount, total, quantityMap, heldOrderInfo, addItem, removeItem, updateQuantity, setItemDiscount, setItemPrice, restoreCart, clearCart, getItemQuantity]);
 
   return (
     <CartContext.Provider value={value}>

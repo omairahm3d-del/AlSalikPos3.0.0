@@ -227,20 +227,19 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     const { paymentMethod, orderType, customerId, customerName, staffId, staffName, tableId, tableName, riderId, riderName, discountType, discountValue, discountAmount: orderDiscount, loyaltyPointsRedeemed, splitPayments } = options;
     if (paymentMethod === "Credit" && !customerId) throw new Error("Credit sales require a customer");
 
-    let subtotal = 0;
-    for (const item of items) {
-      subtotal += item.product.price * item.quantity - (item.discountAmount ?? 0);
-    }
-    subtotal -= (orderDiscount ?? 0);
-    if (subtotal < 0) subtotal = 0;
-    let vatAmount = 0;
-    const rawSubtotal = items.reduce((s, i) => s + i.product.price * i.quantity - (i.discountAmount ?? 0), 0);
-    const discountRatio = rawSubtotal > 0 ? subtotal / rawSubtotal : 0;
-    for (const item of items) {
-      const lineAfterDisc = item.product.price * item.quantity - (item.discountAmount ?? 0);
-      const rate = item.taxRate ?? VAT_RATE;
-      vatAmount += Math.max(0, lineAfterDisc) * rate * discountRatio;
-    }
+    // Per-line totals respect per-product `vatInclusive` and any zero
+    // taxRate (e.g. when business `vatEnabled=false`). Order-level
+    // discount is applied as a uniform ratio so VAT scales with it.
+    const lineCalcs = items.map(computeLineNetVat);
+    let netSum = 0;
+    let vatSum = 0;
+    let grossSum = 0;
+    for (const c of lineCalcs) { netSum += c.net; vatSum += c.vat; grossSum += c.gross; }
+    const orderDiscAmt = orderDiscount ?? 0;
+    const grossAfterOrderDisc = Math.max(0, grossSum - orderDiscAmt);
+    const ratio = grossSum > 0 ? grossAfterOrderDisc / grossSum : 0;
+    const subtotal = netSum * ratio;
+    const vatAmount = vatSum * ratio;
     const total = subtotal + vatAmount;
     const saleId = generateId();
     const createdAt = Date.now();

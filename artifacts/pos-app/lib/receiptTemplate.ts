@@ -76,7 +76,12 @@ export function generateReceiptHTML(
     ? rd.footerText.replace(/\n/g, "<br/>")
     : "Thank you for your business!<br/>شكراً لتعاملكم معنا";
 
-  const trnLine = rd.showTrn
+  // VAT-disabled businesses must not advertise a TRN or call the
+  // document a "SIMPLIFIED TAX INVOICE" — both are reserved by the FTA
+  // for VAT-registered traders. `vatEnabled !== false` keeps legacy
+  // settings (undefined) treated as VAT-on for back-compat.
+  const vatOn = business.vatEnabled !== false;
+  const trnLine = vatOn && rd.showTrn
     ? (business.trn ? `<div>TRN: ${business.trn}</div>` : '<div style="color:#000;">TRN: Not configured</div>')
     : "";
 
@@ -122,8 +127,13 @@ export function generateReceiptHTML(
   ${headerText}
 
   <div class="center">
+    ${vatOn ? `
     <div class="header-ar ar">فاتورة ضريبية مبسطة</div>
     <div class="header-title">SIMPLIFIED TAX INVOICE</div>
+    ` : `
+    <div class="header-ar ar">إيصال</div>
+    <div class="header-title">SALES RECEIPT</div>
+    `}
   </div>
 
   <div class="divider"></div>
@@ -163,9 +173,9 @@ export function generateReceiptHTML(
   <div class="divider"></div>
 
   <table class="total-section">
-    <tr><td style="text-align:left;">${bilingual("Subtotal (Excl. VAT)", "المجموع الفرعي (بدون ضريبة)")}</td><td style="text-align:right;">${fmt(sale.subtotal)}</td></tr>
+    <tr><td style="text-align:left;">${vatOn ? bilingual("Subtotal (Excl. VAT)", "المجموع الفرعي (بدون ضريبة)") : bilingual("Subtotal", "المجموع الفرعي")}</td><td style="text-align:right;">${fmt(sale.subtotal)}</td></tr>
     ${discountLine ? discountLine.replace(">Discount", ">Discount / الخصم") : ""}
-    <tr><td style="text-align:left;">${bilingual(`VAT (${vatPct}%)`, `ضريبة القيمة المضافة (${vatPct}%)`)}</td><td style="text-align:right;">${fmt(sale.vatAmount)}</td></tr>
+    ${vatOn ? `<tr><td style="text-align:left;">${bilingual(`VAT (${vatPct}%)`, `ضريبة القيمة المضافة (${vatPct}%)`)}</td><td style="text-align:right;">${fmt(sale.vatAmount)}</td></tr>` : ""}
   </table>
 
   <div class="divider"></div>
@@ -188,8 +198,8 @@ export function generateReceiptHTML(
 
   <div class="footer">
     ${isRefund ? "This is a refund receipt / هذه فاتورة استرداد<br/>" : ""}
-    Prices are inclusive of ${vatPct}% VAT where applicable<br/>
-    <span class="ar">الأسعار شاملة ضريبة القيمة المضافة ${vatPct}% حيثما ينطبق</span><br/>
+    ${vatOn ? `Prices are inclusive of ${vatPct}% VAT where applicable<br/>
+    <span class="ar">الأسعار شاملة ضريبة القيمة المضافة ${vatPct}% حيثما ينطبق</span><br/>` : ""}
     ${footerText}
     <div style="margin-top:6px;border-top:1px dashed #000;padding-top:5px;font-size:${fs.body - 3}px;color:#000;">Powered by Al Salik Computers</div>
   </div>
@@ -221,8 +231,19 @@ export function generateZReportHTML(
     .map((s) => `<tr><td style="padding:4px 0;">${s.staffName || "Unknown"} <small>(${s.count})</small></td><td style="padding:4px 0;text-align:right;font-weight:600;">${fmt(s.amount)}</td></tr>`)
     .join("");
 
-  const cashDiff = report.closingCash - (report.totalSales - report.totalRefunds);
+  const totalExpenses = report.totalExpenses ?? 0;
+  const expenseRows = (report.expenses ?? [])
+    .map((e) => `<tr><td style="padding:4px 0;">${(e.note || "—").replace(/</g, "&lt;")}${e.staffName ? ` <small>(${e.staffName})</small>` : ""}</td><td style="padding:4px 0;text-align:right;font-weight:600;">-${fmt(e.amount)}</td></tr>`)
+    .join("");
+  // Cash sales only (not credit/card) drive the drawer count, but the
+  // legacy report didn't break payment by method so we approximate with
+  // (sales-refunds). Subtract opening float wasn't included historically;
+  // we now add it back so over/short on a no-float day still nets zero.
+  const cashSalesNet = report.totalSales - report.totalRefunds;
+  const expectedCash = (report.openingCash ?? 0) + cashSalesNet - totalExpenses;
+  const cashDiff = report.closingCash - expectedCash;
   const diffLabel = cashDiff >= 0 ? "Over" : "Short";
+  const vatOnZ = business.vatEnabled !== false;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -256,7 +277,7 @@ export function generateZReportHTML(
 
   <div class="center">
     ${business.businessName ? `<div class="bold" style="font-size:14px;">${business.businessName}</div>` : ""}
-    ${business.trn ? `<div>TRN: ${business.trn}</div>` : ""}
+    ${vatOnZ && business.trn ? `<div>TRN: ${business.trn}</div>` : ""}
     ${business.address ? `<div>${business.address}</div>` : ""}
     ${business.phone ? `<div>Tel: ${business.phone}</div>` : ""}
   </div>
@@ -282,18 +303,27 @@ export function generateZReportHTML(
     <tr class="total-row"><td>NET SALES</td><td style="text-align:right;">${fmt(report.netSales)}</td></tr>
   </table>
   <table class="summary-row">
-    <tr><td>VAT Collected (5%)</td><td style="text-align:right;font-weight:600;">${fmt(report.totalVat)}</td></tr>
+    ${vatOnZ ? `<tr><td>VAT Collected</td><td style="text-align:right;font-weight:600;">${fmt(report.totalVat)}</td></tr>` : ""}
     <tr><td>Transactions</td><td style="text-align:right;font-weight:600;">${report.transactionCount}</td></tr>
     <tr><td>Refund Count</td><td style="text-align:right;font-weight:600;">${report.refundCount}</td></tr>
   </table>
+
+  ${expenseRows ? `
+  <div class="divider"></div>
+  <div class="section-title">Cash-Out / Expenses</div>
+  <table class="summary-row">${expenseRows}
+    <tr><td><strong>Total</strong></td><td style="text-align:right;font-weight:700;">-${fmt(totalExpenses)}</td></tr>
+  </table>
+  ` : ""}
 
   <div class="divider"></div>
 
   <div class="section-title">Cash Drawer</div>
   <table class="summary-row">
-    <tr><td>Opening Cash</td><td style="text-align:right;font-weight:600;">${fmt(report.openingCash)}</td></tr>
+    <tr><td>Opening Cash</td><td style="text-align:right;font-weight:600;">${fmt(report.openingCash ?? 0)}</td></tr>
+    ${totalExpenses > 0 ? `<tr><td>Less Expenses</td><td style="text-align:right;font-weight:600;">-${fmt(totalExpenses)}</td></tr>` : ""}
+    <tr><td>Expected Cash</td><td style="text-align:right;font-weight:600;">${fmt(expectedCash)}</td></tr>
     <tr><td>Closing Cash</td><td style="text-align:right;font-weight:600;">${fmt(report.closingCash)}</td></tr>
-    <tr><td>Expected Cash</td><td style="text-align:right;font-weight:600;">${fmt(report.totalSales - report.totalRefunds)}</td></tr>
     <tr><td>Difference (${diffLabel})</td><td style="text-align:right;font-weight:700;color:#000;">${fmt(Math.abs(cashDiff))}</td></tr>
   </table>
 

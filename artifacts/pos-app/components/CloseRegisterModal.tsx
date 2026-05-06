@@ -17,7 +17,7 @@ import * as Haptics from "expo-haptics";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
 import { generateZReportHTML } from "@/lib/receiptTemplate";
-import type { BusinessSettings, Sale, SaleItem } from "@/types";
+import type { BusinessSettings, Expense, Sale, SaleItem } from "@/types";
 import { formatCurrency } from "@/types";
 
 function getStartOfDay(date: Date): number {
@@ -44,10 +44,11 @@ function Row({ label, value, color, bold }: { label: string; value: string; colo
 
 export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
   const colors = useColors();
-  const { loadSalesWithItemsByDateRange, saveZReport, loadBusinessSettings, saveBusinessSettings } = useDatabase();
+  const { loadSalesWithItemsByDateRange, saveZReport, loadBusinessSettings, saveBusinessSettings, loadExpenses } = useDatabase();
 
   const [sales, setSales] = useState<Sale[]>([]);
   const [items, setItems] = useState<SaleItem[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(false);
   const [closingCash, setClosingCash] = useState("");
   const [isClosing, setIsClosing] = useState(false);
@@ -67,17 +68,22 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
     setLoading(true);
     try {
       const business = await loadBusinessSettings();
-      const sessionStart = business.lastClosedAt ?? getStartOfDay(today);
+      // Open-Register flow uses `openedAt` as the session start. Falls back to
+      // legacy `lastClosedAt` (pre-feature) and finally start-of-day so older
+      // installs still produce a sensible Z-Report.
+      const sessionStart = business.openedAt ?? business.lastClosedAt ?? getStartOfDay(today);
       setLastClosedAt(sessionStart);
       const result = await loadSalesWithItemsByDateRange(sessionStart, getEndOfDay(today));
       setSales(result.sales);
       setItems(result.items);
+      const exps = await loadExpenses(sessionStart, getEndOfDay(today));
+      setExpenses(exps);
     } catch {
-      setSales([]); setItems([]);
+      setSales([]); setItems([]); setExpenses([]);
     } finally {
       setLoading(false);
     }
-  }, [loadSalesWithItemsByDateRange, loadBusinessSettings]);
+  }, [loadSalesWithItemsByDateRange, loadBusinessSettings, loadExpenses]);
 
   useEffect(() => {
     if (visible) {
@@ -130,7 +136,12 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
     };
   }, [sales, items]);
 
-  const cashExpected = stats.paymentBreakdown.find((p) => p.method === "Cash")?.amount ?? 0;
+  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
+  const cashSales = stats.paymentBreakdown.find((p) => p.method === "Cash")?.amount ?? 0;
+  // Expected cash in drawer = opening float + cash sales − cash expenses.
+  // Mirrors the formula used in the Z-Report HTML so the modal preview and
+  // printed report stay in lock-step.
+  const cashExpected = cashSales - totalExpenses;
   const cashEntered = parseFloat(closingCash) || 0;
   const variance = cashEntered - cashExpected;
   const hasInput = closingCash.trim() !== "";
@@ -205,11 +216,14 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
       const cashVal = parseFloat(closingCash) || 0;
       const nowMs = Date.now();
 
+      const business = await loadBusinessSettings();
+      const openingFloat = business.openingFloat ?? 0;
+
       const report = {
         date: todayStr,
         openedAt: lastClosedAt || getStartOfDay(today),
         closedAt: nowMs,
-        openingCash: 0,
+        openingCash: openingFloat,
         closingCash: cashVal,
         totalSales: stats.revenue,
         totalRefunds: stats.refunds,
@@ -221,12 +235,25 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
         paymentBreakdown: stats.paymentBreakdown.map((p) => ({ method: p.method, amount: p.amount })),
         categorySales: [],
         staffSales: stats.staffSales.map((sv) => ({ staffName: sv.name, amount: sv.amount, count: sv.count })),
+        totalExpenses,
+        expenses: expenses.map((e) => ({
+          id: e.id, amount: e.amount, note: e.note, staffName: e.staffName, createdAt: e.createdAt,
+        })),
       };
 
       await saveZReport(report);
 
-      const business = await loadBusinessSettings();
-      const updatedBusiness = { ...business, lastClosedAt: nowMs };
+      // Mark register CLOSED, persist the cash count for the next open-register
+      // pre-fill, and clear the per-session opening float so a stale value
+      // doesn't carry into tomorrow.
+      const updatedBusiness: BusinessSettings = {
+        ...business,
+        lastClosedAt: nowMs,
+        registerOpen: false,
+        lastClosingCash: cashVal,
+        openingFloat: 0,
+        openedAt: undefined,
+      };
       await saveBusinessSettings(updatedBusiness);
 
       const html = generateZReportHTML(report, updatedBusiness);
@@ -385,8 +412,28 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
                     borderRadius: colors.radius,
                   }]}
                 />
+                {totalExpenses > 0 && (
+                  <View style={[s.box, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}>
+                    <Text style={[s.boxTitle, { color: colors.foreground }]}>Cash-Out Expenses</Text>
+                    {expenses.map((e) => (
+                      <Row
+                        key={e.id}
+                        label={e.note || "Expense"}
+                        value={`-${formatCurrency(e.amount)}`}
+                        color={colors.destructive}
+                      />
+                    ))}
+                    <View style={[s.divider, { backgroundColor: colors.border }]} />
+                    <Row label="Total Expenses" value={`-${formatCurrency(totalExpenses)}`} color={colors.destructive} bold />
+                  </View>
+                )}
+
                 <View style={[s.box, { backgroundColor: colors.secondary, borderRadius: colors.radius, marginBottom: 10 }]}>
-                  <Row label="Cash Sales (Expected)" value={formatCurrency(cashExpected)} color={colors.foreground} />
+                  <Row label="Cash Sales" value={formatCurrency(cashSales)} color={colors.foreground} />
+                  {totalExpenses > 0 && (
+                    <Row label="− Cash-Out" value={`-${formatCurrency(totalExpenses)}`} color={colors.destructive} />
+                  )}
+                  <Row label="Expected Drawer Cash" value={formatCurrency(cashExpected)} color={colors.foreground} bold />
                   {hasInput && (
                     <Row
                       label={`Variance ${variance > 0 ? "(Over)" : variance < 0 ? "(Short)" : "(Exact)"}`}

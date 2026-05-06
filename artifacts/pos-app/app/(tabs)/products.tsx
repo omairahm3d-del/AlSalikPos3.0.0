@@ -8,6 +8,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -58,6 +59,12 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
   const [selectedTaxGroupId, setSelectedTaxGroupId] = useState<string | undefined>(undefined);
   const [imageUri, setImageUri] = useState<string | undefined>(undefined);
   const [selectedPrinterId, setSelectedPrinterId] = useState<string | undefined>(undefined);
+  // Per-product feature flags. `priceChangeAllowed` exposes a "$" edit
+  // button on the cart row that opens a price-override prompt scoped to
+  // that line. `vatInclusive` flips the per-line VAT math from on-top
+  // (default) to back-calculated from the displayed price.
+  const [priceChangeAllowed, setPriceChangeAllowed] = useState(false);
+  const [vatInclusive, setVatInclusive] = useState(false);
 
   const [printerConfigs, setPrinterConfigs] = useState<PrinterConfig[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
@@ -127,6 +134,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     setSelectedColor(PRODUCT_COLORS[0]); setBarcode(""); setStockQty("999");
     setLowStockThreshold("10"); setSelectedTaxGroupId(undefined); setImageUri(undefined);
     setSelectedPrinterId(undefined);
+    setPriceChangeAllowed(false); setVatInclusive(false);
     setRecipeItems([]); setRecipeIngId(""); setRecipeIngQty("");
     setModalVisible(true);
   };
@@ -139,6 +147,8 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     setLowStockThreshold(String(product.lowStockThreshold));
     setSelectedTaxGroupId(product.taxGroupId); setImageUri(product.imageUri);
     setSelectedPrinterId(product.printerId);
+    setPriceChangeAllowed(!!product.priceChangeAllowed);
+    setVatInclusive(!!product.vatInclusive);
     const items = await loadRecipeIngredients(product.id);
     setRecipeItems(items.map((ri) => ({ ingredientId: ri.ingredientId, ingredientName: ri.ingredientName ?? "", quantity: ri.quantity })));
     setRecipeIngId(""); setRecipeIngQty("");
@@ -174,6 +184,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
         colorHex: selectedColor, barcode: barcodeVal, stockQuantity: stock,
         lowStockThreshold: threshold, taxGroupId: selectedTaxGroupId, imageUri,
         printerId: selectedPrinterId,
+        priceChangeAllowed, vatInclusive,
       });
       productId = editingProduct.id;
     } else {
@@ -182,6 +193,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
         colorHex: selectedColor, barcode: barcodeVal, stockQuantity: stock,
         lowStockThreshold: threshold, taxGroupId: selectedTaxGroupId, imageUri,
         printerId: selectedPrinterId,
+        priceChangeAllowed, vatInclusive,
       });
       productId = created.id;
     }
@@ -372,6 +384,21 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
             <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Description (optional)</Text>
             <TextInput value={description} onChangeText={setDescription} placeholder="Short description" placeholderTextColor={colors.mutedForeground} multiline numberOfLines={2} style={[styles.input, styles.textArea, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]} />
 
+            <View style={[styles.toggleRow, { borderColor: colors.border, borderRadius: colors.radius }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.toggleLabel, { color: colors.foreground }]}>Allow price change at sale</Text>
+                <Text style={[styles.toggleHint, { color: colors.mutedForeground }]}>Cashier can edit this item's price when added to cart.</Text>
+              </View>
+              <Switch value={priceChangeAllowed} onValueChange={setPriceChangeAllowed} />
+            </View>
+            <View style={[styles.toggleRow, { borderColor: colors.border, borderRadius: colors.radius }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.toggleLabel, { color: colors.foreground }]}>VAT inclusive price</Text>
+                <Text style={[styles.toggleHint, { color: colors.mutedForeground }]}>Treat the entered price as gross (includes VAT). Default: VAT is added on top.</Text>
+              </View>
+              <Switch value={vatInclusive} onValueChange={setVatInclusive} />
+            </View>
+
             <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Product Image</Text>
             <View style={styles.imagePickerRow}>
               <TouchableOpacity onPress={pickImage} style={[styles.imagePickerBtn, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius }]}>
@@ -525,6 +552,9 @@ const styles = StyleSheet.create({
   fieldLabel: { fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8, marginTop: 20 },
   input: { paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, borderWidth: 1 },
   textArea: { minHeight: 70, paddingTop: 12, textAlignVertical: "top" },
+  toggleRow: { flexDirection: "row", alignItems: "center", padding: 12, marginTop: 16, borderWidth: 1, gap: 12 },
+  toggleLabel: { fontSize: 14, fontWeight: "600" },
+  toggleHint: { fontSize: 11, marginTop: 2 },
   chips: { flexGrow: 0 },
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, marginRight: 8, flexDirection: "row", alignItems: "center" },
   row: { flexDirection: "row", gap: 12 },

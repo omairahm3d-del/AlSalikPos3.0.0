@@ -7,6 +7,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -39,6 +40,7 @@ export function BusinessSettingsModal({ visible, onClose }: Props) {
   const [loyaltyPointsPerAed, setLoyaltyPointsPerAed] = useState("1");
   const [loyaltyRedemptionRate, setLoyaltyRedemptionRate] = useState("0.01");
   const [keyboardMode, setKeyboardMode] = useState<"off" | "builtin" | "windows-osk">("off");
+  const [vatEnabled, setVatEnabled] = useState(true);
   const [existingSettings, setExistingSettings] = useState<BusinessSettings | null>(null);
 
   const load = useCallback(async () => {
@@ -53,20 +55,21 @@ export function BusinessSettingsModal({ visible, onClose }: Props) {
     setLoyaltyPointsPerAed(String(s.loyaltyPointsPerAed ?? 1));
     setLoyaltyRedemptionRate(String(s.loyaltyRedemptionRate ?? 0.01));
     setKeyboardMode((s.keyboardMode as any) ?? "off");
+    setVatEnabled(s.vatEnabled !== false);
   }, [loadBusinessSettings]);
 
   useEffect(() => { if (visible) load(); }, [visible, load]);
 
   const handleSave = async () => {
     const trimmedTrn = trn.trim();
-    if (trimmedTrn && !/^\d{15}$/.test(trimmedTrn)) {
+    if (vatEnabled && trimmedTrn && !/^\d{15}$/.test(trimmedTrn)) {
       Alert.alert("Invalid TRN", "UAE Tax Registration Number must be exactly 15 digits.");
       return;
     }
     const settings: BusinessSettings = {
       ...existingSettings,
       businessName: businessName.trim(),
-      trn: trimmedTrn,
+      trn: vatEnabled ? trimmedTrn : "",
       address: address.trim(),
       phone: phone.trim(),
       email: email.trim(),
@@ -74,6 +77,7 @@ export function BusinessSettingsModal({ visible, onClose }: Props) {
       loyaltyPointsPerAed: parseFloat(loyaltyPointsPerAed) || 1,
       loyaltyRedemptionRate: parseFloat(loyaltyRedemptionRate) || 0.01,
       keyboardMode,
+      vatEnabled,
     };
     await saveBusinessSettings(settings);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -172,7 +176,18 @@ export function BusinessSettingsModal({ visible, onClose }: Props) {
           </View>
 
           {renderField("Business Name", businessName, setBusinessName, "e.g. Al Baraka Cafe LLC")}
-          {renderField("TRN (Tax Registration Number)", trn, setTrn, "e.g. 100123456700003", "15-digit UAE Tax Registration Number issued by FTA")}
+
+          <View style={[styles.vatToggleRow, { borderColor: colors.border, borderRadius: colors.radius }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.vatToggleLabel, { color: colors.foreground }]}>Enable VAT</Text>
+              <Text style={[styles.hint, { color: colors.mutedForeground, marginTop: 4 }]}>
+                When off, sales record zero VAT, the TRN field is disabled, and receipts hide the TRN line and "SIMPLIFIED TAX INVOICE" header.
+              </Text>
+            </View>
+            <Switch value={vatEnabled} onValueChange={setVatEnabled} />
+          </View>
+
+          {vatEnabled && renderField("TRN (Tax Registration Number)", trn, setTrn, "e.g. 100123456700003", "15-digit UAE Tax Registration Number issued by FTA")}
           {renderField("Address", address, setAddress, "e.g. Shop 5, Al Wahda Mall, Abu Dhabi")}
           {renderField("Phone", phone, setPhone, "e.g. +971 2 123 4567", undefined, "phone-pad")}
           {renderField("Email", email, setEmail, "e.g. info@albaraka.ae", undefined, "email-address")}
@@ -245,4 +260,6 @@ const styles = StyleSheet.create({
   logoBtnText: { fontSize: 13, fontWeight: "600" },
   logoPlaceholder: { alignItems: "center", justifyContent: "center", paddingVertical: 24, borderWidth: 1, borderStyle: "dashed", gap: 6 },
   logoPlaceholderText: { fontSize: 13 },
+  vatToggleRow: { flexDirection: "row", alignItems: "center", padding: 14, marginTop: 16, borderWidth: 1, gap: 12 },
+  vatToggleLabel: { fontSize: 14, fontWeight: "600" },
 });

@@ -2,7 +2,7 @@ import React, { useCallback } from "react";
 import { useSQLiteContext } from "expo-sqlite";
 import type {
   BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment, Customer,
-  HeldOrder, HeldOrderItem, Ingredient, PosTable, Product,
+  Expense, HeldOrder, HeldOrderItem, Ingredient, PosTable, Product,
   RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
 } from "@/types";
@@ -23,6 +23,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       barcode: r.barcode ?? undefined, stockQuantity: r.stock_quantity ?? 999,
       taxGroupId: r.tax_group_id ?? undefined, lowStockThreshold: r.low_stock_threshold ?? 10,
       imageUri: r.image_uri ?? undefined, printerId: r.printer_id ?? undefined,
+      priceChangeAllowed: r.price_change_allowed === 1,
+      vatInclusive: r.vat_inclusive === 1,
       updatedAt: r.updated_at ?? undefined,
     }));
   }, [db]);
@@ -35,8 +37,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     // misses a creation that survived the local commit.
     await db.withExclusiveTransactionAsync(async (tx) => {
       await tx.runAsync(
-        "INSERT INTO products (id, name, category, price, description, color_hex, barcode, stock_quantity, tax_group_id, low_stock_threshold, image_uri, printer_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [id, product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, updatedAt]
+        "INSERT INTO products (id, name, category, price, description, color_hex, barcode, stock_quantity, tax_group_id, low_stock_threshold, image_uri, printer_id, price_change_allowed, vat_inclusive, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [id, product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, product.priceChangeAllowed ? 1 : 0, product.vatInclusive ? 1 : 0, updatedAt]
       );
       await enqueueCatalogTx(tx, "product", id, created, false, updatedAt);
     });
@@ -48,8 +50,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     const next: Product = { ...product, updatedAt };
     await db.withExclusiveTransactionAsync(async (tx) => {
       await tx.runAsync(
-        "UPDATE products SET name=?, category=?, price=?, description=?, color_hex=?, barcode=?, stock_quantity=?, tax_group_id=?, low_stock_threshold=?, image_uri=?, printer_id=?, updated_at=? WHERE id=?",
-        [product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, updatedAt, product.id]
+        "UPDATE products SET name=?, category=?, price=?, description=?, color_hex=?, barcode=?, stock_quantity=?, tax_group_id=?, low_stock_threshold=?, image_uri=?, printer_id=?, price_change_allowed=?, vat_inclusive=?, updated_at=? WHERE id=?",
+        [product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, product.priceChangeAllowed ? 1 : 0, product.vatInclusive ? 1 : 0, updatedAt, product.id]
       );
       await enqueueCatalogTx(tx, "product", product.id, next, false, updatedAt);
     });
@@ -74,23 +76,21 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
 
     if (paymentMethod === "Credit" && !customerId) throw new Error("Credit sales require a customer");
 
-    let subtotal = 0;
-    for (const item of items) {
-      const lineBase = item.product.price * item.quantity;
-      const itemDisc = item.discountAmount ?? 0;
-      subtotal += lineBase - itemDisc;
-    }
+    // Per-line totals respect the per-product `vatInclusive` flag and any
+    // `vatEnabled=false` business setting (taxRate already 0 in that case).
+    // We compute net + vat per line first, then apply the order-level
+    // discount as a uniform ratio to each line so VAT scales with it.
+    const { computeLineNetVat } = await import("./CartContext");
+    const lineCalcs = items.map(computeLineNetVat);
+    let netSum = 0;
+    let vatSum = 0;
+    let grossSum = 0;
+    for (const c of lineCalcs) { netSum += c.net; vatSum += c.vat; grossSum += c.gross; }
     const orderDiscAmt = orderDiscount ?? 0;
-    const rawSubtotal = subtotal;
-    subtotal = subtotal - orderDiscAmt;
-    if (subtotal < 0) subtotal = 0;
-    let vatAmount = 0;
-    const discountRatio = rawSubtotal > 0 ? subtotal / rawSubtotal : 0;
-    for (const item of items) {
-      const lineAfterDisc = item.product.price * item.quantity - (item.discountAmount ?? 0);
-      const rate = item.taxRate ?? VAT_RATE;
-      vatAmount += Math.max(0, lineAfterDisc) * rate * discountRatio;
-    }
+    const grossAfterOrderDisc = Math.max(0, grossSum - orderDiscAmt);
+    const ratio = grossSum > 0 ? grossAfterOrderDisc / grossSum : 0;
+    const subtotal = netSum * ratio;
+    const vatAmount = vatSum * ratio;
     const total = subtotal + vatAmount;
     const saleId = generateId();
     const createdAt = Date.now();
@@ -830,8 +830,38 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     "products", "categories", "sales", "sale_items", "settings", "customers",
     "credit_payments", "staff", "pos_tables", "tax_groups", "split_payments",
     "z_reports", "riders", "held_orders", "held_order_items", "ingredients",
-    "recipe_ingredients", "invoice_counter",
+    "recipe_ingredients", "invoice_counter", "expenses",
   ];
+
+  const loadExpenses = useCallback(async (fromMs?: number, toMs?: number): Promise<Expense[]> => {
+    let sql = "SELECT * FROM expenses";
+    const args: any[] = [];
+    if (fromMs != null && toMs != null) {
+      sql += " WHERE created_at>=? AND created_at<?";
+      args.push(fromMs, toMs);
+    }
+    sql += " ORDER BY created_at DESC";
+    const rows = await db.getAllAsync<any>(sql, args);
+    return rows.map((r: any) => ({
+      id: r.id, amount: r.amount, note: r.note ?? "",
+      staffId: r.staff_id ?? undefined, staffName: r.staff_name ?? undefined,
+      createdAt: r.created_at,
+    }));
+  }, [db]);
+
+  const createExpense = useCallback(async (expense: Omit<Expense, "id" | "createdAt"> & { createdAt?: number }): Promise<Expense> => {
+    const id = generateId();
+    const createdAt = expense.createdAt ?? Date.now();
+    await db.runAsync(
+      "INSERT INTO expenses (id, amount, note, staff_id, staff_name, created_at) VALUES (?,?,?,?,?,?)",
+      [id, expense.amount, expense.note ?? "", expense.staffId ?? null, expense.staffName ?? null, createdAt]
+    );
+    return { id, amount: expense.amount, note: expense.note ?? "", staffId: expense.staffId, staffName: expense.staffName, createdAt };
+  }, [db]);
+
+  const deleteExpense = useCallback(async (id: string): Promise<void> => {
+    await db.runAsync("DELETE FROM expenses WHERE id=?", [id]);
+  }, [db]);
 
   const exportData = useCallback(async (): Promise<BackupData> => {
     const tables: Record<string, unknown[]> = {};
@@ -928,6 +958,9 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       }
       if (opts.resetInvoiceCounter || opts.sales) {
         await db.runAsync("UPDATE invoice_counter SET next_value=1 WHERE id=1");
+      }
+      if (opts.expenses) {
+        await db.runAsync("DELETE FROM expenses");
       }
     });
   }, [db]);
