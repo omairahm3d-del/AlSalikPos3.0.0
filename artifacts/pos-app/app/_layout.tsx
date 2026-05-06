@@ -8,7 +8,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -16,7 +16,9 @@ import { CartProvider } from "@/context/CartContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { DatabaseProvider } from "@/context/DatabaseProvider";
 import { StaffProvider, useStaff } from "@/context/StaffContext";
+import { LicenseProvider, useLicense } from "@/context/LicenseContext";
 import { LockScreen } from "@/components/LockScreen";
+import { ActivationScreen } from "@/components/ActivationScreen";
 import { VirtualKeyboard } from "@/components/VirtualKeyboard";
 
 SplashScreen.preventAutoHideAsync();
@@ -38,6 +40,27 @@ function AppContent() {
       <VirtualKeyboard />
     </>
   );
+}
+
+/**
+ * License gate. Until the device has a valid (non-expired) JWT issued by the
+ * SaaS backend, nothing else mounts — no DB, no staff, no tabs. Once licensed,
+ * we re-validate once on mount in the background to catch revocations.
+ *
+ * The refresh runs at most once per app launch so a successful refresh
+ * (which mints a fresh JWT) cannot retrigger itself in a loop.
+ */
+function LicenseGate({ children }: { children: React.ReactNode }) {
+  const { ready, session, refresh } = useLicense();
+  const refreshedOnceRef = useRef(false);
+  useEffect(() => {
+    if (!ready || !session || refreshedOnceRef.current) return;
+    refreshedOnceRef.current = true;
+    refresh().catch(() => {});
+  }, [ready, session, refresh]);
+  if (!ready) return null;
+  if (!session) return <ActivationScreen />;
+  return <>{children}</>;
 }
 
 export default function RootLayout() {
@@ -62,13 +85,17 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
             <KeyboardProvider>
-              <DatabaseProvider>
-                <CartProvider>
-                  <StaffProvider>
-                    <AppContent />
-                  </StaffProvider>
-                </CartProvider>
-              </DatabaseProvider>
+              <LicenseProvider>
+                <LicenseGate>
+                  <DatabaseProvider>
+                    <CartProvider>
+                      <StaffProvider>
+                        <AppContent />
+                      </StaffProvider>
+                    </CartProvider>
+                  </DatabaseProvider>
+                </LicenseGate>
+              </LicenseProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>
         </QueryClientProvider>

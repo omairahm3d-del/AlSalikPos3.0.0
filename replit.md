@@ -37,8 +37,11 @@ A mobile-first Point of Sale (POS) system for the UAE market, offering comprehen
 -   `lib/saas-db/`: Multi-tenant Postgres schema for the cloud SaaS backend (companies, licenses, devices). Uses `SAAS_DATABASE_URL` — separate from Replit's `DATABASE_URL`.
 -   `artifacts/pos-app/`: Mobile and web POS application (Expo/React Native).
     -   `app/(tabs)/`: Main application tabs and screens.
-    -   `components/`: Reusable UI components.
-    -   `lib/`: Utility functions and helper modules.
+    -   `app/_layout.tsx`: Provider tree. `LicenseProvider` + `LicenseGate` wrap everything; nothing else mounts until the device has a valid SaaS JWT.
+    -   `components/`: Reusable UI components (incl. `ActivationScreen.tsx`, `LockScreen.tsx`).
+    -   `context/LicenseContext.tsx`: Holds `{session, activate, deactivate, refresh}`; ops are sequenced via `opSeq` to ignore stale results.
+    -   `lib/saasApi.ts`: `getApiBase()`, `validateLicense()`, `authedFetch()` — single place that talks to the SaaS backend.
+    -   `lib/saasStorage.ts`: AsyncStorage-backed session + single-flight `getOrCreateDeviceUid()`.
     -   `assets/images/icon.png`: Source for application icon.
 -   `desktop-installer/`: Electron wrapper and NSIS installer configuration.
     -   `main.js`: Electron main process.
@@ -54,6 +57,8 @@ A mobile-first Point of Sale (POS) system for the UAE market, offering comprehen
 ## Architecture decisions
 
 -   **Multi-tenant SaaS via license keys**: Every install must call `POST /api/license/validate` with `{licenseKey, deviceUid}` to receive a device JWT. No public signup; the owner issues licenses via admin endpoints (`x-admin-api-key` header). License has `maxDevices` enforced at validation; idempotent re-validation for the same `(licenseId, deviceUid)`.
+-   **License gate above all providers**: The Expo client mounts `LicenseProvider`/`LicenseGate` outside `DatabaseProvider`, so the local DB never opens for an unactivated install. Session is restored from AsyncStorage on launch, refreshed once in the background, and only dropped on hard server states (`license_revoked`, `license_expired`, `license_not_found`, `company_suspended`) — network errors keep the POS working offline until the JWT itself expires. `deviceUid` is preserved across `deactivate()` so re-activation reuses the same license slot.
+-   **API base resolution (Expo)**: `EXPO_PUBLIC_API_BASE` (build-time override, used by the desktop installer) → native fallback `https://EXPO_PUBLIC_DOMAIN` → web fallback `""` (relative; same-origin proxy on Replit).
 -   **Two databases on purpose**: `lib/db` (Replit DATABASE_URL) is the legacy single-tenant DB and is left untouched. `lib/saas-db` (SAAS_DATABASE_URL) is the cloud multi-tenant DB. They never share a connection or table.
 -   **Layered API**: Routes only wire URLs; controllers only parse/respond; services hold business rules; repositories own all Drizzle queries. Centralized `errorHandler` translates `HttpError` and `ZodError` into JSON.
 -   **Monorepo for Cohesion**: Utilizes pnpm workspaces to manage shared dependencies and facilitate development across API, POS app, and desktop installer.
