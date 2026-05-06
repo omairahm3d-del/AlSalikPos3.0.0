@@ -11,6 +11,13 @@ export interface Product {
   lowStockThreshold: number;
   imageUri?: string;
   printerId?: string;
+  /**
+   * Wall-clock ms epoch of the last edit. Used for last-write-wins
+   * conflict resolution when syncing the catalog with the cloud. Optional
+   * for back-compat with seed data; absent / 0 is treated as "older than
+   * any real edit".
+   */
+  updatedAt?: number;
 }
 
 export interface PrinterConfig {
@@ -26,6 +33,8 @@ export interface Category {
   colorHex: string;
   imageUri?: string;
   sortOrder: number;
+  /** See Product.updatedAt — same LWW semantics. */
+  updatedAt?: number;
 }
 
 export interface CartItem {

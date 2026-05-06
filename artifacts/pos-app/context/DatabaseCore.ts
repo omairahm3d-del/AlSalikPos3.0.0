@@ -23,6 +23,55 @@ export interface SyncResultUpdate {
   error?: string;
 }
 
+/**
+ * Phase 3c: catalog outbox. Stores latest snapshot per entity (products and
+ * categories), so re-edits collapse into a single pending push instead of
+ * piling up. Payload + deleted flag are captured at enqueue time so deletes
+ * survive the source row going away.
+ */
+export type CatalogEntityType = "product" | "category";
+
+export interface CatalogOutboxItem {
+  outboxId: string;
+  entityType: CatalogEntityType;
+  entityId: string;
+  payload: Record<string, unknown>;
+  deleted: boolean;
+  /** Wall-clock ms epoch used by the server for last-write-wins. */
+  updatedAt: number;
+  attemptCount: number;
+  lastAttemptAt: number | null;
+}
+
+export interface CatalogResultUpdate {
+  outboxId: string;
+  /**
+   * The `updatedAt` of the outbox row that was actually pushed. The
+   * markCatalogResults implementations only delete a row when this still
+   * matches the current outbox row's updated_at — protecting against the
+   * ACK race where the user edits the same entity again while the previous
+   * push is in flight (the upserted row keeps its `id` but bumps
+   * `updated_at`, so a stale ok-verdict for the older payload would
+   * otherwise drop the newer pending edit).
+   */
+  attemptedUpdatedAt: number;
+  ok: boolean;
+  error?: string;
+}
+
+export interface CatalogApplyEntry {
+  id: string;
+  payload: unknown;
+  /** Remote wall-clock ms epoch. Local row only overwritten if newer. */
+  updatedAt: number;
+  deleted: boolean;
+}
+
+export interface CatalogApplyInput {
+  products?: CatalogApplyEntry[];
+  categories?: CatalogApplyEntry[];
+}
+
 export interface SaleOptions {
   paymentMethod: string;
   orderType?: OrderType;
@@ -127,6 +176,21 @@ export interface DatabaseContextValue {
   markSyncResults: (results: SyncResultUpdate[]) => Promise<void>;
   /** How many pending items remain (for status UI). */
   countPendingSync: (entityType: SyncEntityType) => Promise<number>;
+
+  // ---- Phase 3c: catalog outbox + remote apply ----
+  /** Load up to `limit` pending catalog snapshots (caller filters backoff). */
+  loadCatalogBatch: (limit: number) => Promise<CatalogOutboxItem[]>;
+  /** Apply ok/failed verdicts to outbox rows; ok deletes them. */
+  markCatalogResults: (results: CatalogResultUpdate[]) => Promise<void>;
+  /** How many catalog pushes are pending (for status UI). */
+  countPendingCatalog: () => Promise<number>;
+  /**
+   * Apply remote catalog rows pulled from the cloud. Skips entries where
+   * the local row is newer (LWW). Tombstones delete the local row when
+   * older than the tombstone. Does NOT enqueue — these writes originate
+   * from the cloud so they shouldn't bounce back.
+   */
+  applyRemoteCatalog: (input: CatalogApplyInput) => Promise<void>;
 }
 
 export const DatabaseContext = createContext<DatabaseContextValue | null>(null);

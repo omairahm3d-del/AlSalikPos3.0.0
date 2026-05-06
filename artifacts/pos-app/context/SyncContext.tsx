@@ -10,6 +10,7 @@ import { AppState } from "react-native";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useLicense } from "@/context/LicenseContext";
 import { syncOnce } from "@/lib/syncEngine";
+import { catalogSyncOnce } from "@/lib/catalogSyncEngine";
 import {
   getOwningCompanyId,
   setOwningCompanyId,
@@ -21,7 +22,10 @@ const IDLE_INTERVAL_MS = 30_000;
 const ACTIVE_INTERVAL_MS = 5_000;
 
 interface SyncContextValue {
+  /** Pending sales pushes. */
   pendingCount: number;
+  /** Pending catalog (product/category) pushes. */
+  pendingCatalogCount: number;
   isSyncing: boolean;
   lastSyncedAt: number | null;
   lastError: string | null;
@@ -36,6 +40,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const { session, refresh } = useLicense();
 
   const [pendingCount, setPendingCount] = useState(0);
+  const [pendingCatalogCount, setPendingCatalogCount] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
@@ -56,8 +61,12 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   const refreshCount = useCallback(async () => {
     try {
-      const c = await db.countPendingSync("sale");
-      setPendingCount(c);
+      const [sales, catalog] = await Promise.all([
+        db.countPendingSync("sale"),
+        db.countPendingCatalog(),
+      ]);
+      setPendingCount(sales);
+      setPendingCatalogCount(catalog);
     } catch {
       // ignore — DB may be transitioning
     }
@@ -80,27 +89,50 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     inFlightRef.current = true;
     setIsSyncing(true);
     try {
-      const result = await syncOnce(db, token);
+      // Sales first (revenue data has higher business priority), then catalog.
+      // Both share the same tenant guard so a session change between them
+      // simply aborts before the second call lands.
+      const salesResult = await syncOnce(db, token);
       // Re-check tenant in case session changed during the await.
       if (verifiedCompanyIdRef.current !== sessionCompanyIdRef.current) {
         return null;
       }
-      if (result.unauthorized) {
+      if (salesResult.unauthorized) {
         setLastError("authorization expired");
         // Fire-and-forget; the license layer either re-mints or drops session.
         refresh().catch(() => {});
-      } else if (result.error) {
-        setLastError(result.error);
-      } else if (result.attempted > 0) {
+        await refreshCount();
+        // Don't run catalog with a known-bad token; come back after refresh.
+        return ACTIVE_INTERVAL_MS;
+      }
+
+      const catalogResult = await catalogSyncOnce(db, token);
+      if (verifiedCompanyIdRef.current !== sessionCompanyIdRef.current) {
+        return null;
+      }
+      if (catalogResult.unauthorized) {
+        setLastError("authorization expired");
+        refresh().catch(() => {});
+        await refreshCount();
+        return ACTIVE_INTERVAL_MS;
+      }
+
+      const error = salesResult.error ?? catalogResult.error ?? null;
+      if (error) {
+        setLastError(error);
+      } else if (salesResult.attempted > 0 || catalogResult.attempted > 0 || catalogResult.succeeded > 0) {
+        // succeeded counts pulled rows too, so a successful pull also
+        // bumps lastSyncedAt even when we had nothing to push.
         setLastError(null);
         setLastSyncedAt(Date.now());
       }
       await refreshCount();
-      // Active cadence only when there's work that's actually past its
-      // backoff window. Otherwise idle so we're not waking up every 5s just
-      // to look at backoffed rows.
-      if (!result.hasMore) return IDLE_INTERVAL_MS;
-      return result.hadReadyItems ? ACTIVE_INTERVAL_MS : IDLE_INTERVAL_MS;
+
+      // Active cadence if either stream has more work past its backoff window.
+      const hasMore = salesResult.hasMore || catalogResult.hasMore;
+      const hadReadyItems = salesResult.hadReadyItems || catalogResult.hadReadyItems;
+      if (!hasMore) return IDLE_INTERVAL_MS;
+      return hadReadyItems ? ACTIVE_INTERVAL_MS : IDLE_INTERVAL_MS;
     } catch (e) {
       setLastError(e instanceof Error ? e.message : "sync failed");
       return IDLE_INTERVAL_MS;
@@ -211,7 +243,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <SyncContext.Provider
-      value={{ pendingCount, isSyncing, lastSyncedAt, lastError, syncNow }}
+      value={{ pendingCount, pendingCatalogCount, isSyncing, lastSyncedAt, lastError, syncNow }}
     >
       {children}
     </SyncContext.Provider>

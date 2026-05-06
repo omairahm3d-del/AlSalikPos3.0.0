@@ -213,6 +213,26 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
       ON sync_queue(entity_type, entity_id);
     CREATE INDEX IF NOT EXISTS sync_queue_status_idx
       ON sync_queue(status, enqueued_at);
+
+    -- Phase 3c: catalog outbox. Separate from sync_queue because catalog
+    -- semantics differ: each row is a snapshot (latest payload for an entity)
+    -- and re-edits OVERWRITE the existing outbox row instead of appending.
+    -- The payload + deleted flag are captured at enqueue time so deletes can
+    -- still be pushed after the source row is gone from the local table.
+    CREATE TABLE IF NOT EXISTS catalog_outbox (
+      id TEXT PRIMARY KEY,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      deleted INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL,
+      enqueued_at INTEGER NOT NULL,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      last_attempt_at INTEGER,
+      last_error TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS catalog_outbox_entity_uniq
+      ON catalog_outbox(entity_type, entity_id);
   `);
 
   const migrations: string[] = [
@@ -241,6 +261,10 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     "ALTER TABLE sales ADD COLUMN rider_id TEXT DEFAULT NULL",
     "ALTER TABLE sales ADD COLUMN rider_name TEXT DEFAULT NULL",
     "ALTER TABLE products ADD COLUMN printer_id TEXT DEFAULT NULL",
+    // Phase 3c: catalog LWW timestamp. NULL on legacy rows (treated as 0
+    // by the comparison logic so any real cloud edit wins).
+    "ALTER TABLE products ADD COLUMN updated_at INTEGER DEFAULT NULL",
+    "ALTER TABLE categories ADD COLUMN updated_at INTEGER DEFAULT NULL",
   ];
 
   for (const sql of migrations) {

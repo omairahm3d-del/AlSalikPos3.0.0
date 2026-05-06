@@ -14,6 +14,15 @@ const K_LICENSE_KEY = "saas.licenseKey";
  * the sync engine will not auto-push historical sales into the wrong tenant.
  */
 const K_OWNING_COMPANY = "saas.owningCompanyId";
+/**
+ * Pull cursor for the catalog (products + categories). ISO-8601 string of
+ * the highest `serverUpdatedAt` we've consumed. The next pull asks for
+ * everything strictly greater than this. One key per device because we
+ * enforce single-tenant ownership via K_OWNING_COMPANY — the cursor is
+ * implicitly scoped to the owner stamp and cleared whenever ownership
+ * is cleared (license swap, backup restore).
+ */
+const K_CATALOG_CURSOR = "saas.catalogCursor";
 
 export async function getOwningCompanyId(): Promise<string | null> {
   return AsyncStorage.getItem(K_OWNING_COMPANY);
@@ -24,7 +33,17 @@ export async function setOwningCompanyId(id: string): Promise<void> {
 }
 
 export async function clearOwningCompanyId(): Promise<void> {
-  await AsyncStorage.removeItem(K_OWNING_COMPANY);
+  // Cursor is meaningless without ownership — clear them together so a
+  // subsequent activation starts from `since=0` and pulls the full catalog.
+  await AsyncStorage.multiRemove([K_OWNING_COMPANY, K_CATALOG_CURSOR]);
+}
+
+export async function getCatalogCursor(): Promise<string | null> {
+  return AsyncStorage.getItem(K_CATALOG_CURSOR);
+}
+
+export async function setCatalogCursor(cursor: string): Promise<void> {
+  await AsyncStorage.setItem(K_CATALOG_CURSOR, cursor);
 }
 
 export interface StoredCompany {

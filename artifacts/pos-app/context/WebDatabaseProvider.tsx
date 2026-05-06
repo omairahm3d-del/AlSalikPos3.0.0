@@ -9,7 +9,7 @@ import type {
 import { DEFAULT_BUSINESS_SETTINGS, SEED_CATEGORIES, SEED_PRODUCTS, SEED_STAFF, SEED_TABLES, SEED_TAX_GROUPS, SEED_CUSTOMERS, VAT_RATE } from "@/types";
 import { generateId, generateInvoiceNumber } from "@/lib/database";
 import { clearOwningCompanyId } from "@/lib/saasStorage";
-import { DatabaseContext, type SaleOptions, type SyncEntityType, type SyncQueueItem, type SyncResultUpdate } from "./DatabaseCore";
+import { DatabaseContext, type CatalogApplyInput, type CatalogEntityType, type CatalogOutboxItem, type CatalogResultUpdate, type SaleOptions, type SyncEntityType, type SyncQueueItem, type SyncResultUpdate } from "./DatabaseCore";
 
 const K = {
   products: "@pos_products", sales: "@pos_sales", saleItems: "@pos_sale_items",
@@ -21,7 +21,103 @@ const K = {
   heldOrders: "@pos_held_orders", ingredients: "@pos_ingredients",
   recipeIngredients: "@pos_recipe_ingredients",
   syncQueue: "@pos_sync_queue",
+  catalogOutbox: "@pos_catalog_outbox",
 };
+
+interface WebCatalogOutboxRow {
+  id: string;
+  entityType: CatalogEntityType;
+  entityId: string;
+  payload: Record<string, unknown>;
+  deleted: boolean;
+  /** Wall-clock ms epoch — LWW key sent to server. */
+  updatedAt: number;
+  enqueuedAt: number;
+  attemptCount: number;
+  lastAttemptAt: number | null;
+  lastError: string | null;
+}
+
+/**
+ * Build the next catalog outbox state with an UPSERT semantics. Latest
+ * snapshot wins per (entity_type, id), matching the native ON CONFLICT DO
+ * UPDATE behavior. Rapid edits before a successful push collapse into one
+ * pending row instead of piling up.
+ *
+ * Returns the new outbox array; the caller is responsible for persisting
+ * it together with the entity table in a single AsyncStorage.multiSet so
+ * the two writes are crash-consistent (a tab-close between them would
+ * otherwise leave the entity changed but the outbox unaware, losing the
+ * push). Async wrapper because reading the existing queue is async.
+ */
+async function buildOutboxUpsert(
+  entityType: CatalogEntityType,
+  entityId: string,
+  payload: unknown,
+  deleted: boolean,
+  updatedAt: number,
+): Promise<WebCatalogOutboxRow[]> {
+  const queue = await getJson<WebCatalogOutboxRow[]>(K.catalogOutbox, []);
+  const idx = queue.findIndex((q) => q.entityType === entityType && q.entityId === entityId);
+  const row: WebCatalogOutboxRow = {
+    id: idx >= 0 ? queue[idx].id : generateId(),
+    entityType,
+    entityId,
+    payload: (payload && typeof payload === "object")
+      ? payload as Record<string, unknown>
+      : { id: entityId },
+    deleted,
+    updatedAt,
+    enqueuedAt: Date.now(),
+    // Reset attempts so a fresh edit starts retrying immediately rather than
+    // inheriting backoff from a stale push that the user just superseded.
+    attemptCount: 0,
+    lastAttemptAt: null,
+    lastError: null,
+  };
+  const next = queue.slice();
+  if (idx >= 0) next[idx] = row; else next.push(row);
+  return next;
+}
+
+/**
+ * Persist an entity table + outbox in one AsyncStorage call. multiSet
+ * isn't transactional across keys on every backend, but it batches the
+ * writes so the gap between them is dramatically smaller than two awaited
+ * setItem calls — close enough to crash-consistent for the JSON web path.
+ */
+async function writeEntityAndOutbox(
+  entityKey: string,
+  entityValue: unknown,
+  outbox: WebCatalogOutboxRow[],
+): Promise<void> {
+  await AsyncStorage.multiSet([
+    [entityKey, JSON.stringify(entityValue)],
+    [K.catalogOutbox, JSON.stringify(outbox)],
+  ]);
+}
+
+/**
+ * Single-writer async mutex for catalog state. AsyncStorage on web is
+ * backed by JSON blobs read-modify-written across multiple keys, so two
+ * concurrent operations (e.g. a local edit landing while applyRemoteCatalog
+ * is mid-tick) can interleave at every `await` boundary and clobber each
+ * other's snapshot. JS is single-threaded but `await` is not — we need an
+ * explicit serialization point. Native uses SQLite's withExclusiveTransaction
+ * for the same purpose.
+ *
+ * Wraps every mutation that touches @pos_products / @pos_categories /
+ * @pos_catalog_outbox: create/update/delete (per entity), applyRemoteCatalog,
+ * and markCatalogResults. Read-only paths (loadProducts, etc.) intentionally
+ * stay outside the lock so the UI never blocks waiting on a sync tick.
+ */
+let catalogMutexTail: Promise<unknown> = Promise.resolve();
+function runCatalogExclusive<T>(fn: () => Promise<T>): Promise<T> {
+  const next = catalogMutexTail.then(fn, fn);
+  // Swallow rejections on the chain so one failure doesn't poison the lock.
+  catalogMutexTail = next.catch(() => undefined);
+  return next;
+}
 
 interface WebSyncQueueRow {
   id: string;
@@ -78,27 +174,45 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const createProduct = useCallback(async (product: Omit<Product, "id">): Promise<Product> => {
-    const products = await getProducts();
-    const np: Product = { ...product, id: generateId() };
-    await setJson(K.products, [...products, np]);
-    return np;
+    return runCatalogExclusive(async () => {
+      const products = await getProducts();
+      const updatedAt = Date.now();
+      const np: Product = { ...product, id: generateId(), updatedAt };
+      const outbox = await buildOutboxUpsert("product", np.id, np, false, updatedAt);
+      await writeEntityAndOutbox(K.products, [...products, np], outbox);
+      return np;
+    });
   }, []);
 
   const updateProduct = useCallback(async (product: Product): Promise<void> => {
-    const products = await getProducts();
-    await setJson(K.products, products.map((p) => p.id === product.id ? product : p));
+    return runCatalogExclusive(async () => {
+      const products = await getProducts();
+      const updatedAt = Date.now();
+      const next: Product = { ...product, updatedAt };
+      const outbox = await buildOutboxUpsert("product", product.id, next, false, updatedAt);
+      await writeEntityAndOutbox(K.products, products.map((p) => p.id === product.id ? next : p), outbox);
+    });
   }, []);
 
   const deleteProduct = useCallback(async (id: string): Promise<void> => {
-    const products = await getProducts();
-    await setJson(K.products, products.filter((p) => p.id !== id));
+    return runCatalogExclusive(async () => {
+      const products = await getProducts();
+      const updatedAt = Date.now();
+      const outbox = await buildOutboxUpsert("product", id, { id }, true, updatedAt);
+      await writeEntityAndOutbox(K.products, products.filter((p) => p.id !== id), outbox);
+    });
   }, []);
 
   const updateStock = useCallback(async (productId: string, delta: number): Promise<void> => {
-    const products = await getProducts();
-    await setJson(K.products, products.map((p) =>
-      p.id === productId ? { ...p, stockQuantity: Math.max(0, (p.stockQuantity ?? 999) + delta) } : p
-    ));
+    // Take the catalog mutex even though stock changes don't enqueue a
+    // catalog push themselves — they still rewrite @pos_products and would
+    // otherwise race with applyRemoteCatalog/createProduct/etc.
+    return runCatalogExclusive(async () => {
+      const products = await getProducts();
+      await setJson(K.products, products.map((p) =>
+        p.id === productId ? { ...p, stockQuantity: Math.max(0, (p.stockQuantity ?? 999) + delta) } : p
+      ));
+    });
   }, []);
 
   const saveSale = useCallback(async (items: CartItem[], options: SaleOptions): Promise<Sale> => {
@@ -158,12 +272,16 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       await setJson(K.splitPayments, [...newSP, ...existSP]);
     }
 
-    const products = await getProducts();
-    await setJson(K.products, products.map((p) => {
-      const cartItem = items.find((i) => i.product.id === p.id);
-      if (cartItem) return { ...p, stockQuantity: Math.max(0, (p.stockQuantity ?? 999) - cartItem.quantity) };
-      return p;
-    }));
+    // Stock decrement on sale: serialize with catalog ops so it doesn't
+    // race with applyRemoteCatalog or a concurrent product edit.
+    await runCatalogExclusive(async () => {
+      const products = await getProducts();
+      await setJson(K.products, products.map((p) => {
+        const cartItem = items.find((i) => i.product.id === p.id);
+        if (cartItem) return { ...p, stockQuantity: Math.max(0, (p.stockQuantity ?? 999) - cartItem.quantity) };
+        return p;
+      }));
+    });
 
     if (paymentMethod === "Credit" && customerId) {
       const customers = await getJson<Customer[]>(K.customers, []);
@@ -272,12 +390,15 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     }));
     await setJson(K.saleItems, [...refundItems, ...allItems]);
 
-    const products = await getProducts();
-    await setJson(K.products, products.map((p) => {
-      const item = origItems.find((i) => i.productId === p.id);
-      if (item) return { ...p, stockQuantity: (p.stockQuantity ?? 0) + item.quantity };
-      return p;
-    }));
+    // Stock restock on refund: serialize with catalog ops to avoid races.
+    await runCatalogExclusive(async () => {
+      const products = await getProducts();
+      await setJson(K.products, products.map((p) => {
+        const item = origItems.find((i) => i.productId === p.id);
+        if (item) return { ...p, stockQuantity: (p.stockQuantity ?? 0) + item.quantity };
+        return p;
+      }));
+    });
 
     if (orig.paymentMethod === "Credit" && orig.customerId) {
       const customers = await getJson<Customer[]>(K.customers, []);
@@ -475,20 +596,33 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const createCategory = useCallback(async (category: Omit<Category, "id">): Promise<Category> => {
-    const existing = await getCategories();
-    const nc: Category = { ...category, id: generateId() };
-    await setJson(K.categories, [...existing, nc]);
-    return nc;
+    return runCatalogExclusive(async () => {
+      const existing = await getCategories();
+      const updatedAt = Date.now();
+      const nc: Category = { ...category, id: generateId(), updatedAt };
+      const outbox = await buildOutboxUpsert("category", nc.id, nc, false, updatedAt);
+      await writeEntityAndOutbox(K.categories, [...existing, nc], outbox);
+      return nc;
+    });
   }, []);
 
   const updateCategory = useCallback(async (category: Category): Promise<void> => {
-    const existing = await getCategories();
-    await setJson(K.categories, existing.map((c) => c.id === category.id ? category : c));
+    return runCatalogExclusive(async () => {
+      const existing = await getCategories();
+      const updatedAt = Date.now();
+      const next: Category = { ...category, updatedAt };
+      const outbox = await buildOutboxUpsert("category", category.id, next, false, updatedAt);
+      await writeEntityAndOutbox(K.categories, existing.map((c) => c.id === category.id ? next : c), outbox);
+    });
   }, []);
 
   const deleteCategory = useCallback(async (id: string): Promise<void> => {
-    const existing = await getCategories();
-    await setJson(K.categories, existing.filter((c) => c.id !== id));
+    return runCatalogExclusive(async () => {
+      const existing = await getCategories();
+      const updatedAt = Date.now();
+      const outbox = await buildOutboxUpsert("category", id, { id }, true, updatedAt);
+      await writeEntityAndOutbox(K.categories, existing.filter((c) => c.id !== id), outbox);
+    });
   }, []);
 
   const loadSplitPayments = useCallback(async (saleId: string): Promise<SplitPaymentEntry[]> => {
@@ -657,10 +791,12 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
         if (key) await AsyncStorage.setItem(key, typeof val === "string" ? val : JSON.stringify(val));
       }
     }
-    // Drop the queue and the tenant-ownership stamp — see DatabaseContext.tsx
-    // importData for the rationale. Restored backups are foreign data until
-    // the operator explicitly wipes and re-activates.
+    // Drop the queue, catalog outbox, and tenant-ownership stamp — see
+    // DatabaseContext.tsx importData for the rationale. Restored backups
+    // are foreign data until the operator explicitly wipes and re-activates.
+    // clearOwningCompanyId() also clears the catalog pull cursor.
     await AsyncStorage.setItem(K.syncQueue, JSON.stringify([]));
+    await AsyncStorage.setItem(K.catalogOutbox, JSON.stringify([]));
     try { await clearOwningCompanyId(); } catch {}
   }, []);
 
@@ -680,8 +816,15 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     if (opts.products) {
       await wipe(K.products);
       await wipe(K.recipeIngredients);
+      // Drop pending product pushes alongside the rows themselves.
+      const outbox = await getJson<WebCatalogOutboxRow[]>(K.catalogOutbox, []);
+      await setJson(K.catalogOutbox, outbox.filter((o) => o.entityType !== "product"));
     }
-    if (opts.categories) await wipe(K.categories);
+    if (opts.categories) {
+      await wipe(K.categories);
+      const outbox = await getJson<WebCatalogOutboxRow[]>(K.catalogOutbox, []);
+      await setJson(K.catalogOutbox, outbox.filter((o) => o.entityType !== "category"));
+    }
     if (opts.ingredients) {
       await wipe(K.ingredients);
       await wipe(K.recipeIngredients);
@@ -777,6 +920,125 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     return queue.filter((q) => q.entityType === entityType && q.status === "pending").length;
   }, []);
 
+  // ---- Phase 3c: catalog outbox + remote apply ----
+
+  const loadCatalogBatch = useCallback(async (limit: number): Promise<CatalogOutboxItem[]> => {
+    const queue = await getJson<WebCatalogOutboxRow[]>(K.catalogOutbox, []);
+    return [...queue]
+      .sort((a, b) => a.enqueuedAt - b.enqueuedAt)
+      .slice(0, limit)
+      .map((q) => ({
+        outboxId: q.id,
+        entityType: q.entityType,
+        entityId: q.entityId,
+        payload: q.payload,
+        deleted: q.deleted,
+        updatedAt: q.updatedAt,
+        attemptCount: q.attemptCount,
+        lastAttemptAt: q.lastAttemptAt,
+      }));
+  }, []);
+
+  const markCatalogResults = useCallback(async (results: CatalogResultUpdate[]): Promise<void> => {
+    if (results.length === 0) return;
+    return runCatalogExclusive(async () => {
+      const queue = await getJson<WebCatalogOutboxRow[]>(K.catalogOutbox, []);
+      const now = Date.now();
+      // Match by (id + attemptedUpdatedAt) so a row that was re-edited
+      // during the push (UPSERT keeps id, bumps updatedAt) is left alone —
+      // protects against ACK races losing newer pending edits.
+      const okKeys = new Set(
+        results.filter((r) => r.ok).map((r) => `${r.outboxId}:${r.attemptedUpdatedAt}`)
+      );
+      const failedByKey = new Map(
+        results.filter((r) => !r.ok).map((r) => [`${r.outboxId}:${r.attemptedUpdatedAt}`, r] as const)
+      );
+      const next = queue
+        .filter((q) => !okKeys.has(`${q.id}:${q.updatedAt}`))
+        .map((q) => {
+          const fail = failedByKey.get(`${q.id}:${q.updatedAt}`);
+          if (!fail) return q;
+          return {
+            ...q,
+            attemptCount: q.attemptCount + 1,
+            lastAttemptAt: now,
+            lastError: fail.error ?? null,
+          };
+        });
+      await setJson(K.catalogOutbox, next);
+    });
+  }, []);
+
+  const countPendingCatalog = useCallback(async (): Promise<number> => {
+    const queue = await getJson<WebCatalogOutboxRow[]>(K.catalogOutbox, []);
+    return queue.length;
+  }, []);
+
+  const applyRemoteCatalog = useCallback(async (input: CatalogApplyInput): Promise<void> => {
+    const incomingProducts = input.products ?? [];
+    const incomingCategories = input.categories ?? [];
+    if (incomingProducts.length === 0 && incomingCategories.length === 0) return;
+    // Take the catalog mutex for the whole apply pass so the outbox snapshot
+    // we use for the LWW skip-check is consistent with the entity tables we
+    // then read+rewrite. Without this, a local edit completing mid-pass
+    // could write a newer outbox row while we're applying stale remote rows
+    // on top of stale entity snapshots.
+    return runCatalogExclusive(async () => {
+    // Index pending outbox entries so a pulled row never clobbers a local
+    // unpushed edit — including local *deletes* where the entity table no
+    // longer has a row to compare against.
+    const outbox = await getJson<WebCatalogOutboxRow[]>(K.catalogOutbox, []);
+    const pendingUpdatedAt = new Map<string, number>();
+    for (const o of outbox) pendingUpdatedAt.set(`${o.entityType}:${o.entityId}`, o.updatedAt);
+
+    if (incomingProducts.length > 0) {
+      const local = await getProducts();
+      const byId = new Map(local.map((p) => [p.id, p] as const));
+      for (const e of incomingProducts) {
+        const pending = pendingUpdatedAt.get(`product:${e.id}`);
+        if (pending !== undefined && pending >= e.updatedAt) continue;
+        const existing = byId.get(e.id);
+        // LWW: only overwrite if the remote write is strictly newer than
+        // what we have locally. Treat a missing local updatedAt as 0 so any
+        // real cloud edit wins over seed rows.
+        const localUpdatedAt = existing?.updatedAt ?? 0;
+        if (existing && localUpdatedAt >= e.updatedAt) continue;
+        if (e.deleted) {
+          byId.delete(e.id);
+          continue;
+        }
+        // Full replace, matching native's INSERT OR REPLACE: the incoming
+        // payload IS the authoritative state. Merging with `existing` would
+        // resurrect locally-cleared fields. Cast through unknown so TS
+        // accepts a server-provided shape that may be missing optional
+        // fields — we trust the server-applied row.
+        const p = e.payload as Partial<Product>;
+        byId.set(e.id, { ...(p as unknown as Product), id: e.id, updatedAt: e.updatedAt });
+      }
+      await setJson(K.products, Array.from(byId.values()));
+    }
+
+    if (incomingCategories.length > 0) {
+      const local = await getCategories();
+      const byId = new Map(local.map((c) => [c.id, c] as const));
+      for (const e of incomingCategories) {
+        const pending = pendingUpdatedAt.get(`category:${e.id}`);
+        if (pending !== undefined && pending >= e.updatedAt) continue;
+        const existing = byId.get(e.id);
+        const localUpdatedAt = existing?.updatedAt ?? 0;
+        if (existing && localUpdatedAt >= e.updatedAt) continue;
+        if (e.deleted) {
+          byId.delete(e.id);
+          continue;
+        }
+        const c = e.payload as Partial<Category>;
+        byId.set(e.id, { ...(c as unknown as Category), id: e.id, updatedAt: e.updatedAt });
+      }
+      await setJson(K.categories, Array.from(byId.values()));
+    }
+    });
+  }, []);
+
   return (
     <DatabaseContext.Provider value={{
       loadProducts, createProduct, updateProduct, deleteProduct, updateStock,
@@ -795,6 +1057,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,
       exportData, importData, clearData,
       enqueueSync, reconcilePendingSync, loadSyncBatch, markSyncResults, countPendingSync,
+      loadCatalogBatch, markCatalogResults, countPendingCatalog, applyRemoteCatalog,
     }}>
       {children}
     </DatabaseContext.Provider>

@@ -9,7 +9,7 @@ import type {
 import { DEFAULT_BUSINESS_SETTINGS, VAT_RATE } from "@/types";
 import { generateId, generateInvoiceNumber } from "@/lib/database";
 import { clearOwningCompanyId } from "@/lib/saasStorage";
-import { DatabaseContext, type SaleOptions, type SyncEntityType, type SyncQueueItem, type SyncResultUpdate } from "./DatabaseCore";
+import { DatabaseContext, type CatalogApplyInput, type CatalogOutboxItem, type CatalogResultUpdate, type SaleOptions, type SyncEntityType, type SyncQueueItem, type SyncResultUpdate } from "./DatabaseCore";
 
 export function NativeDatabaseProvider({ children }: { children: React.ReactNode }) {
   const db = useSQLiteContext();
@@ -22,27 +22,46 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       barcode: r.barcode ?? undefined, stockQuantity: r.stock_quantity ?? 999,
       taxGroupId: r.tax_group_id ?? undefined, lowStockThreshold: r.low_stock_threshold ?? 10,
       imageUri: r.image_uri ?? undefined, printerId: r.printer_id ?? undefined,
+      updatedAt: r.updated_at ?? undefined,
     }));
   }, [db]);
 
   const createProduct = useCallback(async (product: Omit<Product, "id">): Promise<Product> => {
     const id = generateId();
-    await db.runAsync(
-      "INSERT INTO products (id, name, category, price, description, color_hex, barcode, stock_quantity, tax_group_id, low_stock_threshold, image_uri, printer_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [id, product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null]
-    );
-    return { ...product, id };
+    const updatedAt = Date.now();
+    const created: Product = { ...product, id, updatedAt };
+    // Atomic: insert + enqueue catalog push in one tx so the cloud never
+    // misses a creation that survived the local commit.
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      await tx.runAsync(
+        "INSERT INTO products (id, name, category, price, description, color_hex, barcode, stock_quantity, tax_group_id, low_stock_threshold, image_uri, printer_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [id, product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, updatedAt]
+      );
+      await enqueueCatalogTx(tx, "product", id, created, false, updatedAt);
+    });
+    return created;
   }, [db]);
 
   const updateProduct = useCallback(async (product: Product): Promise<void> => {
-    await db.runAsync(
-      "UPDATE products SET name=?, category=?, price=?, description=?, color_hex=?, barcode=?, stock_quantity=?, tax_group_id=?, low_stock_threshold=?, image_uri=?, printer_id=? WHERE id=?",
-      [product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, product.id]
-    );
+    const updatedAt = Date.now();
+    const next: Product = { ...product, updatedAt };
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      await tx.runAsync(
+        "UPDATE products SET name=?, category=?, price=?, description=?, color_hex=?, barcode=?, stock_quantity=?, tax_group_id=?, low_stock_threshold=?, image_uri=?, printer_id=?, updated_at=? WHERE id=?",
+        [product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, updatedAt, product.id]
+      );
+      await enqueueCatalogTx(tx, "product", product.id, next, false, updatedAt);
+    });
   }, [db]);
 
   const deleteProduct = useCallback(async (id: string): Promise<void> => {
-    await db.runAsync("DELETE FROM products WHERE id=?", [id]);
+    const updatedAt = Date.now();
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      await tx.runAsync("DELETE FROM products WHERE id=?", [id]);
+      // Tombstone payload only needs the id; other devices already have
+      // (or will pull) the rest. Keeping it minimal saves bandwidth.
+      await enqueueCatalogTx(tx, "product", id, { id }, true, updatedAt);
+    });
   }, [db]);
 
   const updateStock = useCallback(async (productId: string, delta: number): Promise<void> => {
@@ -465,27 +484,42 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     return rows.map((r: any) => ({
       id: r.id, name: r.name, colorHex: r.color_hex ?? "#4F8EF7",
       imageUri: r.image_uri ?? undefined, sortOrder: r.sort_order ?? 0,
+      updatedAt: r.updated_at ?? undefined,
     }));
   }, [db]);
 
   const createCategory = useCallback(async (category: Omit<Category, "id">): Promise<Category> => {
     const id = generateId();
-    await db.runAsync(
-      "INSERT INTO categories (id, name, color_hex, image_uri, sort_order) VALUES (?,?,?,?,?)",
-      [id, category.name, category.colorHex, category.imageUri ?? null, category.sortOrder]
-    );
-    return { ...category, id };
+    const updatedAt = Date.now();
+    const created: Category = { ...category, id, updatedAt };
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      await tx.runAsync(
+        "INSERT INTO categories (id, name, color_hex, image_uri, sort_order, updated_at) VALUES (?,?,?,?,?,?)",
+        [id, category.name, category.colorHex, category.imageUri ?? null, category.sortOrder, updatedAt]
+      );
+      await enqueueCatalogTx(tx, "category", id, created, false, updatedAt);
+    });
+    return created;
   }, [db]);
 
   const updateCategory = useCallback(async (category: Category): Promise<void> => {
-    await db.runAsync(
-      "UPDATE categories SET name=?, color_hex=?, image_uri=?, sort_order=? WHERE id=?",
-      [category.name, category.colorHex, category.imageUri ?? null, category.sortOrder, category.id]
-    );
+    const updatedAt = Date.now();
+    const next: Category = { ...category, updatedAt };
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      await tx.runAsync(
+        "UPDATE categories SET name=?, color_hex=?, image_uri=?, sort_order=?, updated_at=? WHERE id=?",
+        [category.name, category.colorHex, category.imageUri ?? null, category.sortOrder, updatedAt, category.id]
+      );
+      await enqueueCatalogTx(tx, "category", category.id, next, false, updatedAt);
+    });
   }, [db]);
 
   const deleteCategory = useCallback(async (id: string): Promise<void> => {
-    await db.runAsync("DELETE FROM categories WHERE id=?", [id]);
+    const updatedAt = Date.now();
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      await tx.runAsync("DELETE FROM categories WHERE id=?", [id]);
+      await enqueueCatalogTx(tx, "category", id, { id }, true, updatedAt);
+    });
   }, [db]);
 
   const loadSplitPayments = useCallback(async (saleId: string): Promise<SplitPaymentEntry[]> => {
@@ -691,9 +725,12 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       for (const t of ALL_TABLES) {
         try { await db.runAsync(`DELETE FROM ${t}`); } catch {}
       }
-      // Backup contains foreign data — drop the queue too so we don't try to
-      // push imported sales as if they were our own.
+      // Backup contains foreign data — drop the sync queue and catalog
+      // outbox too so we don't try to push imported rows as if they were
+      // our own. clearOwningCompanyId() (called below) also clears the
+      // pull cursor so the next sync starts fresh.
       try { await db.runAsync("DELETE FROM sync_queue"); } catch {}
+      try { await db.runAsync("DELETE FROM catalog_outbox"); } catch {}
       for (const t of ALL_TABLES) {
         const rows = data.tables?.[t];
         if (!Array.isArray(rows) || rows.length === 0) continue;
@@ -733,8 +770,14 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       if (opts.products) {
         await db.runAsync("DELETE FROM recipe_ingredients");
         await db.runAsync("DELETE FROM products");
+        // Drop pending catalog pushes for products — the rows are gone
+        // locally so any tombstone we try to push would lose context.
+        await db.runAsync("DELETE FROM catalog_outbox WHERE entity_type='product'");
       }
-      if (opts.categories) await db.runAsync("DELETE FROM categories");
+      if (opts.categories) {
+        await db.runAsync("DELETE FROM categories");
+        await db.runAsync("DELETE FROM catalog_outbox WHERE entity_type='category'");
+      }
       if (opts.ingredients) {
         await db.runAsync("DELETE FROM recipe_ingredients");
         await db.runAsync("DELETE FROM ingredients");
@@ -835,6 +878,136 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     return row?.count ?? 0;
   }, [db]);
 
+  // ---- Phase 3c: catalog outbox + remote apply ----
+
+  const loadCatalogBatch = useCallback(async (limit: number): Promise<CatalogOutboxItem[]> => {
+    const rows = await db.getAllAsync<{
+      id: string; entity_type: string; entity_id: string;
+      payload: string; deleted: number; updated_at: number;
+      attempt_count: number; last_attempt_at: number | null;
+    }>(
+      `SELECT id, entity_type, entity_id, payload, deleted, updated_at,
+              attempt_count, last_attempt_at
+       FROM catalog_outbox
+       ORDER BY enqueued_at ASC
+       LIMIT ?`,
+      [limit]
+    );
+    return rows.map((r) => ({
+      outboxId: r.id,
+      entityType: r.entity_type as "product" | "category",
+      entityId: r.entity_id,
+      payload: safeParse(r.payload),
+      deleted: r.deleted === 1,
+      updatedAt: r.updated_at,
+      attemptCount: r.attempt_count,
+      lastAttemptAt: r.last_attempt_at ?? null,
+    }));
+  }, [db]);
+
+  const markCatalogResults = useCallback(async (results: CatalogResultUpdate[]): Promise<void> => {
+    if (results.length === 0) return;
+    const now = Date.now();
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      for (const r of results) {
+        if (r.ok) {
+          // Only drop the row if the user hasn't re-edited it during the
+          // push (UPSERT keeps the same id but bumps updated_at). If the
+          // updated_at no longer matches what we pushed, leave the row
+          // alone so the newer edit gets its own push attempt.
+          await tx.runAsync(
+            "DELETE FROM catalog_outbox WHERE id=? AND updated_at=?",
+            [r.outboxId, r.attemptedUpdatedAt]
+          );
+        } else {
+          // Same freshness guard for failure: don't bump attempt_count of a
+          // row that has since been superseded by a newer edit (which reset
+          // attempts to 0). The newer edit is what we want to retry.
+          await tx.runAsync(
+            "UPDATE catalog_outbox SET attempt_count=attempt_count+1, last_attempt_at=?, last_error=? WHERE id=? AND updated_at=?",
+            [now, r.error ?? null, r.outboxId, r.attemptedUpdatedAt]
+          );
+        }
+      }
+    });
+  }, [db]);
+
+  const countPendingCatalog = useCallback(async (): Promise<number> => {
+    const row = await db.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM catalog_outbox"
+    );
+    return row?.count ?? 0;
+  }, [db]);
+
+  const applyRemoteCatalog = useCallback(async (input: CatalogApplyInput): Promise<void> => {
+    const products = input.products ?? [];
+    const categories = input.categories ?? [];
+    if (products.length === 0 && categories.length === 0) return;
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      // Pre-load any pending outbox snapshots for entities in this batch.
+      // A pending unpushed local edit (including a delete — where the row
+      // is gone from the entity table but a tombstone sits in the outbox)
+      // must NOT be clobbered by a stale pull. We compare against the
+      // outbox's updatedAt as the authoritative "latest local write" stamp.
+      const outboxByKey = await loadOutboxIndex(tx, [
+        ...products.map((e) => ["product", e.id] as const),
+        ...categories.map((e) => ["category", e.id] as const),
+      ]);
+
+      for (const e of products) {
+        const pending = outboxByKey.get(`product:${e.id}`);
+        if (pending !== undefined && pending >= e.updatedAt) continue;
+        const existing = await tx.getFirstAsync<{ updated_at: number | null }>(
+          "SELECT updated_at FROM products WHERE id=?", [e.id]
+        );
+        // LWW: skip if local has a strictly newer or equal write. Treat
+        // NULL local as 0 so any real cloud edit wins over seed rows.
+        const localUpdatedAt = existing?.updated_at ?? 0;
+        if (existing && localUpdatedAt >= e.updatedAt) continue;
+        if (e.deleted) {
+          await tx.runAsync("DELETE FROM products WHERE id=?", [e.id]);
+          continue;
+        }
+        const p = e.payload as Partial<Product>;
+        // Use INSERT OR REPLACE to handle both create and update in one
+        // statement. Stamp updated_at from the *remote* clock so a
+        // subsequent pull doesn't keep re-applying.
+        await tx.runAsync(
+          `INSERT OR REPLACE INTO products
+           (id, name, category, price, description, color_hex, barcode,
+            stock_quantity, tax_group_id, low_stock_threshold, image_uri,
+            printer_id, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [e.id, p.name ?? "", p.category ?? "", p.price ?? 0, p.description ?? "",
+           p.colorHex ?? "#4F8EF7", p.barcode ?? null, p.stockQuantity ?? 999,
+           p.taxGroupId ?? null, p.lowStockThreshold ?? 10, p.imageUri ?? null,
+           p.printerId ?? null, e.updatedAt]
+        );
+      }
+      for (const e of categories) {
+        const pending = outboxByKey.get(`category:${e.id}`);
+        if (pending !== undefined && pending >= e.updatedAt) continue;
+        const existing = await tx.getFirstAsync<{ updated_at: number | null }>(
+          "SELECT updated_at FROM categories WHERE id=?", [e.id]
+        );
+        const localUpdatedAt = existing?.updated_at ?? 0;
+        if (existing && localUpdatedAt >= e.updatedAt) continue;
+        if (e.deleted) {
+          await tx.runAsync("DELETE FROM categories WHERE id=?", [e.id]);
+          continue;
+        }
+        const c = e.payload as Partial<Category>;
+        await tx.runAsync(
+          `INSERT OR REPLACE INTO categories
+           (id, name, color_hex, image_uri, sort_order, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [e.id, c.name ?? "", c.colorHex ?? "#4F8EF7", c.imageUri ?? null,
+           c.sortOrder ?? 0, e.updatedAt]
+        );
+      }
+    });
+  }, [db]);
+
   return (
     <DatabaseContext.Provider value={{
       loadProducts, createProduct, updateProduct, deleteProduct, updateStock,
@@ -853,8 +1026,84 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,
       exportData, importData, clearData,
       enqueueSync, reconcilePendingSync, loadSyncBatch, markSyncResults, countPendingSync,
+      loadCatalogBatch, markCatalogResults, countPendingCatalog, applyRemoteCatalog,
     }}>
       {children}
     </DatabaseContext.Provider>
   );
+}
+
+/**
+ * UPSERT a catalog outbox row inside an existing transaction. Typed loosely
+ * because expo-sqlite's `Transaction` shape is stricter than we need here
+ * and we always pass the same db-vended object.
+ */
+async function enqueueCatalogTx(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any,
+  entityType: "product" | "category",
+  entityId: string,
+  payload: unknown,
+  deleted: boolean,
+  updatedAt: number,
+): Promise<void> {
+  // ON CONFLICT REPLACE: when a product is edited multiple times before
+  // a successful push, the latest snapshot wins and attempt_count resets
+  // to 0 so we don't carry stale backoff over a fresh edit.
+  await tx.runAsync(
+    `INSERT INTO catalog_outbox
+       (id, entity_type, entity_id, payload, deleted, updated_at, enqueued_at, attempt_count)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+     ON CONFLICT(entity_type, entity_id) DO UPDATE SET
+       payload=excluded.payload,
+       deleted=excluded.deleted,
+       updated_at=excluded.updated_at,
+       enqueued_at=excluded.enqueued_at,
+       attempt_count=0,
+       last_attempt_at=NULL,
+       last_error=NULL`,
+    [generateId(), entityType, entityId, JSON.stringify(payload),
+     deleted ? 1 : 0, updatedAt, Date.now()]
+  );
+}
+
+/**
+ * Look up pending outbox `updated_at` for a set of (entityType, entityId)
+ * keys in one pass. Returns a map keyed `"<type>:<id>"`. We intentionally
+ * read `updated_at` (not `enqueued_at`): the LWW comparison is against the
+ * client wall-clock the user wrote, which is what the server sees too.
+ */
+async function loadOutboxIndex(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any,
+  keys: ReadonlyArray<readonly [string, string]>,
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (keys.length === 0) return out;
+  // SQLite has a default 999 host-parameter limit and we batch up to 500
+  // products + 500 categories from the puller, so worst-case ~2000 binds.
+  // Chunk to stay safely under the limit.
+  const CHUNK = 400;
+  for (let i = 0; i < keys.length; i += CHUNK) {
+    const slice = keys.slice(i, i + CHUNK);
+    const placeholders = slice.map(() => "(?, ?)").join(",");
+    const args: unknown[] = [];
+    for (const [t, id] of slice) { args.push(t); args.push(id); }
+    const rows = await tx.getAllAsync(
+      `SELECT entity_type, entity_id, updated_at FROM catalog_outbox
+       WHERE (entity_type, entity_id) IN (VALUES ${placeholders})`,
+      args
+    ) as Array<{ entity_type: string; entity_id: string; updated_at: number }>;
+    for (const r of rows) out.set(`${r.entity_type}:${r.entity_id}`, r.updated_at);
+  }
+  return out;
+}
+
+function safeParse(s: string): Record<string, unknown> {
+  try {
+    const v = JSON.parse(s);
+    return typeof v === "object" && v !== null ? v as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
 }
