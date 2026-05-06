@@ -324,6 +324,23 @@ export const purchasingService = {
     return { purchase: p, items };
   },
 
+  async getSuppliersActivity(
+    companyId: string,
+    branchId: string,
+    windowDays = 30,
+  ): Promise<
+    Array<{
+      supplierId: string;
+      lastReceivedAt: string | null;
+      windowTotal: string;
+      windowCount: number;
+    }>
+  > {
+    await assertBranchInCompany(companyId, branchId);
+    const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+    return purchaseRepo.activitySummaryByBranch(companyId, branchId, since);
+  },
+
   async getSupplierStatement(
     companyId: string,
     supplierId: string,

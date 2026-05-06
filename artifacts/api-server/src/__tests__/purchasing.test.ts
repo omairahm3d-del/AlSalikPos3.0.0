@@ -417,6 +417,58 @@ describe("Purchasing & stock — happy paths", () => {
     expect(evil).toBeUndefined();
   });
 
+  it("suppliers activity: returns last receipt + 30d window per supplier", async () => {
+    const supRes = await request(app)
+      .post("/api/manager/suppliers")
+      .set("authorization", `Bearer ${ctx.token}`)
+      .send({ name: `ActivityCo ${Date.now()}`, branchId: ctx.branchId });
+    expect(supRes.status).toBe(201);
+    const supplierId = supRes.body.supplier.id as string;
+
+    const recent = new Date().toISOString();
+    const old = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    const mk = async (receivedAt: string, total: number) => {
+      const r = await request(app)
+        .post("/api/manager/purchases")
+        .set("authorization", `Bearer ${ctx.token}`)
+        .send({
+          branchId: ctx.branchId,
+          supplierId,
+          supplierName: "ActivityCo",
+          receivedAt,
+          idempotencyKey: `act-${crypto.randomUUID()}`,
+          items: [
+            {
+              productClientId: `act-prod-${Math.random()}`,
+              productName: "Item",
+              quantity: 1,
+              unitCost: total, // VAT=0 so total === unitCost*1
+            },
+          ],
+        });
+      expect(r.status).toBe(201);
+    };
+    await mk(recent, 100);
+    await mk(recent, 25);
+    await mk(old, 999); // outside 30d window
+
+    const act = await request(app)
+      .get("/api/manager/suppliers/activity")
+      .query({ branchId: ctx.branchId })
+      .set("authorization", `Bearer ${ctx.token}`);
+    expect(act.status).toBe(200);
+    const row = (act.body.activity as Array<{
+      supplierId: string;
+      lastReceivedAt: string | null;
+      windowTotal: string;
+      windowCount: number;
+    }>).find((a) => a.supplierId === supplierId);
+    expect(row).toBeDefined();
+    expect(row?.windowCount).toBe(2);
+    expect(Number(row?.windowTotal)).toBe(125);
+    expect(row?.lastReceivedAt).not.toBeNull();
+  });
+
   it("supplier statement: aggregates totals + filters by date + rejects cross-company", async () => {
     // Create a branch-private supplier and 3 purchases for it (one outside
     // the date window, one without a reference number).

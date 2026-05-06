@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
 import {
   saasDb,
   purchasesTable,
@@ -109,6 +109,53 @@ export const purchaseRepo = {
       .where(and(...conds))
       .orderBy(desc(purchasesTable.receivedAt))
       .limit(Math.min(opts.limit ?? 1000, 5000));
+  },
+
+  /**
+   * Per-supplier activity at one branch — last-receipt date and rolling
+   * window totals — fetched in a single grouped query so the suppliers
+   * list doesn't N+1. `since` controls the window for the totals/counts;
+   * the lastReceivedAt aggregate covers all-time.
+   *
+   * Only purchases with a non-null `supplierId` are considered (free-text
+   * supplier names from the Receive Stock form aren't tied to a row).
+   */
+  async activitySummaryByBranch(
+    companyId: string,
+    branchId: string,
+    since: Date,
+  ): Promise<
+    Array<{
+      supplierId: string;
+      lastReceivedAt: string | null;
+      windowTotal: string;
+      windowCount: number;
+    }>
+  > {
+    const rows = await saasDb
+      .select({
+        supplierId: purchasesTable.supplierId,
+        lastReceivedAt: sql<string | null>`max(${purchasesTable.receivedAt})`,
+        windowTotal: sql<string>`coalesce(sum(case when ${purchasesTable.receivedAt} >= ${since} then ${purchasesTable.total} else 0 end), 0)`,
+        windowCount: sql<number>`coalesce(sum(case when ${purchasesTable.receivedAt} >= ${since} then 1 else 0 end), 0)::int`,
+      })
+      .from(purchasesTable)
+      .where(
+        and(
+          eq(purchasesTable.companyId, companyId),
+          eq(purchasesTable.branchId, branchId),
+          isNotNull(purchasesTable.supplierId),
+        ),
+      )
+      .groupBy(purchasesTable.supplierId);
+    return rows.map((r) => ({
+      supplierId: r.supplierId as string,
+      lastReceivedAt: r.lastReceivedAt
+        ? new Date(r.lastReceivedAt).toISOString()
+        : null,
+      windowTotal: String(r.windowTotal ?? "0"),
+      windowCount: Number(r.windowCount ?? 0),
+    }));
   },
 
   async findByIdempotencyKey(

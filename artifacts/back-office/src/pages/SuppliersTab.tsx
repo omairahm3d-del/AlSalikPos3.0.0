@@ -22,6 +22,24 @@ export default function SuppliersTab({ token, branchId }: Props) {
     queryKey: ["suppliers", branchId],
     queryFn: () => api.suppliers(token, branchId),
   });
+  const activityQ = useQuery({
+    queryKey: ["suppliers-activity", branchId],
+    queryFn: () => api.suppliersActivity(token, branchId, { windowDays: 30 }),
+  });
+  const activityById = useMemo(() => {
+    const map = new Map<
+      string,
+      { lastReceivedAt: string | null; windowTotal: string; windowCount: number }
+    >();
+    for (const a of activityQ.data?.activity ?? []) {
+      map.set(a.supplierId, {
+        lastReceivedAt: a.lastReceivedAt,
+        windowTotal: a.windowTotal,
+        windowCount: a.windowCount,
+      });
+    }
+    return map;
+  }, [activityQ.data]);
 
   const [editing, setEditing] = useState<Supplier | "new" | null>(null);
   const [statementFor, setStatementFor] = useState<Supplier | null>(null);
@@ -71,7 +89,8 @@ export default function SuppliersTab({ token, branchId }: Props) {
                 <tr>
                   <th className="px-4 py-2">Name</th>
                   <th className="px-4 py-2">Phone</th>
-                  <th className="px-4 py-2">Email</th>
+                  <th className="px-4 py-2">Last receipt</th>
+                  <th className="px-4 py-2 text-right">30d total</th>
                   <th className="px-4 py-2">Payment terms</th>
                   <th className="px-4 py-2">Scope</th>
                   <th className="px-4 py-2"></th>
@@ -80,16 +99,34 @@ export default function SuppliersTab({ token, branchId }: Props) {
               <tbody>
                 {q.data.suppliers.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-6 text-center text-gray-500">
+                    <td colSpan={7} className="px-4 py-6 text-center text-gray-500">
                       No suppliers yet. Add your first one.
                     </td>
                   </tr>
                 )}
-                {q.data.suppliers.map((s) => (
+                {q.data.suppliers.map((s) => {
+                  const act = activityById.get(s.id);
+                  return (
                   <tr key={s.id} className="border-t border-gray-100">
                     <td className="px-4 py-2 font-medium">{s.name}</td>
                     <td className="px-4 py-2 text-gray-700">{s.phone ?? "—"}</td>
-                    <td className="px-4 py-2 text-gray-700">{s.email ?? "—"}</td>
+                    <td className="px-4 py-2 text-gray-700 whitespace-nowrap">
+                      {act?.lastReceivedAt
+                        ? new Date(act.lastReceivedAt).toLocaleDateString()
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums whitespace-nowrap">
+                      {act && act.windowCount > 0 ? (
+                        <>
+                          <span className="text-gray-900">AED {act.windowTotal}</span>
+                          <span className="text-xs text-gray-500 ml-1">
+                            ({act.windowCount})
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-2 text-gray-700">{s.paymentTerms ?? "—"}</td>
                     <td className="px-4 py-2 text-gray-500 text-xs">
                       {s.branchId ? "Branch" : "Company-wide"}
@@ -109,7 +146,8 @@ export default function SuppliersTab({ token, branchId }: Props) {
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

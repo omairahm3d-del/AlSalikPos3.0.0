@@ -28,6 +28,10 @@ router.get(
   "/manager/suppliers",
   asyncHandler(purchasingController.listSuppliers),
 );
+router.get(
+  "/manager/suppliers/activity",
+  asyncHandler(purchasingController.getSuppliersActivity),
+);
 router.post(
   "/manager/suppliers",
   asyncHandler(purchasingController.createSupplier),

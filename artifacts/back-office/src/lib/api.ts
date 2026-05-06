@@ -299,6 +299,22 @@ export const api = {
       token,
       body: JSON.stringify(body),
     }),
+  suppliersActivity: (
+    token: string,
+    branchId: string,
+    opts: { windowDays?: number } = {},
+  ) => {
+    const qs = new URLSearchParams({ branchId });
+    if (opts.windowDays) qs.set("windowDays", String(opts.windowDays));
+    return request<{
+      activity: Array<{
+        supplierId: string;
+        lastReceivedAt: string | null;
+        windowTotal: string;
+        windowCount: number;
+      }>;
+    }>(`/api/manager/suppliers/activity?${qs}`, { token });
+  },
   supplierStatement: (
     token: string,
     supplierId: string,

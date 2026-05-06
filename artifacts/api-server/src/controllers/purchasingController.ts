@@ -62,6 +62,23 @@ export const purchasingController = {
     res.json({ supplier });
   },
 
+  async getSuppliersActivity(req: Request, res: Response) {
+    const m = req.manager!;
+    const q = z
+      .object({
+        branchId: z.string().uuid(),
+        windowDays: z.coerce.number().int().min(1).max(365).optional(),
+      })
+      .parse(req.query);
+    requireBranchAccess(req, q.branchId);
+    const activity = await purchasingService.getSuppliersActivity(
+      m.companyId,
+      q.branchId,
+      q.windowDays ?? 30,
+    );
+    res.json({ activity });
+  },
+
   async getSupplierStatement(req: Request, res: Response) {
     const m = req.manager!;
     const id = z.string().uuid().parse(req.params.id);
