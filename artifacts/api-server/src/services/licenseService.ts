@@ -1,10 +1,18 @@
+import { eq, and, sql } from "drizzle-orm";
+import {
+  saasDb,
+  companiesTable,
+  licensesTable,
+  devicesTable,
+  type Company,
+  type License,
+  type Device,
+} from "@workspace/saas-db";
 import { companyRepo } from "../repositories/companyRepo";
 import { licenseRepo } from "../repositories/licenseRepo";
-import { deviceRepo } from "../repositories/deviceRepo";
 import { signDeviceToken } from "../middlewares/requireDevice";
 import { generateLicenseKey, normalizeLicenseKey } from "../utils/licenseKey";
 import { badRequest, conflict, forbidden, notFound } from "../lib/errors";
-import type { Company, License, Device } from "@workspace/saas-db";
 
 export interface ValidateInput {
   licenseKey: string;
@@ -25,70 +33,126 @@ export interface ValidateResult {
 export const licenseService = {
   async validate(input: ValidateInput): Promise<ValidateResult> {
     const key = normalizeLicenseKey(input.licenseKey);
-    const license = await licenseRepo.findByKey(key);
-    if (!license) {
-      throw notFound("license_not_found", "License key is not recognized");
-    }
-    if (license.status !== "active") {
-      throw forbidden("license_revoked", "License has been revoked");
-    }
-    if (license.expiresAt && license.expiresAt.getTime() < Date.now()) {
-      throw forbidden("license_expired", "License has expired");
-    }
 
-    const company = await companyRepo.findById(license.companyId);
-    if (!company) {
-      throw notFound("company_not_found", "Company not found for this license");
-    }
-    if (company.status !== "active") {
-      throw forbidden("company_suspended", "Company account is suspended");
-    }
+    // Run the entire check+upsert in a single transaction with a row lock on
+    // the license, so concurrent validations cannot bypass `maxDevices`.
+    const result = await saasDb.transaction(async (tx) => {
+      // 1) Lock the license row for the duration of the tx.
+      const lockedLicenses = await tx
+        .select()
+        .from(licensesTable)
+        .where(eq(licensesTable.key, key))
+        .for("update");
+      const license = lockedLicenses[0];
+      if (!license) {
+        throw notFound("license_not_found", "License key is not recognized");
+      }
+      if (license.status !== "active") {
+        throw forbidden("license_revoked", "License has been revoked");
+      }
+      if (license.expiresAt && license.expiresAt.getTime() < Date.now()) {
+        throw forbidden("license_expired", "License has expired");
+      }
 
-    // Enforce maxDevices: count distinct devices already registered to this license
-    const existing = await deviceRepo.findByLicenseAndUid(
-      license.id,
-      input.deviceUid,
-    );
-    if (!existing) {
-      const count = await deviceRepo.countByLicense(license.id);
-      if (count >= license.maxDevices) {
-        throw conflict(
-          "device_limit_reached",
-          `License device limit reached (${license.maxDevices}). Revoke an existing device or upgrade the license.`,
+      // 2) Load company (no lock needed; status is read-only here).
+      const companyRows = await tx
+        .select()
+        .from(companiesTable)
+        .where(eq(companiesTable.id, license.companyId));
+      const company = companyRows[0];
+      if (!company) {
+        throw notFound(
+          "company_not_found",
+          "Company not found for this license",
         );
       }
-    }
+      if (company.status !== "active") {
+        throw forbidden("company_suspended", "Company account is suspended");
+      }
 
-    const device = await deviceRepo.upsert({
-      companyId: company.id,
-      licenseId: license.id,
-      deviceUid: input.deviceUid,
-      name: input.name ?? null,
-      platform: input.platform ?? "unknown",
-      appVersion: input.appVersion ?? null,
+      // 3) Check if this device is already registered to this license.
+      const existingRows = await tx
+        .select()
+        .from(devicesTable)
+        .where(
+          and(
+            eq(devicesTable.licenseId, license.id),
+            eq(devicesTable.deviceUid, input.deviceUid),
+          ),
+        );
+      const existing = existingRows[0];
+
+      // 4) If new, enforce maxDevices under the lock.
+      if (!existing) {
+        const countRows = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(devicesTable)
+          .where(eq(devicesTable.licenseId, license.id));
+        const count = countRows[0]?.count ?? 0;
+        if (count >= license.maxDevices) {
+          throw conflict(
+            "device_limit_reached",
+            `License device limit reached (${license.maxDevices}). Revoke an existing device or upgrade the license.`,
+          );
+        }
+      }
+
+      // 5) Atomic upsert keyed on (license_id, device_uid).
+      const now = new Date();
+      const upsertedRows = await tx
+        .insert(devicesTable)
+        .values({
+          companyId: company.id,
+          licenseId: license.id,
+          deviceUid: input.deviceUid,
+          name: input.name ?? null,
+          platform: input.platform ?? "unknown",
+          appVersion: input.appVersion ?? null,
+          lastSeenAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [devicesTable.licenseId, devicesTable.deviceUid],
+          set: {
+            name: input.name ?? sql`${devicesTable.name}`,
+            platform: input.platform ?? sql`${devicesTable.platform}`,
+            appVersion: input.appVersion ?? sql`${devicesTable.appVersion}`,
+            lastSeenAt: now,
+          },
+        })
+        .returning();
+      const device = upsertedRows[0];
+      if (!device) {
+        throw new Error("Failed to upsert device");
+      }
+
+      return { license, company, device };
     });
 
     const { token, expiresAt } = signDeviceToken({
-      companyId: company.id,
-      licenseId: license.id,
-      deviceId: device.id,
-      deviceUid: device.deviceUid,
+      companyId: result.company.id,
+      licenseId: result.license.id,
+      deviceId: result.device.id,
+      deviceUid: result.device.deviceUid,
     });
 
     return {
       token,
       tokenExpiresAt: expiresAt,
-      company: { id: company.id, name: company.name, slug: company.slug },
+      company: {
+        id: result.company.id,
+        name: result.company.name,
+        slug: result.company.slug,
+      },
       license: {
-        id: license.id,
-        expiresAt: license.expiresAt,
-        maxDevices: license.maxDevices,
+        id: result.license.id,
+        expiresAt: result.license.expiresAt,
+        maxDevices: result.license.maxDevices,
       },
       device: {
-        id: device.id,
-        deviceUid: device.deviceUid,
-        name: device.name,
-        platform: device.platform,
+        id: result.device.id,
+        deviceUid: result.device.deviceUid,
+        name: result.device.name,
+        platform: result.device.platform,
       },
     };
   },

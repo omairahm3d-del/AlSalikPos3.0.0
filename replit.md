@@ -10,8 +10,12 @@ A mobile-first Point of Sale (POS) system for the UAE market, offering comprehen
 -   **Build POS Web**: `cd artifacts/pos-app && pnpm exec expo export --platform web --output-dir ../../desktop-installer/www-new --clear`
 -   **Build Desktop Installer**: `.cache/electron-builder/nsis/nsis-3.0.4.1/linux/makensis desktop-installer/installer.nsi`
 -   **Database Migrations**: _Populate as you build_
+-   **Push SaaS Schema**: `pnpm --filter @workspace/saas-db run push`
 -   **Environment Variables**:
-    -   `DATABASE_URL`: PostgreSQL connection string
+    -   `DATABASE_URL`: Replit Postgres (legacy single-tenant; not used by SaaS layer)
+    -   `SAAS_DATABASE_URL`: Separate cloud Postgres for the multi-tenant SaaS backend
+    -   `SAAS_JWT_SECRET`: Signs device JWTs returned by `/api/license/validate`
+    -   `SAAS_ADMIN_API_KEY`: Required as `x-admin-api-key` header for `/api/admin/*` routes
 
 ## Stack
 
@@ -29,7 +33,8 @@ A mobile-first Point of Sale (POS) system for the UAE market, offering comprehen
 
 ## Where things live
 
--   `artifacts/api-server/`: Backend API and business logic.
+-   `artifacts/api-server/`: Backend API. Layered: `routes/` → `controllers/` → `services/` → `repositories/`. Cross-cutting in `middlewares/`, `lib/`, `utils/`.
+-   `lib/saas-db/`: Multi-tenant Postgres schema for the cloud SaaS backend (companies, licenses, devices). Uses `SAAS_DATABASE_URL` — separate from Replit's `DATABASE_URL`.
 -   `artifacts/pos-app/`: Mobile and web POS application (Expo/React Native).
     -   `app/(tabs)/`: Main application tabs and screens.
     -   `components/`: Reusable UI components.
@@ -40,13 +45,17 @@ A mobile-first Point of Sale (POS) system for the UAE market, offering comprehen
     -   `preload.js`: Electron preload script for context bridge.
     -   `installer.nsi`: NSIS installer script.
     -   `assets/icon.ico`: Desktop application icon.
--   **Database Schema**: `artifacts/api-server/src/db/schema.ts`
+-   **SaaS DB Schema**: `lib/saas-db/src/schema/` (one file per table, barrel re-export)
+-   **Local POS Schema**: `artifacts/api-server/src/db/schema.ts`
 -   **API Contracts**: `artifacts/api-server/src/routes/*.ts` (defined within Express routes)
 -   **Theme/Styling**: Defined inline within React Native components and `components/Themed.tsx`.
 -   **Receipt Templates**: HTML-based, generated dynamically (e.g., `components/ReceiptModal.tsx`, `components/CloseRegisterModal.tsx`).
 
 ## Architecture decisions
 
+-   **Multi-tenant SaaS via license keys**: Every install must call `POST /api/license/validate` with `{licenseKey, deviceUid}` to receive a device JWT. No public signup; the owner issues licenses via admin endpoints (`x-admin-api-key` header). License has `maxDevices` enforced at validation; idempotent re-validation for the same `(licenseId, deviceUid)`.
+-   **Two databases on purpose**: `lib/db` (Replit DATABASE_URL) is the legacy single-tenant DB and is left untouched. `lib/saas-db` (SAAS_DATABASE_URL) is the cloud multi-tenant DB. They never share a connection or table.
+-   **Layered API**: Routes only wire URLs; controllers only parse/respond; services hold business rules; repositories own all Drizzle queries. Centralized `errorHandler` translates `HttpError` and `ZodError` into JSON.
 -   **Monorepo for Cohesion**: Utilizes pnpm workspaces to manage shared dependencies and facilitate development across API, POS app, and desktop installer.
 -   **Offline-First POS**: Employs Expo-SQLite (native) and AsyncStorage (web) to ensure full application functionality without an internet connection, critical for POS operations.
 -   **Platform-Specific Printing**: Implements distinct printing mechanisms for web (`window.print()`), native (`expo-print`), and Windows desktop (Electron bridge with `silentPrint`), to accommodate varied environments while centralizing print logic.
