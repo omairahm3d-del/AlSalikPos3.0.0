@@ -1216,7 +1216,7 @@ export default function POSScreen() {
               <Feather name="credit-card" size={20} color={colors.primary} />
               <Text style={[styles.paymentTitle, { color: colors.foreground, fontSize: 18, marginLeft: 8, marginBottom: 0 }]}>Collect Credit Payment</Text>
             </View>
-            <View style={[styles.riderCard, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius, marginBottom: 12, padding: 12 }]}>
+            <View style={{ backgroundColor: colors.secondary, borderColor: colors.border, borderWidth: 1, borderRadius: colors.radius, marginBottom: 12, padding: 12 }}>
               <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 15 }}>{creditPayCustomer?.name}</Text>
               <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 2 }}>Invoice: {creditPaySale?.invoiceNumber}</Text>
               <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 2 }}>Sale Total: {formatCurrency(creditPaySale?.total ?? 0)}</Text>

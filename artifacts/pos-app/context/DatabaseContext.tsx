@@ -94,7 +94,10 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     const saleId = generateId();
     const createdAt = Date.now();
 
-    return await db.withExclusiveTransactionAsync(async (tx) => {
+    // Capture the result through a closure — expo-sqlite's
+    // withExclusiveTransactionAsync is typed `() => Promise<void>`.
+    let savedSale: Sale | null = null;
+    await db.withExclusiveTransactionAsync(async (tx) => {
       const counterRow = await tx.getFirstAsync<{ next_value: number }>("SELECT next_value FROM invoice_counter WHERE id=1");
       const seq = counterRow?.next_value ?? 1;
       const invoiceNumber = generateInvoiceNumber(seq - 1);
@@ -139,7 +142,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         await tx.runAsync("UPDATE customers SET loyalty_points=loyalty_points+? WHERE id=?", [pointsEarned, customerId]);
       }
       if (customerId && (loyaltyPointsRedeemed ?? 0) > 0) {
-        await tx.runAsync("UPDATE customers SET loyalty_points=loyalty_points-? WHERE id=?", [loyaltyPointsRedeemed, customerId]);
+        await tx.runAsync("UPDATE customers SET loyalty_points=loyalty_points-? WHERE id=?", [loyaltyPointsRedeemed ?? 0, customerId]);
       }
 
       // Phase 3d: any sales-driven customer mutation (credit balance or
@@ -197,7 +200,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         }
       }
 
-      return {
+      savedSale = {
         id: saleId, invoiceNumber, createdAt, subtotal, vatRate: effectiveVatRate, vatAmount, total, paymentMethod,
         orderType, customerId, customerName, staffId, staffName, tableId, tableName, riderId, riderName,
         discountType, discountValue, discountAmount: orderDiscAmt,
@@ -205,6 +208,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         splitPayments,
       };
     });
+    if (!savedSale) throw new Error("Sale transaction did not complete");
+    return savedSale;
   }, [db]);
 
   const mapSaleRow = (r: any): Sale => ({
@@ -259,7 +264,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
   }, [db]);
 
   const processRefund = useCallback(async (originalSaleId: string, staffId?: string, staffName?: string): Promise<Sale> => {
-    return await db.withExclusiveTransactionAsync(async (tx) => {
+    let refundSale: Sale | null = null;
+    await db.withExclusiveTransactionAsync(async (tx) => {
       const orig = await tx.getFirstAsync<any>("SELECT * FROM sales WHERE id=?", [originalSaleId]);
       if (!orig) throw new Error("Sale not found");
       if (orig.is_refund === 1) throw new Error("Cannot refund a refund");
@@ -333,13 +339,15 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         [generateId(), refundId, createdAt]
       );
 
-      return {
+      refundSale = {
         id: refundId, invoiceNumber, createdAt, subtotal: -orig.subtotal,
         vatRate: orig.vat_rate, vatAmount: -orig.vat_amount, total: -orig.total,
         paymentMethod: orig.payment_method, isRefund: true, originalSaleId,
         staffId: staffId ?? orig.staff_id, staffName: staffName ?? orig.staff_name,
       };
     });
+    if (!refundSale) throw new Error("Refund transaction did not complete");
+    return refundSale;
   }, [db]);
 
   const loadBusinessSettings = useCallback(async (): Promise<BusinessSettings> => {
@@ -451,7 +459,10 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     if (amount <= 0) throw new Error("Payment amount must be positive");
     const id = generateId();
     const createdAt = Date.now();
-    return await db.withExclusiveTransactionAsync(async (tx) => {
+    // expo-sqlite's withExclusiveTransactionAsync is typed `() => Promise<void>`,
+    // so we capture the result through a closure rather than returning it.
+    let payment: CreditPayment | null = null;
+    await db.withExclusiveTransactionAsync(async (tx) => {
       const c = await tx.getFirstAsync<{ id: string; name: string; phone: string | null; email: string | null; company: string | null; credit_balance: number; loyalty_points: number | null; created_at: number }>(
         "SELECT id, name, phone, email, company, credit_balance, loyalty_points, created_at FROM customers WHERE id=?",
         [customerId]
@@ -474,8 +485,10 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         updatedAt: createdAt,
       };
       await enqueueCatalogTx(tx, "customer", customerId, updatedCustomer, false, createdAt);
-      return { id, customerId, amount, note, createdAt };
+      payment = { id, customerId, amount, note, createdAt };
     });
+    if (!payment) throw new Error("Credit payment transaction did not complete");
+    return payment;
   }, [db]);
 
   const loadCreditPayments = useCallback(async (customerId: string): Promise<CreditPayment[]> => {

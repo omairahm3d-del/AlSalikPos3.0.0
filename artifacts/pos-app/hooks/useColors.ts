@@ -16,9 +16,11 @@ import colors from "@/constants/colors";
  */
 export function useColors() {
   const scheme = useColorScheme();
-  const palette =
-    scheme === "dark" && "dark" in colors
-      ? (colors as Record<string, typeof colors.light>).dark
-      : colors.light;
+  // `dark` is optional so this hook still works when the scaffold ships
+  // light-only. Cast through a narrow shape rather than `Record<string,…>`
+  // so unrelated keys like `radius: number` don't get pulled into the
+  // value type and trip the structural check.
+  const maybeDark = (colors as { dark?: typeof colors.light }).dark;
+  const palette = scheme === "dark" && maybeDark ? maybeDark : colors.light;
   return { ...palette, radius: colors.radius };
 }
