@@ -8,6 +8,7 @@ import type {
 } from "@/types";
 import { DEFAULT_BUSINESS_SETTINGS, VAT_RATE } from "@/types";
 import { generateId, generateInvoiceNumber } from "@/lib/database";
+import { notifySyncQueueChanged } from "@/lib/syncEvents";
 import { clearOwningCompanyId } from "@/lib/saasStorage";
 import { DatabaseContext, type CatalogApplyInput, type CatalogOutboxItem, type CatalogResultUpdate, type SaleOptions, type SyncEntityType, type SyncQueueItem, type SyncResultUpdate } from "./DatabaseCore";
 
@@ -186,6 +187,10 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         "INSERT OR IGNORE INTO sync_queue (id, entity_type, entity_id, enqueued_at, status) VALUES (?, 'sale', ?, ?, 'pending')",
         [generateId(), saleId, createdAt]
       );
+      // Wake the SyncContext loop. If the tx rolls back the wake is a
+      // harmless no-op (drain finds nothing); the alternative — waiting
+      // for a 30s idle tick — delays revenue data leaving the device.
+      notifySyncQueueChanged();
 
       const recipes = await tx.getAllAsync<{ product_id: string; ingredient_id: string; quantity: number }>(
         "SELECT * FROM recipe_ingredients"
@@ -338,6 +343,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         "INSERT OR IGNORE INTO sync_queue (id, entity_type, entity_id, enqueued_at, status) VALUES (?, 'sale', ?, ?, 'pending')",
         [generateId(), refundId, createdAt]
       );
+      notifySyncQueueChanged();
 
       refundSale = {
         id: refundId, invoiceNumber, createdAt, subtotal: -orig.subtotal,
@@ -933,6 +939,9 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       "INSERT OR IGNORE INTO sync_queue (id, entity_type, entity_id, enqueued_at, status) VALUES (?, ?, ?, ?, 'pending')",
       [generateId(), entityType, entityId, Date.now()]
     );
+    // Wake the SyncContext loop immediately instead of waiting for the next
+    // 30s idle tick. Cheap pub/sub; safe to call even if no listener exists.
+    notifySyncQueueChanged();
   }, [db]);
 
   const reconcilePendingSync = useCallback(async (): Promise<number> => {
@@ -1220,6 +1229,8 @@ async function enqueueCatalogTx(
     [generateId(), entityType, entityId, JSON.stringify(payload),
      deleted ? 1 : 0, updatedAt, Date.now()]
   );
+  // Wake the SyncContext loop for catalog edits too. Harmless on rollback.
+  notifySyncQueueChanged();
 }
 
 /**

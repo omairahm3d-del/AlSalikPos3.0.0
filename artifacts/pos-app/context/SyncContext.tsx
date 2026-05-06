@@ -15,6 +15,7 @@ import {
   getOwningCompanyId,
   setOwningCompanyId,
 } from "@/lib/saasStorage";
+import { onSyncQueueChanged } from "@/lib/syncEvents";
 
 /** Poll cadence when the queue is empty or fully in backoff. */
 const IDLE_INTERVAL_MS = 30_000;
@@ -234,6 +235,19 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       if (state === "active" && !cancelled) schedule(0);
     });
 
+    // Wake immediately whenever the queue gains a new item (sale committed,
+    // refund recorded, catalog edit). Avoids the up-to-30s wait between
+    // idle polls — critical on Electron where setTimeout is throttled when
+    // the window isn't focused.
+    const unsub = onSyncQueueChanged(() => {
+      if (!cancelled) {
+        // Refresh the badge count immediately even if the drain is gated
+        // (e.g. tenant check still pending) so the pill reflects reality.
+        refreshCount().catch(() => {});
+        schedule(0);
+      }
+    });
+
     return () => {
       cancelled = true;
       if (timer) {
@@ -241,6 +255,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         timer = null;
       }
       sub.remove();
+      unsub();
     };
   }, [session, db, drain, refreshCount]);
 

@@ -8,6 +8,7 @@ import type {
 } from "@/types";
 import { DEFAULT_BUSINESS_SETTINGS, SEED_CATEGORIES, SEED_PRODUCTS, SEED_STAFF, SEED_TABLES, SEED_TAX_GROUPS, SEED_CUSTOMERS, VAT_RATE } from "@/types";
 import { generateId, generateInvoiceNumber } from "@/lib/database";
+import { notifySyncQueueChanged } from "@/lib/syncEvents";
 import { clearOwningCompanyId } from "@/lib/saasStorage";
 import { DatabaseContext, type CatalogApplyInput, type CatalogEntityType, type CatalogOutboxItem, type CatalogResultUpdate, type SaleOptions, type SyncEntityType, type SyncQueueItem, type SyncResultUpdate } from "./DatabaseCore";
 
@@ -95,6 +96,8 @@ async function writeEntityAndOutbox(
     [entityKey, JSON.stringify(entityValue)],
     [K.catalogOutbox, JSON.stringify(outbox)],
   ]);
+  // Catalog edit queued — wake the SyncContext loop immediately.
+  notifySyncQueueChanged();
 }
 
 /**
@@ -132,7 +135,11 @@ interface WebSyncQueueRow {
 
 async function enqueueSyncWeb(entityType: SyncEntityType, entityId: string): Promise<void> {
   const queue = await getJson<WebSyncQueueRow[]>(K.syncQueue, []);
-  if (queue.some((q) => q.entityType === entityType && q.entityId === entityId)) return;
+  if (queue.some((q) => q.entityType === entityType && q.entityId === entityId)) {
+    // Already queued — still notify so a stuck scheduler kicks.
+    notifySyncQueueChanged();
+    return;
+  }
   queue.push({
     id: generateId(),
     entityType,
@@ -144,6 +151,7 @@ async function enqueueSyncWeb(entityType: SyncEntityType, entityId: string): Pro
     status: "pending",
   });
   await setJson(K.syncQueue, queue);
+  notifySyncQueueChanged();
 }
 
 async function getJson<T>(key: string, fallback: T): Promise<T> {
