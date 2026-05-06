@@ -96,10 +96,12 @@ export function generateReceiptHTML(
   <style>
     @page { margin: ${mT}mm ${mR}mm ${mB}mm ${mL}mm; size: ${pageSize} auto; }
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: 'Tahoma', 'Arial', 'Segoe UI', sans-serif; font-size: ${fs.body}px; color: #000; width: ${pw}; margin: 0 auto; padding: 0; }
+    body { font-family: 'Tahoma', 'Arial', 'Segoe UI', sans-serif; font-size: ${fs.body}px; color: #000; width: ${pw}; margin: 0 auto; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .center { text-align: center; }
     .bold { font-weight: bold; }
-    .ar { font-family: 'Tahoma', 'Arial', sans-serif; direction: rtl; unicode-bidi: embed; }
+    /* Arabic glyphs render thinner than Latin in many fonts during thermal print.
+       Force bold weight + pure black so they match the English next to them. */
+    .ar, [lang="ar"] { font-family: 'Segoe UI', 'Tahoma', 'Arial', 'Arial Unicode MS', sans-serif; direction: rtl; unicode-bidi: embed; color: #000 !important; font-weight: 700; }
     .divider { border-top: 1px dashed #000; margin: 6px 0; }
     .header-title { font-size: ${fs.header}px; font-weight: bold; margin-bottom: 2px; }
     .header-ar { font-size: ${fs.title}px; font-weight: bold; margin-bottom: 4px; }
@@ -231,9 +233,10 @@ export function generateZReportHTML(
   <style>
     @page { margin: 6mm; size: 80mm auto; }
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: 'Tahoma', 'Arial', 'Segoe UI', sans-serif; font-size: 12px; color: #000; width: 72mm; margin: 0 auto; padding: 4mm 0; }
+    body { font-family: 'Tahoma', 'Arial', 'Segoe UI', sans-serif; font-size: 12px; color: #000; width: 72mm; margin: 0 auto; padding: 4mm 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .center { text-align: center; }
     .bold { font-weight: bold; }
+    .ar, [lang="ar"] { font-family: 'Segoe UI', 'Tahoma', 'Arial', 'Arial Unicode MS', sans-serif; direction: rtl; unicode-bidi: embed; color: #000 !important; font-weight: 700; }
     .divider { border-top: 1px dashed #000; margin: 8px 0; }
     .title { font-size: 16px; font-weight: bold; text-align: center; margin-bottom: 2px; }
     .subtitle { font-size: 13px; font-weight: bold; text-align: center; margin-bottom: 6px; }
@@ -247,7 +250,7 @@ export function generateZReportHTML(
 <body>
   <div class="center" style="margin-bottom: 2px;">
     <div style="font-size:14px;font-weight:bold;letter-spacing:1px;">*** Z-REPORT ***</div>
-    <div style="font-size:12px;font-weight:bold;">تقرير إغلاق الصندوق</div>
+    <div class="ar" style="font-size:12px;">تقرير إغلاق الصندوق</div>
   </div>
 
   <div class="divider"></div>
@@ -363,9 +366,10 @@ export function generateCreditPaymentReceiptHTML(
   <style>
     @page { margin: 4mm; size: ${pageSize} auto; }
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: 'Tahoma', 'Arial', 'Segoe UI', sans-serif; font-size: ${fs.body}px; color: #000; width: ${pw}; margin: 0 auto; padding: 4mm 0; }
+    body { font-family: 'Tahoma', 'Arial', 'Segoe UI', sans-serif; font-size: ${fs.body}px; color: #000; width: ${pw}; margin: 0 auto; padding: 4mm 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .center { text-align: center; }
     .bold { font-weight: bold; }
+    .ar, [lang="ar"] { font-family: 'Segoe UI', 'Tahoma', 'Arial', 'Arial Unicode MS', sans-serif; direction: rtl; unicode-bidi: embed; color: #000 !important; font-weight: 700; }
     .divider { border-top: 1px dashed #000; margin: 6px 0; }
     .header-title { font-size: ${fs.header}px; font-weight: bold; margin-bottom: 2px; }
     .header-ar { font-size: ${fs.title}px; font-weight: bold; margin-bottom: 4px; }

@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +15,9 @@ import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
 import type { Customer, Sale, SaleItem, ZReport } from "@/types";
 import { formatCurrency } from "@/types";
+import { buildCsv, downloadCsv } from "@/lib/csvExport";
+import { generateZReportHTML } from "@/lib/receiptTemplate";
+import { printHtml } from "@/lib/printBridge";
 
 type ReportView = null | "zhistory" | "payment" | "staff" | "rider" | "customer" | "items";
 type DatePreset = "today" | "yesterday" | "last7" | "last30" | "thismonth";
@@ -134,6 +139,42 @@ export function ReportsHub({ onBack }: { onBack: () => void }) {
     try { setCustomers(await db.loadCustomers()); } catch { setCustomers([]); }
   }, [db]);
 
+  const handleExport = useCallback(async (slug: string, rows: any[], headers?: string[]) => {
+    if (rows.length === 0) {
+      if (Platform.OS === "web") window.alert("Nothing to export — there are no rows in this report yet.");
+      else Alert.alert("Nothing to Export", "There are no rows in this report yet.");
+      return;
+    }
+    const csv = buildCsv(rows, headers);
+    const res = await downloadCsv(slug, csv);
+    if (!res.ok) {
+      const msg = `Export failed: ${res.error || "unknown error"}`;
+      if (Platform.OS === "web") window.alert(msg); else Alert.alert("Export Failed", msg);
+    }
+  }, []);
+
+  const handlePrintZReport = useCallback(async (report: any) => {
+    try {
+      const business = await db.loadBusinessSettings();
+      const html = generateZReportHTML(report, business);
+      if (Platform.OS === "web") {
+        const printer = business.printerSettings?.windowsReceiptPrinterName;
+        const ok = await printHtml(html, { deviceName: printer || "", paperWidth: business.receiptDesign?.paperWidth ?? "80mm" });
+        if (!ok) {
+          // Fallback: open popup and call window.print()
+          const w = window.open("", "_blank", "width=420,height=640");
+          if (w) { w.document.write(html); w.document.close(); setTimeout(() => { try { w.print(); } catch {} }, 300); }
+        }
+      } else {
+        const Print = await import("expo-print");
+        await Print.printAsync({ html });
+      }
+    } catch (e: any) {
+      const msg = `Print failed: ${e?.message || String(e)}`;
+      if (Platform.OS === "web") window.alert(msg); else Alert.alert("Print Failed", msg);
+    }
+  }, [db]);
+
   useEffect(() => {
     resetState();
     if (view === "zhistory") loadZHistory();
@@ -190,13 +231,19 @@ export function ReportsHub({ onBack }: { onBack: () => void }) {
     return validSales.filter(s => s.customerId === selectedCustId).sort((a, b) => b.createdAt - a.createdAt);
   }, [validSales, selectedCustId]);
 
-  const renderHdr = (title: string, backFn: () => void) => (
+  const renderHdr = (title: string, backFn: () => void, onExport?: () => void) => (
     <View style={[st.header, { borderBottomColor: colors.border }]}>
       <TouchableOpacity onPress={backFn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
         <Feather name="arrow-left" size={22} color={colors.foreground} />
       </TouchableOpacity>
       <Text style={[st.headerTitle, { color: colors.foreground }]}>{title}</Text>
-      <View style={{ width: 34 }} />
+      {onExport ? (
+        <TouchableOpacity onPress={onExport} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          style={[st.exportBtn, { borderColor: colors.border, borderRadius: colors.radius }]}>
+          <Feather name="download" size={14} color={colors.primary} />
+          <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>CSV</Text>
+        </TouchableOpacity>
+      ) : <View style={{ width: 34 }} />}
     </View>
   );
 
@@ -231,7 +278,19 @@ export function ReportsHub({ onBack }: { onBack: () => void }) {
   // ─── Z-Report History ──────────────────────────────────────────────────────
   const renderZHistory = () => (
     <View style={[st.root, { backgroundColor: colors.background }]}>
-      {renderHdr("Z-Report History", () => setView(null))}
+      {renderHdr("Z-Report History", () => setView(null), () => handleExport("z-reports", zReports.map((r: any) => ({
+        Date: r.date || "",
+        Closed: r.closedAt ? new Date(r.closedAt).toISOString() : "",
+        Transactions: r.transactionCount ?? 0,
+        TotalSales: (r.totalSales ?? 0).toFixed(2),
+        TotalRefunds: (r.totalRefunds ?? 0).toFixed(2),
+        NetSales: (r.netSales ?? 0).toFixed(2),
+        VAT: (r.totalVat ?? 0).toFixed(2),
+        Discounts: (r.totalDiscount ?? 0).toFixed(2),
+        OpeningCash: (r.openingCash ?? 0).toFixed(2),
+        ClosingCash: (r.closingCash ?? 0).toFixed(2),
+        CashVariance: ((r.closingCash ?? 0) - ((r.paymentBreakdown ?? []).find((p: any) => p.method === "Cash")?.amount ?? 0)).toFixed(2),
+      }))))}
       {loading ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: 60 }} />
       ) : zReports.length === 0 ? (
@@ -259,7 +318,15 @@ export function ReportsHub({ onBack }: { onBack: () => void }) {
                   </View>
                   <View style={{ alignItems: "flex-end", gap: 2 }}>
                     <Text style={[st.cardAmt, { color: colors.success }]}>{formatCurrency(r.netSales ?? 0)}</Text>
-                    <Feather name={isExp ? "chevron-up" : "chevron-down"} size={15} color={colors.mutedForeground} />
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 }}>
+                      <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); handlePrintZReport(r); }}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={[st.zActionBtn, { borderColor: colors.primary + "55", borderRadius: colors.radius }]}>
+                        <Feather name="printer" size={12} color={colors.primary} />
+                        <Text style={{ color: colors.primary, fontSize: 11, fontWeight: "700" }}>Print</Text>
+                      </TouchableOpacity>
+                      <Feather name={isExp ? "chevron-up" : "chevron-down"} size={15} color={colors.mutedForeground} />
+                    </View>
                   </View>
                 </View>
                 {isExp && (
@@ -295,7 +362,9 @@ export function ReportsHub({ onBack }: { onBack: () => void }) {
     const refundTotal = rangeSales.filter(s => s.isRefund).reduce((s, x) => s + Math.abs(x.total), 0);
     return (
       <View style={[st.root, { backgroundColor: colors.background }]}>
-        {renderHdr("Payment Method Report", () => setView(null))}
+        {renderHdr("Payment Method Report", () => setView(null), () => handleExport("payment-methods", paymentStats.map(p => ({
+          Method: p.method, Transactions: p.count, Amount: p.amount.toFixed(2), Percentage: p.pct.toFixed(2) + "%",
+        }))))}
         <ScrollView contentContainerStyle={st.scroll}>
           {renderPresets((p) => loadRangeData(p))}
           {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} /> :
@@ -341,7 +410,9 @@ export function ReportsHub({ onBack }: { onBack: () => void }) {
     const total = staffStats.reduce((s, x) => s + x.amount, 0);
     return (
       <View style={[st.root, { backgroundColor: colors.background }]}>
-        {renderHdr("Staff Sales Report", () => setView(null))}
+        {renderHdr("Staff Sales Report", () => setView(null), () => handleExport("staff-sales", staffStats.map(s => ({
+          Staff: s.name, Sales: s.count, TotalRevenue: s.amount.toFixed(2), AvgOrder: s.avg.toFixed(2),
+        }))))}
         <ScrollView contentContainerStyle={st.scroll}>
           {renderPresets((p) => loadRangeData(p))}
           {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} /> :
@@ -389,7 +460,9 @@ export function ReportsHub({ onBack }: { onBack: () => void }) {
     const totalDeliveries = riderStats.reduce((s, x) => s + x.count, 0);
     return (
       <View style={[st.root, { backgroundColor: colors.background }]}>
-        {renderHdr("Rider Delivery Report", () => setView(null))}
+        {renderHdr("Rider Delivery Report", () => setView(null), () => handleExport("rider-deliveries", riderStats.map(r => ({
+          Rider: r.name, Deliveries: r.count, TotalRevenue: r.amount.toFixed(2), AvgPerDelivery: r.avg.toFixed(2),
+        }))))}
         <ScrollView contentContainerStyle={st.scroll}>
           {renderPresets((p) => loadRangeData(p))}
           {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} /> :
@@ -437,7 +510,23 @@ export function ReportsHub({ onBack }: { onBack: () => void }) {
   // ─── Customer Transactions ─────────────────────────────────────────────────
   const renderCustomer = () => (
     <View style={[st.root, { backgroundColor: colors.background }]}>
-      {renderHdr("Customer Transactions", () => setView(null))}
+      {renderHdr("Customer Transactions", () => setView(null), () => {
+        if (selectedCustId) {
+          handleExport("customer-transactions", customerTransactions.map(s => ({
+            Invoice: s.invoiceNumber, Date: new Date(s.createdAt).toISOString(), Method: s.paymentMethod,
+            Subtotal: s.subtotal.toFixed(2), VAT: s.vatAmount.toFixed(2), Total: s.total.toFixed(2),
+          })));
+        } else {
+          handleExport("customers-summary", filteredCustomers.map(c => {
+            const txs = validSales.filter(s => s.customerId === c.id);
+            const cTotal = txs.reduce((sum, s) => sum + s.total, 0);
+            return {
+              Name: c.name, Phone: c.phone || "", Email: c.email || "",
+              LoyaltyPoints: c.loyaltyPoints ?? 0, Transactions: txs.length, TotalSpent: cTotal.toFixed(2),
+            };
+          }));
+        }
+      })}
       <ScrollView contentContainerStyle={st.scroll}>
         {renderPresets((p) => { setSelectedCustId(null); loadRangeData(p); })}
         <TextInput
@@ -526,7 +615,17 @@ export function ReportsHub({ onBack }: { onBack: () => void }) {
     const dayRefunds = daySales.filter(s => s.isRefund).length;
     return (
       <View style={[st.root, { backgroundColor: colors.background }]}>
-        {renderHdr("Daily Sales Detail", () => setView(null))}
+        {renderHdr("Daily Sales Detail", () => setView(null), () => handleExport("daily-items", rangeItems.map(it => {
+          const sale = rangeSales.find(s => s.id === it.saleId);
+          return {
+            Date: sale ? new Date(sale.createdAt).toISOString() : "",
+            Invoice: sale?.invoiceNumber ?? "",
+            Item: it.productName, Quantity: it.quantity,
+            UnitPrice: (it.productPrice ?? 0).toFixed(2), LineTotal: (it.lineTotal ?? 0).toFixed(2),
+            Cashier: sale?.staffName ?? "", Customer: sale?.customerName ?? "",
+            Refund: sale?.isRefund ? "yes" : "no",
+          };
+        })))}
         <View style={[st.dateNav, { borderBottomColor: colors.border }]}>
           <TouchableOpacity onPress={() => {
             const d = new Date(itemDate); d.setDate(d.getDate() - 1); setItemDate(d); loadItemDetail(d);
@@ -673,6 +772,8 @@ const st = StyleSheet.create({
   cardSub: { fontSize: 12, marginTop: 2 },
   cardAmt: { fontSize: 15, fontWeight: "700", fontFamily: "Inter_700Bold" },
   expanded: { marginTop: 12, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, gap: 7 },
+  exportBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 5, borderWidth: 1 },
+  zActionBtn: { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1 },
   summaryRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   rowLabel: { fontSize: 13 },
   rowValue: { fontSize: 13, fontWeight: "600" },

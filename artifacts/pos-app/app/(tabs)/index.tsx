@@ -16,6 +16,7 @@ import {
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusEffect } from "expo-router";
 import * as Print from "expo-print";
 import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
 import { CartItemRow } from "@/components/CartItemRow";
@@ -164,7 +165,10 @@ export default function POSScreen() {
     setLoading(false);
   }, [loadProducts, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, loadRiders]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // Fetches on first focus AND every time the Register tab regains focus,
+  // so newly added/edited products, categories, tables, riders and business
+  // settings show up immediately when the user comes back from Back Office.
+  useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
 
   useEffect(() => {
     if (heldOrderInfo?.orderType) {
