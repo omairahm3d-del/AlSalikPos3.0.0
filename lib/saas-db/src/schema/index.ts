@@ -5,3 +5,6 @@ export * from "./devices";
 export * from "./sales";
 export * from "./catalog";
 export * from "./managers";
+export * from "./suppliers";
+export * from "./purchases";
+export * from "./stock";

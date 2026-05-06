@@ -1,6 +1,8 @@
 import { z } from "zod/v4";
 import { saleRepo, type SaleInsertResult } from "../repositories/saleRepo";
+import { stockRepo } from "../repositories/stockRepo";
 import { badRequest } from "../lib/errors";
+import type { InsertStockMovement } from "@workspace/saas-db";
 
 /**
  * Loose schema for the sale payload. The client owns this shape and the
@@ -38,6 +40,14 @@ const splitPaymentSchema = z.object({
   amount: moneyAmount,
 });
 
+const incomingSaleItemSchema = z
+  .object({
+    productId: z.string().min(1).max(128),
+    productName: z.string().min(1).max(200),
+    quantity: z.number().int().positive().max(1_000_000),
+  })
+  .loose();
+
 export const incomingSaleSchema = z.object({
   id: z.string().min(1).max(128),
   invoiceNumber: z.string().min(1).max(64),
@@ -50,6 +60,7 @@ export const incomingSaleSchema = z.object({
   staffId: z.string().max(128).optional(),
   customerId: z.string().max(128).optional(),
   splitPayments: z.array(splitPaymentSchema).optional(),
+  items: z.array(incomingSaleItemSchema).optional(),
 }).loose();
 
 export type IncomingSale = z.infer<typeof incomingSaleSchema>;
@@ -105,6 +116,58 @@ export const syncService = {
 
     const results = await saleRepo.bulkInsert(rows);
     const inserted = results.filter((r) => r.status === "inserted").length;
+
+    // Mirror sale line items into stock_movements so stock-on-hand stays in
+    // sync. We only mirror sales whose `saas_sales` row was actually
+    // inserted by this push — replays of an existing sale ID must NOT
+    // mutate stock even if the client's items array changes between
+    // attempts (otherwise an authenticated device could replay an old
+    // sale ID with new product IDs and arbitrarily move stock). Lines are
+    // also aggregated by productClientId so the same product appearing
+    // twice in one sale isn't dropped by `onConflictDoNothing`.
+    if (ctx.branchId) {
+      const insertedIds = new Set(
+        results.filter((r) => r.status === "inserted").map((r) => r.clientSaleId),
+      );
+      const movements: InsertStockMovement[] = [];
+      for (const sale of input.sales) {
+        if (!insertedIds.has(sale.id)) continue;
+        const items = Array.isArray(sale.items) ? sale.items : [];
+        if (items.length === 0) continue;
+        const sign = sale.isRefund ? 1 : -1;
+        const byProduct = new Map<
+          string,
+          { name: string; sku: string | null; qty: number }
+        >();
+        for (const it of items) {
+          const qty = Number(it.quantity);
+          if (!Number.isFinite(qty) || qty <= 0) continue;
+          const key = String(it.productId);
+          const rawSku = (it as Record<string, unknown>).sku;
+          const sku = typeof rawSku === "string" ? rawSku : null;
+          const cur = byProduct.get(key);
+          if (cur) cur.qty += qty;
+          else byProduct.set(key, { name: String(it.productName), sku, qty });
+        }
+        for (const [productClientId, agg] of byProduct) {
+          movements.push({
+            companyId: ctx.companyId,
+            branchId: ctx.branchId,
+            productClientId,
+            productName: agg.name,
+            sku: agg.sku,
+            delta: String(sign * agg.qty),
+            kind: "sale",
+            refId: sale.id,
+            reason: null,
+          });
+        }
+      }
+      if (movements.length > 0) {
+        await stockRepo.insertMany(movements);
+      }
+    }
+
     return {
       results,
       inserted,

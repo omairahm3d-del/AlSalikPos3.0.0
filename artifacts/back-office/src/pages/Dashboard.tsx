@@ -3,6 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { ManagerSession } from "@/lib/session";
 import ReportsHub from "./ReportsHub";
+import SuppliersTab from "./SuppliersTab";
+import PurchasesTab from "./PurchasesTab";
+import StockTab from "./StockTab";
 import { fmtAED } from "@/lib/csv";
 
 interface Props {
@@ -11,10 +14,19 @@ interface Props {
   onLogout: () => void;
 }
 
-type Tab = "reports" | "products" | "customers";
+type Tab =
+  | "reports"
+  | "stock"
+  | "purchases"
+  | "suppliers"
+  | "products"
+  | "customers";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "reports", label: "Reports" },
+  { id: "stock", label: "Stock" },
+  { id: "purchases", label: "Purchases" },
+  { id: "suppliers", label: "Suppliers" },
   { id: "products", label: "Products" },
   { id: "customers", label: "Customers" },
 ];
@@ -73,6 +85,15 @@ export default function Dashboard({ session, onSession, onLogout }: Props) {
       <div className="p-6">
         {tab === "reports" && (
           <ReportsHub token={session.token} branchId={branchId} />
+        )}
+        {tab === "stock" && (
+          <StockTab token={session.token} branchId={branchId} />
+        )}
+        {tab === "purchases" && (
+          <PurchasesTab token={session.token} branchId={branchId} />
+        )}
+        {tab === "suppliers" && (
+          <SuppliersTab token={session.token} branchId={branchId} />
         )}
         {tab === "products" && (
           <ProductsTab token={session.token} branchId={branchId} />

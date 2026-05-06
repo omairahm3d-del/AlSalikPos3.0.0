@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { managerController } from "../controllers/managerController";
+import { purchasingController } from "../controllers/purchasingController";
 import { requireManager } from "../middlewares/requireManager";
 import { asyncHandler } from "../utils/asyncHandler";
 
@@ -21,5 +22,40 @@ router.get(
   asyncHandler(managerController.listCategories),
 );
 router.get("/manager/customers", asyncHandler(managerController.listCustomers));
+
+// Purchasing & stock
+router.get(
+  "/manager/suppliers",
+  asyncHandler(purchasingController.listSuppliers),
+);
+router.post(
+  "/manager/suppliers",
+  asyncHandler(purchasingController.createSupplier),
+);
+router.patch(
+  "/manager/suppliers/:id",
+  asyncHandler(purchasingController.updateSupplier),
+);
+router.get(
+  "/manager/purchases",
+  asyncHandler(purchasingController.listPurchases),
+);
+router.post(
+  "/manager/purchases",
+  asyncHandler(purchasingController.createPurchase),
+);
+router.get(
+  "/manager/purchases/:id",
+  asyncHandler(purchasingController.getPurchase),
+);
+router.get("/manager/stock", asyncHandler(purchasingController.listOnHand));
+router.get(
+  "/manager/stock/movements",
+  asyncHandler(purchasingController.listMovements),
+);
+router.post(
+  "/manager/stock/adjustments",
+  asyncHandler(purchasingController.createAdjustment),
+);
 
 export default router;
