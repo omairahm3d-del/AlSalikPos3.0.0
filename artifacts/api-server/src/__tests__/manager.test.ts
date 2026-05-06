@@ -236,6 +236,64 @@ describe("Manager auth + branch-scoped reads", () => {
     expect(res.body.error.code).toBe("branch_not_found");
   });
 
+  it("paginates sales via cursor when range exceeds the per-request limit", async () => {
+    // Seed 12 sales on branch A so we can page in chunks of 5.
+    const base = Date.now();
+    const extra = Array.from({ length: 12 }, (_, i) => ({
+      companyId: ctx.companyId,
+      deviceId: ctx.deviceIdA,
+      branchId: ctx.branchAId,
+      clientSaleId: `pg-${base}-${i}`,
+      invoiceNumber: `INV-PG-${i}`,
+      // Spread timestamps so DESC ordering is stable + deterministic.
+      createdAtClient: new Date(base - i * 1000),
+      total: "10.0000",
+      vatAmount: "0.5000",
+      paymentMethod: "cash" as const,
+      isRefund: false,
+      originalClientSaleId: null,
+      staffId: null,
+      customerId: null,
+      payload: { seq: i },
+    }));
+    await saleRepo.bulkInsert(extra);
+
+    const login = await request(app)
+      .post("/api/manager/login")
+      .send({
+        companySlug: ctx.companySlug,
+        email: ctx.email,
+        password: ctx.password,
+      });
+    const token = login.body.token as string;
+
+    const all: { id: string; invoiceNumber: string }[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
+    do {
+      const qs = new URLSearchParams({
+        branchId: ctx.branchAId,
+        limit: "5",
+      });
+      if (cursor) qs.set("cursor", cursor);
+      const res = await request(app)
+        .get(`/api/manager/sales?${qs}`)
+        .set("authorization", `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      all.push(...res.body.sales);
+      cursor = res.body.nextCursor ?? undefined;
+      pages += 1;
+      if (pages > 10) throw new Error("paged forever");
+    } while (cursor);
+
+    // Should have walked all 12 seeded + the 1 from setup = 13, with no dupes.
+    const ids = new Set(all.map((s) => s.id));
+    expect(ids.size).toBe(all.length);
+    expect(all.length).toBeGreaterThanOrEqual(13);
+    // Pages should be > 1 to actually exercise the cursor.
+    expect(pages).toBeGreaterThan(1);
+  });
+
   it("admin password reset revokes existing manager tokens", async () => {
     const login = await request(app)
       .post("/api/manager/login")

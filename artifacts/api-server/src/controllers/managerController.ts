@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { and, desc, eq, gte, lte, sql, or, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, lte, lt, sql, or, isNull } from "drizzle-orm";
 import type { Request, Response } from "express";
 import {
   saasDb,
@@ -23,7 +23,31 @@ const listQuery = z.object({
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
   limit: z.coerce.number().int().min(1).max(500).optional(),
+  cursor: z.string().optional(),
 });
+
+/**
+ * Cursor format: "<iso8601 createdAtClient>__<sale uuid>".
+ * Encodes the keyset position used by the (createdAtClient DESC, id DESC)
+ * order. Returned by `listSales` whenever the page is full so the client can
+ * page through ranges with more rows than the per-request limit (max 500).
+ */
+function decodeCursor(
+  raw: string | undefined,
+): { createdAt: Date; id: string } | undefined {
+  if (!raw) return undefined;
+  const idx = raw.indexOf("__");
+  if (idx <= 0) return undefined;
+  const iso = raw.slice(0, idx);
+  const id = raw.slice(idx + 2);
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime()) || !id) return undefined;
+  return { createdAt: d, id };
+}
+
+function encodeCursor(row: { createdAtClient: Date; id: string }): string {
+  return `${row.createdAtClient.toISOString()}__${row.id}`;
+}
 
 async function assertBranchInCompany(
   companyId: string,
@@ -89,13 +113,29 @@ export const managerController = {
     if (scope) conds.push(scope);
     if (q.from) conds.push(gte(salesTable.createdAtClient, new Date(q.from)));
     if (q.to) conds.push(lte(salesTable.createdAtClient, new Date(q.to)));
+    const cur = decodeCursor(q.cursor);
+    if (cur) {
+      // Keyset paging: strictly past (createdAt, id) under DESC ordering.
+      conds.push(
+        or(
+          lt(salesTable.createdAtClient, cur.createdAt),
+          and(
+            eq(salesTable.createdAtClient, cur.createdAt),
+            lt(salesTable.id, cur.id),
+          ),
+        )!,
+      );
+    }
     const rows = await saasDb
       .select()
       .from(salesTable)
       .where(and(...conds))
-      .orderBy(desc(salesTable.createdAtClient))
+      .orderBy(desc(salesTable.createdAtClient), desc(salesTable.id))
       .limit(limit);
-    res.json({ sales: rows });
+    const last = rows[rows.length - 1];
+    const nextCursor =
+      rows.length === limit && last ? encodeCursor(last) : null;
+    res.json({ sales: rows, nextCursor });
   },
 
   async salesSummary(req: Request, res: Response) {

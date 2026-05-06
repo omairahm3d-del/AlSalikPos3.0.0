@@ -46,6 +46,42 @@ export interface LoginResponse {
   branches: BranchSummary[];
 }
 
+/**
+ * Denormalized client-side Sale that lives inside `SaleRow.payload`. It
+ * mirrors the POS app's `Sale` type so we can compute Payment / Staff /
+ * Rider / Customer / Items aggregates client-side without adding new
+ * server endpoints.
+ */
+export interface SaleItemPayload {
+  id: string;
+  productId: string;
+  productName: string;
+  productPrice: number;
+  quantity: number;
+  lineTotal: number;
+  discountAmount?: number;
+}
+
+export interface SalePayload {
+  id: string;
+  invoiceNumber: string;
+  createdAt: number;
+  subtotal: number;
+  vatAmount: number;
+  total: number;
+  paymentMethod: string;
+  orderType?: "dine-in" | "takeaway" | "delivery";
+  customerId?: string;
+  customerName?: string;
+  staffId?: string;
+  staffName?: string;
+  riderId?: string;
+  riderName?: string;
+  discountAmount?: number;
+  isRefund?: boolean;
+  items?: SaleItemPayload[];
+}
+
 export interface SaleRow {
   id: string;
   branchId: string | null;
@@ -58,7 +94,7 @@ export interface SaleRow {
   isRefund: boolean;
   staffId: string | null;
   customerId: string | null;
-  payload: unknown;
+  payload: SalePayload;
 }
 
 export interface SalesSummary {
@@ -85,13 +121,41 @@ export const api = {
   sales: (
     token: string,
     branchId: string,
-    opts: { from?: string; to?: string; limit?: number } = {},
+    opts: { from?: string; to?: string; limit?: number; cursor?: string } = {},
   ) => {
     const qs = new URLSearchParams({ branchId });
     if (opts.from) qs.set("from", opts.from);
     if (opts.to) qs.set("to", opts.to);
     if (opts.limit) qs.set("limit", String(opts.limit));
-    return request<{ sales: SaleRow[] }>(`/api/manager/sales?${qs}`, { token });
+    if (opts.cursor) qs.set("cursor", opts.cursor);
+    return request<{ sales: SaleRow[]; nextCursor: string | null }>(
+      `/api/manager/sales?${qs}`,
+      { token },
+    );
+  },
+  /**
+   * Pages through `/api/manager/sales` until the server reports no further
+   * cursor, returning every sale in the date range. Reports MUST use this
+   * (not `sales(...)`) so aggregates and CSV exports are not silently
+   * truncated at the 500-row server limit.
+   */
+  salesAll: async (
+    token: string,
+    branchId: string,
+    opts: { from?: string; to?: string } = {},
+  ): Promise<SaleRow[]> => {
+    const PAGE = 500;
+    const HARD_CAP = 50_000; // safety stop; ~100 pages
+    const out: SaleRow[] = [];
+    let cursor: string | undefined;
+    while (out.length < HARD_CAP) {
+      const page: { sales: SaleRow[]; nextCursor: string | null } =
+        await api.sales(token, branchId, { ...opts, limit: PAGE, cursor });
+      out.push(...page.sales);
+      if (!page.nextCursor) break;
+      cursor = page.nextCursor;
+    }
+    return out;
   },
   salesSummary: (
     token: string,

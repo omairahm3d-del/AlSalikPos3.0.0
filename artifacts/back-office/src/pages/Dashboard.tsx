@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { ManagerSession } from "@/lib/session";
+import ReportsHub from "./ReportsHub";
+import { fmtAED } from "@/lib/csv";
 
 interface Props {
   session: ManagerSession;
@@ -16,12 +18,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "products", label: "Products" },
   { id: "customers", label: "Customers" },
 ];
-
-function startOfTodayISO(): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString();
-}
 
 export default function Dashboard({ session, onSession, onLogout }: Props) {
   const [tab, setTab] = useState<Tab>("reports");
@@ -76,7 +72,7 @@ export default function Dashboard({ session, onSession, onLogout }: Props) {
       </div>
       <div className="p-6">
         {tab === "reports" && (
-          <ReportsTab token={session.token} branchId={branchId} />
+          <ReportsHub token={session.token} branchId={branchId} />
         )}
         {tab === "products" && (
           <ProductsTab token={session.token} branchId={branchId} />
@@ -114,132 +110,6 @@ function Shell({
         </div>
       </header>
       {children}
-    </div>
-  );
-}
-
-function fmtAED(v: string | number): string {
-  const n = typeof v === "string" ? Number(v) : v;
-  if (!Number.isFinite(n)) return String(v);
-  return new Intl.NumberFormat("en-AE", {
-    style: "currency",
-    currency: "AED",
-  }).format(n);
-}
-
-function ReportsTab({ token, branchId }: { token: string; branchId: string }) {
-  const [from, setFrom] = useState<string>(startOfTodayISO().slice(0, 10));
-  const [to, setTo] = useState<string>("");
-
-  const fromIso = useMemo(
-    () => (from ? new Date(`${from}T00:00:00.000Z`).toISOString() : undefined),
-    [from],
-  );
-  const toIso = useMemo(
-    () => (to ? new Date(`${to}T23:59:59.999Z`).toISOString() : undefined),
-    [to],
-  );
-
-  const summary = useQuery({
-    queryKey: ["sales-summary", branchId, fromIso, toIso],
-    queryFn: () =>
-      api.salesSummary(token, branchId, { from: fromIso, to: toIso }),
-  });
-  const sales = useQuery({
-    queryKey: ["sales", branchId, fromIso, toIso],
-    queryFn: () =>
-      api.sales(token, branchId, { from: fromIso, to: toIso, limit: 200 }),
-  });
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-end gap-3 flex-wrap">
-        <label className="text-sm">
-          <div className="text-gray-700 mb-1">From</div>
-          <input
-            type="date"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="border border-gray-300 rounded px-2 py-1 text-sm"
-          />
-        </label>
-        <label className="text-sm">
-          <div className="text-gray-700 mb-1">To</div>
-          <input
-            type="date"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="border border-gray-300 rounded px-2 py-1 text-sm"
-          />
-        </label>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Stat
-          label="Sales count"
-          value={summary.data ? String(summary.data.count) : "—"}
-        />
-        <Stat
-          label="Total"
-          value={summary.data ? fmtAED(summary.data.total) : "—"}
-        />
-        <Stat
-          label="VAT"
-          value={summary.data ? fmtAED(summary.data.vat) : "—"}
-        />
-      </div>
-
-      <div className="bg-white border border-gray-200 rounded">
-        <div className="px-4 py-2 border-b border-gray-200 text-sm font-medium text-gray-700">
-          Recent sales
-        </div>
-        {sales.isLoading && (
-          <div className="p-4 text-sm text-gray-500">Loading…</div>
-        )}
-        {sales.error && (
-          <div className="p-4 text-sm text-red-600">
-            {String((sales.error as Error).message)}
-          </div>
-        )}
-        {sales.data && (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 text-gray-600 text-left">
-                <tr>
-                  <th className="px-4 py-2">Invoice</th>
-                  <th className="px-4 py-2">Date</th>
-                  <th className="px-4 py-2">Payment</th>
-                  <th className="px-4 py-2 text-right">VAT</th>
-                  <th className="px-4 py-2 text-right">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sales.data.sales.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-gray-500">
-                      No sales in this range.
-                    </td>
-                  </tr>
-                )}
-                {sales.data.sales.map((s) => (
-                  <tr key={s.id} className="border-t border-gray-100">
-                    <td className="px-4 py-2">{s.invoiceNumber}</td>
-                    <td className="px-4 py-2 text-gray-600">
-                      {new Date(s.createdAtClient).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-2 capitalize">{s.paymentMethod}</td>
-                    <td className="px-4 py-2 text-right">{fmtAED(s.vatAmount)}</td>
-                    <td className="px-4 py-2 text-right font-medium">
-                      {s.isRefund ? "-" : ""}
-                      {fmtAED(s.total)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
@@ -374,13 +244,3 @@ function CatalogTable({
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="bg-white border border-gray-200 rounded px-4 py-3">
-      <div className="text-xs uppercase tracking-wide text-gray-500">
-        {label}
-      </div>
-      <div className="text-2xl font-semibold text-gray-900 mt-1">{value}</div>
-    </div>
-  );
-}
