@@ -358,9 +358,53 @@ export default function POSScreen() {
         splitPayments: paymentMethod === "Split" ? splitEntries : undefined,
       });
 
-      // KOT is intentionally NOT printed at billing/charge time. KOT prints
-      // only when the order is HELD on a table (see handleHoldOrder above).
-      // This matches the kitchen workflow: hold = send to kitchen, bill = pay.
+      // KOT printing on charge/bill:
+      //   • Takeaway / Delivery → always print KOT here (no "hold" step exists
+      //     for these flows).
+      //   • Dine-in → only print KOT here if the order was NOT previously held
+      //     (heldOrderInfo is null). If it was held, KOT was already sent to
+      //     the kitchen in handleHoldOrder, so we skip to avoid duplicates.
+      // All cases require kotSettings.enabled.
+      const shouldPrintKOTOnCharge =
+        kotSettings.enabled &&
+        (orderType === "takeaway" || orderType === "delivery" || (orderType === "dine-in" && !heldOrderInfo));
+      if (shouldPrintKOTOnCharge) {
+        try {
+          const ps = businessSettings?.printerSettings;
+          const defaultKot = ps?.windowsKOTPrinterName || "";
+          const catPrinters = kotSettings.categoryPrinters ?? {};
+          const groups = new Map<string, typeof cartItems>();
+          for (const it of cartItems) {
+            const printer = catPrinters[it.product.category] || defaultKot;
+            const key = printer || "__default__";
+            if (!groups.has(key)) groups.set(key, [] as any);
+            (groups.get(key) as any).push(it);
+          }
+          const { printHtml: ph } = await import("@/lib/printBridge");
+          const kotRef = chargeTableName || (orderType === "takeaway" ? "Takeaway" : orderType === "delivery" ? "Delivery" : "Order");
+          for (const [printerKey, items] of groups.entries()) {
+            const stationLabel = (() => {
+              const cats = Array.from(new Set(items.map((i: any) => i.product.category)));
+              const labels = cats.map((c: any) => kotSettings.categoryRouting[c] || c).filter(Boolean);
+              return labels.length === 1 ? labels[0] : (labels.join(" / ") || undefined);
+            })();
+            const ticketHtml = generateKitchenTicketHTML(
+              items as any, sale.invoiceNumber, kotRef, currentStaff?.name, kotSettings, stationLabel as any
+            );
+            if (!ticketHtml) continue;
+            await ph(ticketHtml, {
+              deviceName: printerKey === "__default__" ? "" : printerKey,
+              paperWidth: ps?.paperWidth || "80mm",
+              rawMode: !!ps?.rawTextMode,
+              autoCut: ps?.autoCutPaper !== false,
+              codepage: ps?.rawCodepage || "cp1252",
+            });
+          }
+        } catch (printErr: any) {
+          // Non-fatal — sale is already saved.
+          console.warn("KOT print on charge failed:", printErr?.message || printErr);
+        }
+      }
 
       clearCart();
       setShowPayment(false);
@@ -380,7 +424,7 @@ export default function POSScreen() {
     }
   }, [cartItems, paymentMethod, selectedCustomer, splitRemaining, orderDiscAmt, loyaltyRedeemAmount,
     saveSale, currentStaff, selectedTable, heldOrderInfo, selectedRider, orderType, orderDiscountType, orderDiscountValue,
-    loyaltyRedeemPtsActual, splitEntries, clearCart, fetchData]);
+    loyaltyRedeemPtsActual, splitEntries, clearCart, fetchData, kotSettings, businessSettings]);
 
   const handleAddSplit = useCallback(() => {
     const amt = parseFloat(splitAmount);
