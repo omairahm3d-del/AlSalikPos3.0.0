@@ -315,30 +315,35 @@ export default function POSScreen() {
       const shouldPrintKOT = kotSettings.enabled && kotTableName;
       if (shouldPrintKOT) {
         try {
-          const stations = getUniqueStations(cartItems, kotSettings);
-          if (stations.length > 0) {
-            for (const station of stations) {
-              const ticketHtml = generateKitchenTicketHTML(
-                cartItems, sale.invoiceNumber, kotTableName, currentStaff?.name, kotSettings, station
-              );
-              if (!ticketHtml) continue;
-              const { printHtml: ph } = await import("@/lib/printBridge");
-              await ph(ticketHtml, {
-                deviceName: businessSettings?.printerSettings?.windowsKOTPrinterName || "",
-                paperWidth: businessSettings?.printerSettings?.paperWidth || "80mm",
-              });
-            }
-          } else {
+          const ps = businessSettings?.printerSettings;
+          const defaultKot = ps?.windowsKOTPrinterName || "";
+          const catPrinters = kotSettings.categoryPrinters ?? {};
+          // Group cart items by their assigned printer (per-category routing)
+          const groups = new Map<string, typeof cartItems>();
+          for (const it of cartItems) {
+            const printer = catPrinters[it.product.category] || defaultKot;
+            const key = printer || "__default__";
+            if (!groups.has(key)) groups.set(key, [] as any);
+            (groups.get(key) as any).push(it);
+          }
+          const { printHtml: ph } = await import("@/lib/printBridge");
+          for (const [printerKey, items] of groups.entries()) {
+            const stationLabel = (() => {
+              const cats = Array.from(new Set(items.map((i: any) => i.product.category)));
+              const labels = cats.map((c: any) => kotSettings.categoryRouting[c] || c).filter(Boolean);
+              return labels.length === 1 ? labels[0] : (labels.join(" / ") || undefined);
+            })();
             const ticketHtml = generateKitchenTicketHTML(
-              cartItems, sale.invoiceNumber, kotTableName, currentStaff?.name, kotSettings
+              items as any, sale.invoiceNumber, kotTableName, currentStaff?.name, kotSettings, stationLabel as any
             );
-            if (ticketHtml) {
-              const { printHtml: ph } = await import("@/lib/printBridge");
-              await ph(ticketHtml, {
-                deviceName: businessSettings?.printerSettings?.windowsKOTPrinterName || "",
-                paperWidth: businessSettings?.printerSettings?.paperWidth || "80mm",
-              });
-            }
+            if (!ticketHtml) continue;
+            await ph(ticketHtml, {
+              deviceName: printerKey === "__default__" ? "" : printerKey,
+              paperWidth: ps?.paperWidth || "80mm",
+              rawMode: !!ps?.rawTextMode,
+              autoCut: ps?.autoCutPaper !== false,
+              codepage: ps?.rawCodepage || "cp1252",
+            });
           }
         } catch (printErr: any) {
           Alert.alert("Kitchen Ticket", "Could not print kitchen ticket: " + (printErr?.message || "Unknown error"));

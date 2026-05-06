@@ -143,48 +143,54 @@ export function VirtualKeyboard() {
 
   const rows = layout === "ar" ? ROWS_AR : ROWS_EN;
 
-  // Inline styles to avoid RN web style overhead
+  // Full-width keyboard with edge-to-edge keys
   const wrap: React.CSSProperties = {
     position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 999999,
     background: "#1B1F2A", borderTop: "1px solid #2A2F3D",
-    padding: 8, boxShadow: "0 -8px 24px rgba(0,0,0,0.4)",
+    padding: "10px 12px 14px", boxShadow: "0 -8px 24px rgba(0,0,0,0.5)",
     fontFamily: "Tahoma, Arial, sans-serif",
     direction: layout === "ar" ? "rtl" : "ltr",
   };
-  const rowStyle: React.CSSProperties = { display: "flex", justifyContent: "center", gap: 6, marginBottom: 6 };
-  const keyStyle: React.CSSProperties = {
-    minWidth: 38, height: 44, padding: "0 10px", borderRadius: 8,
-    background: "#2A2F3D", color: "#fff", border: "1px solid #3A3F4D",
-    fontSize: 16, fontWeight: 600, cursor: "pointer", userSelect: "none",
+  const rowStyle: React.CSSProperties = {
+    display: "grid", gap: 6, marginBottom: 6, width: "100%",
   };
-  const wideKey: React.CSSProperties = { ...keyStyle, minWidth: 70 };
-  const accent: React.CSSProperties = { ...keyStyle, background: "#3B82F6", borderColor: "#3B82F6" };
+  const keyBase: React.CSSProperties = {
+    height: 56, padding: 0, borderRadius: 10,
+    background: "#2A2F3D", color: "#fff", border: "1px solid #3A3F4D",
+    fontSize: 20, fontWeight: 600, cursor: "pointer", userSelect: "none",
+    display: "flex", alignItems: "center", justifyContent: "center",
+  };
+  const accent: React.CSSProperties = { ...keyBase, background: "#3B82F6", borderColor: "#3B82F6" };
+  const ctrlKey: React.CSSProperties = { ...keyBase, background: "#383D4D", fontSize: 16 };
+
+  // Find max columns to keep all rows aligned
+  const maxCols = Math.max(...rows.map((r) => r.length));
 
   return (
     <div data-virtual-kb style={wrap} onMouseDown={(e) => e.preventDefault()}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
         <div style={{ display: "flex", gap: 6 }}>
-          <button style={layout === "en" ? accent : keyStyle} onClick={() => setLayout("en")}>EN</button>
-          <button style={layout === "ar" ? accent : keyStyle} onClick={() => setLayout("ar")}>ع AR</button>
+          <button style={{ ...(layout === "en" ? accent : ctrlKey), height: 36, padding: "0 14px", fontSize: 14 }} onClick={() => setLayout("en")}>EN</button>
+          <button style={{ ...(layout === "ar" ? accent : ctrlKey), height: 36, padding: "0 14px", fontSize: 14 }} onClick={() => setLayout("ar")}>ع AR</button>
         </div>
-        <button style={keyStyle} onClick={() => setVisible(false)}>Hide ▼</button>
+        <button style={{ ...ctrlKey, height: 36, padding: "0 14px", fontSize: 14 }} onClick={() => setVisible(false)}>Hide ▼</button>
       </div>
       {rows.map((row, ri) => (
-        <div key={ri} style={rowStyle}>
+        <div key={ri} style={{ ...rowStyle, gridTemplateColumns: `repeat(${maxCols}, 1fr)` }}>
           {row.map((ch) => (
-            <button key={ch} style={keyStyle} onClick={() => press(ch)}>
+            <button key={ch} style={keyBase} onClick={() => press(ch)}>
               {shift && layout === "en" ? ch.toUpperCase() : ch}
             </button>
           ))}
         </div>
       ))}
-      <div style={rowStyle}>
+      <div style={{ ...rowStyle, gridTemplateColumns: layout === "en" ? "1.5fr 1.5fr 6fr 1.5fr" : "1.5fr 6fr 1.5fr" }}>
         {layout === "en" && (
-          <button style={shift ? accent : wideKey} onClick={() => setShift((s) => !s)}>⇧ Shift</button>
+          <button style={shift ? accent : ctrlKey} onClick={() => setShift((s) => !s)}>⇧ Shift</button>
         )}
-        <button style={wideKey} onClick={onBackspace}>⌫</button>
-        <button style={{ ...keyStyle, flex: 1, minWidth: 200 }} onClick={onSpace}>Space</button>
-        <button style={accent} onClick={onEnter}>Enter</button>
+        <button style={ctrlKey} onClick={onBackspace}>⌫ Back</button>
+        <button style={keyBase} onClick={onSpace}>Space</button>
+        <button style={accent} onClick={onEnter}>Enter ⏎</button>
       </div>
     </div>
   );

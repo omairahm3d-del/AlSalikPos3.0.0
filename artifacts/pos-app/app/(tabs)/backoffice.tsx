@@ -511,67 +511,55 @@ export default function BackOfficeScreen() {
   }, [db]);
 
   const onRestore = useCallback(async () => {
-    Alert.alert(
+    const { confirmDestructive, notify } = await import("@/lib/confirm");
+    const ok = await confirmDestructive(
       "Restore Database?",
       "This will REPLACE all current data with the backup file contents. Continue?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Restore",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              setDbBusy(true);
-              const { pickBackup } = await import("@/lib/backupFile");
-              const picked = await pickBackup();
-              if (!picked.ok || !picked.data) {
-                if (picked.error && picked.error !== "Cancelled" && picked.error !== "No file selected") {
-                  Alert.alert("Restore Failed", picked.error);
-                }
-                return;
-              }
-              await db.importData(picked.data);
-              Alert.alert("Restore Complete", "Database restored successfully. Please restart the app.");
-            } catch (e: any) {
-              Alert.alert("Restore Failed", e?.message || String(e));
-            } finally {
-              setDbBusy(false);
-            }
-          },
-        },
-      ],
+      "Restore",
     );
+    if (!ok) return;
+    try {
+      setDbBusy(true);
+      const { pickBackup } = await import("@/lib/backupFile");
+      const picked = await pickBackup();
+      if (!picked.ok || !picked.data) {
+        if (picked.error && picked.error !== "Cancelled" && picked.error !== "No file selected") {
+          notify("Restore Failed", picked.error);
+        }
+        return;
+      }
+      await db.importData(picked.data);
+      notify("Restore Complete", "Database restored successfully. Please restart the app.");
+    } catch (e: any) {
+      notify("Restore Failed", e?.message || String(e));
+    } finally {
+      setDbBusy(false);
+    }
   }, [db]);
 
-  const onClear = useCallback(() => {
+  const onClear = useCallback(async () => {
     const selected = Object.entries(clearOpts).filter(([, v]) => v).map(([k]) => k);
+    const { confirmDestructive, notify } = await import("@/lib/confirm");
     if (selected.length === 0) {
-      Alert.alert("Nothing Selected", "Please tick at least one data category to clear.");
+      notify("Nothing Selected", "Please tick at least one data category to clear.");
       return;
     }
-    Alert.alert(
+    const ok = await confirmDestructive(
       "Clear Selected Data?",
       `This will permanently delete:\n\n• ${selected.join("\n• ")}\n\nBusiness settings, staff, printers and configuration are NOT affected. Continue?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear Data",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              setDbBusy(true);
-              await db.clearData(clearOpts);
-              setClearOpts({});
-              Alert.alert("Done", "Selected data has been cleared.");
-            } catch (e: any) {
-              Alert.alert("Clear Failed", e?.message || String(e));
-            } finally {
-              setDbBusy(false);
-            }
-          },
-        },
-      ],
+      "Clear Data",
     );
+    if (!ok) return;
+    try {
+      setDbBusy(true);
+      await db.clearData(clearOpts);
+      setClearOpts({});
+      notify("Done", "Selected data has been cleared.");
+    } catch (e: any) {
+      notify("Clear Failed", e?.message || String(e));
+    } finally {
+      setDbBusy(false);
+    }
   }, [clearOpts, db]);
 
   const renderClearRow = (
@@ -1232,21 +1220,99 @@ export default function BackOfficeScreen() {
               ))}
             </View>
 
-            <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 20 }]}>Category Routing (Station Names)</Text>
-            <Text style={[s.hintText, { color: colors.mutedForeground }]}>Assign each category to a kitchen station/printer</Text>
-            {categories.map((cat) => (
-              <View key={cat.id} style={s.routingRow}>
-                <View style={[s.catColorDot, { backgroundColor: cat.colorHex }]} />
-                <Text style={[s.routingCatName, { color: colors.foreground }]}>{cat.name}</Text>
-                <TextInput
-                  value={kotSettings.categoryRouting[cat.name] ?? ""}
-                  onChangeText={(v) => setKotSettings({ ...kotSettings, categoryRouting: { ...kotSettings.categoryRouting, [cat.name]: v } })}
-                  placeholder="Station name"
-                  placeholderTextColor={colors.mutedForeground}
-                  style={[s.routingInput, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
-                />
-              </View>
-            ))}
+            <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 20 }]}>Category Printers</Text>
+            <Text style={[s.hintText, { color: colors.mutedForeground }]}>
+              Pick which Windows printer each category prints to. Leave blank to use the main KOT printer. Tap "Test" to send a sample ticket.
+            </Text>
+            {categories.length === 0 ? (
+              <Text style={{ color: colors.mutedForeground, fontStyle: "italic", marginTop: 8 }}>No categories yet — add some in Back Office → Categories.</Text>
+            ) : null}
+            {categories.map((cat) => {
+              const printerName = (kotSettings.categoryPrinters ?? {})[cat.name] ?? "";
+              const station = kotSettings.categoryRouting[cat.name] ?? "";
+              return (
+                <View key={cat.id} style={{ marginBottom: 14, padding: 12, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+                    <View style={[s.catColorDot, { backgroundColor: cat.colorHex, marginRight: 8 }]} />
+                    <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 14, flex: 1 }}>{cat.name}</Text>
+                    <TouchableOpacity
+                      onPress={async () => {
+                        const ps = printerSettings;
+                        const target = printerName || ps?.windowsKOTPrinterName || ps?.windowsReceiptPrinterName || "";
+                        if (!target && isElectron()) {
+                          Alert.alert("No printer", `Pick a printer for "${cat.name}" first, or set a default KOT printer in Printer Settings.`);
+                          return;
+                        }
+                        const sampleItems: any[] = [
+                          { product: { id: "t1", name: `Test Item (${cat.name})`, price: 10, category: cat.name }, quantity: 1, taxRate: 0.05 },
+                          { product: { id: "t2", name: `Sample Dish`, price: 15, category: cat.name }, quantity: 2, taxRate: 0.05 },
+                        ];
+                        const stationLabel = station || cat.name;
+                        const html = generateKitchenTicketHTML(sampleItems, "KOT-TEST-" + cat.name.toUpperCase().replace(/\s+/g, ""), "Table 1", currentStaff?.name || "Test", kotSettings, stationLabel);
+                        const ok = await printHtml(html || generateKitchenTicketHTML(sampleItems, "KOT-TEST", "Table 1", currentStaff?.name || "Test", kotSettings), {
+                          deviceName: target,
+                          paperWidth: "80mm",
+                          rawMode: !!ps?.rawTextMode,
+                          autoCut: ps?.autoCutPaper !== false,
+                          codepage: ps?.rawCodepage || "cp1252",
+                        });
+                        if (!ok) Alert.alert("Test failed", `Could not print to "${target || "default printer"}". Check the printer is online.`);
+                        else Alert.alert("Sent", `Test ticket sent to "${target || "default printer"}" for category "${cat.name}".`);
+                      }}
+                      style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: colors.success, borderRadius: colors.radius, flexDirection: "row", alignItems: "center", gap: 4 }}
+                    >
+                      <Feather name="printer" size={12} color="#fff" />
+                      <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>Test</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 4 }}>Windows Printer</Text>
+                  {isElectron() && windowsPrinters.length > 0 ? (
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          const next = { ...(kotSettings.categoryPrinters ?? {}) };
+                          delete next[cat.name];
+                          setKotSettings({ ...kotSettings, categoryPrinters: next });
+                        }}
+                        style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: colors.radius, backgroundColor: !printerName ? colors.primary : colors.card, borderWidth: 1, borderColor: !printerName ? colors.primary : colors.border }}
+                      >
+                        <Text style={{ color: !printerName ? "#fff" : colors.mutedForeground, fontSize: 11, fontWeight: "600" }}>(Default KOT)</Text>
+                      </TouchableOpacity>
+                      {windowsPrinters.map((wp) => {
+                        const active = printerName === wp.name;
+                        return (
+                          <TouchableOpacity
+                            key={wp.name}
+                            onPress={() => setKotSettings({ ...kotSettings, categoryPrinters: { ...(kotSettings.categoryPrinters ?? {}), [cat.name]: wp.name } })}
+                            style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: colors.radius, backgroundColor: active ? colors.primary : colors.card, borderWidth: 1, borderColor: active ? colors.primary : colors.border }}
+                          >
+                            <Text style={{ color: active ? "#fff" : colors.foreground, fontSize: 11, fontWeight: "600" }} numberOfLines={1}>{wp.displayName || wp.name}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <TextInput
+                      value={printerName}
+                      onChangeText={(v) => setKotSettings({ ...kotSettings, categoryPrinters: { ...(kotSettings.categoryPrinters ?? {}), [cat.name]: v } })}
+                      placeholder="Printer name (or leave blank for default KOT printer)"
+                      placeholderTextColor={colors.mutedForeground}
+                      style={{ backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius, borderWidth: 1, padding: 8, fontSize: 13, marginBottom: 8 }}
+                    />
+                  )}
+
+                  <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 4 }}>Station Label (optional, prints on ticket header)</Text>
+                  <TextInput
+                    value={station}
+                    onChangeText={(v) => setKotSettings({ ...kotSettings, categoryRouting: { ...kotSettings.categoryRouting, [cat.name]: v } })}
+                    placeholder="e.g. Hot Kitchen, Cold Bar"
+                    placeholderTextColor={colors.mutedForeground}
+                    style={{ backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius, borderWidth: 1, padding: 8, fontSize: 13 }}
+                  />
+                </View>
+              );
+            })}
           </>
         )}
 

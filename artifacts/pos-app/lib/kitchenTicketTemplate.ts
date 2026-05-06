@@ -23,15 +23,9 @@ export function generateKitchenTicketHTML(
   const time = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   const date = now.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
 
-  let filteredItems = items;
-  if (stationFilter) {
-    filteredItems = items.filter((item) => {
-      const cat = item.product.category;
-      const station = ks.categoryRouting[cat];
-      return station === stationFilter;
-    });
-  }
-
+  // stationFilter now used purely as a label on the printed ticket header.
+  // Per-printer routing happens at the call site (Register screen groups items by category→printer).
+  const filteredItems = items;
   if (filteredItems.length === 0) return "";
 
   const itemRows = filteredItems

@@ -43,10 +43,20 @@ RequestExecutionLevel admin
 
 ; ─── Installer ───────────────────────────────────────────────
 Section "Install" SecInstall
+  ; Close any running instance so we can overwrite locked files (icons, fonts, dlls)
+  DetailPrint "Closing any running ${APP_NAME} instance..."
+  nsExec::Exec 'taskkill /F /IM "Al Salik POS.exe" /T'
+  Sleep 1500
+
   SetOutPath "$INSTDIR"
+  SetOverwrite on
 
   ; Copy all app files
+  ClearErrors
   File /r "dist\win-unpacked\*.*"
+  IfErrors 0 +3
+    DetailPrint "Some files could not be written (in use). Try closing the app and re-running."
+    MessageBox MB_ICONEXCLAMATION|MB_OK "Some files could not be installed because they were in use.$\r$\n$\r$\nPlease close ${APP_NAME} (and any open print preview windows) and run the installer again."
 
   ; Desktop shortcut
   CreateShortcut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}" "" "$INSTDIR\${APP_EXE}" 0

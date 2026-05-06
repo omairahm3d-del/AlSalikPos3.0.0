@@ -249,6 +249,7 @@ export interface KOTSettings {
   showNotes: boolean;
   fontSize: "small" | "medium" | "large";
   categoryRouting: Record<string, string>;
+  categoryPrinters?: Record<string, string>;
 }
 
 export interface CustomerDisplaySettings {
@@ -411,6 +412,7 @@ export const DEFAULT_KOT_SETTINGS: KOTSettings = {
   showNotes: true,
   fontSize: "medium",
   categoryRouting: {},
+  categoryPrinters: {},
 };
 
 export const DEFAULT_CUSTOMER_DISPLAY: CustomerDisplaySettings = {
