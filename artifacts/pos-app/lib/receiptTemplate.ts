@@ -49,6 +49,11 @@ export function generateReceiptHTML(
   const pw = getPaperWidth(rd.paperWidth);
   const pageSize = rd.paperWidth === "58mm" ? "58mm" : "80mm";
 
+  const mT = rd.marginTop ?? 4;
+  const mR = rd.marginRight ?? 2;
+  const mB = rd.marginBottom ?? 4;
+  const mL = rd.marginLeft ?? 2;
+
   const itemRows = items
     .map(
       (item) => `
@@ -89,9 +94,9 @@ export function generateReceiptHTML(
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <style>
-    @page { margin: 4mm; size: ${pageSize} auto; }
+    @page { margin: ${mT}mm ${mR}mm ${mB}mm ${mL}mm; size: ${pageSize} auto; }
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: 'Tahoma', 'Arial', 'Segoe UI', sans-serif; font-size: ${fs.body}px; color: #000; width: ${pw}; margin: 0 auto; padding: 4mm 0; }
+    body { font-family: 'Tahoma', 'Arial', 'Segoe UI', sans-serif; font-size: ${fs.body}px; color: #000; width: ${pw}; margin: 0 auto; padding: 0; }
     .center { text-align: center; }
     .bold { font-weight: bold; }
     .ar { font-family: 'Tahoma', 'Arial', sans-serif; direction: rtl; unicode-bidi: embed; }

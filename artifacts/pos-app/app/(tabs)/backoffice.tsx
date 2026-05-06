@@ -837,10 +837,70 @@ export default function BackOfficeScreen() {
             ))}
           </View>
 
-          <TouchableOpacity onPress={() => saveSettings(receiptDesign)} style={[s.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}>
-            <Feather name="save" size={16} color="#fff" />
-            <Text style={s.saveBtnText}>Save Receipt Settings</Text>
-          </TouchableOpacity>
+          <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 16 }]}>Page Margins (mm)</Text>
+          <Text style={[s.hintText, { color: colors.mutedForeground }]}>Adjust if your printer cuts off text or leaves too much white space.</Text>
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
+            {([
+              { key: "marginTop" as const, label: "Top" },
+              { key: "marginRight" as const, label: "Right" },
+              { key: "marginBottom" as const, label: "Bottom" },
+              { key: "marginLeft" as const, label: "Left" },
+            ]).map((m) => {
+              const val = (receiptDesign as any)[m.key];
+              const num = val == null ? (m.key === "marginTop" || m.key === "marginBottom" ? 4 : 2) : val;
+              return (
+                <View key={m.key} style={{ flex: 1 }}>
+                  <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 4 }}>{m.label}</Text>
+                  <TextInput
+                    value={String(num)}
+                    onChangeText={(t) => {
+                      const n = Math.max(0, Math.min(50, parseFloat(t.replace(/[^0-9.]/g, "")) || 0));
+                      setReceiptDesign({ ...receiptDesign, [m.key]: n });
+                    }}
+                    keyboardType="numeric"
+                    style={{ backgroundColor: colors.card, color: colors.foreground, borderColor: colors.border, borderWidth: 1, borderRadius: colors.radius, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, textAlign: "center" }}
+                  />
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 16 }}>
+            <TouchableOpacity onPress={() => saveSettings(receiptDesign)} style={[s.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius, flex: 1 }]}>
+              <Feather name="save" size={16} color="#fff" />
+              <Text style={s.saveBtnText}>Save Receipt Settings</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={async () => {
+                if (!bizSettings) { Alert.alert("Save first", "Save business settings before printing a test receipt."); return; }
+                const sampleSale = { id: "test", invoiceNumber: "INV-TEST-0001", createdAt: Date.now(), subtotal: 100, vatRate: 0.05, vatAmount: 5, total: 105, paymentMethod: "Cash", staffName: currentStaff?.name || "Test Staff" } as any;
+                const sampleItems = [
+                  { id: "i1", saleId: "test", productId: "p1", productName: "Sample Item A", productPrice: 25, quantity: 2, lineTotal: 50 },
+                  { id: "i2", saleId: "test", productId: "p2", productName: "Sample Item B", productPrice: 50, quantity: 1, lineTotal: 50 },
+                ] as any;
+                const html = generateReceiptHTML(sampleSale, sampleItems, bizSettings, receiptDesign);
+                const ps = printerSettings;
+                let rawText: string | undefined;
+                if (ps?.rawTextMode) {
+                  const { generateReceiptText } = await import("@/lib/textReceipt");
+                  rawText = generateReceiptText(sampleSale, sampleItems, bizSettings, receiptDesign);
+                }
+                const ok = await printHtml(html, {
+                  deviceName: ps?.windowsReceiptPrinterName || "",
+                  paperWidth: receiptDesign.paperWidth,
+                  rawMode: !!ps?.rawTextMode,
+                  rawText,
+                  autoCut: ps?.autoCutPaper !== false,
+                  codepage: ps?.rawCodepage || "cp1252",
+                });
+                if (!ok) Alert.alert("Test Print", "Could not send the test receipt. Check Printer Settings.");
+              }}
+              style={[s.saveBtn, { backgroundColor: colors.success, borderRadius: colors.radius, flex: 1 }]}
+            >
+              <Feather name="printer" size={16} color="#fff" />
+              <Text style={s.saveBtnText}>Test Print</Text>
+            </TouchableOpacity>
+          </View>
 
           {Platform.OS === "web" && previewHtml ? (
             <View style={[s.previewWrap, { borderColor: colors.border, borderRadius: colors.radius }]}>

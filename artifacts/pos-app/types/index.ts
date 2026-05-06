@@ -220,6 +220,10 @@ export interface ReceiptDesignSettings {
   showTrn: boolean;
   fontSize: "small" | "medium" | "large";
   paperWidth: "58mm" | "80mm";
+  marginTop?: number;
+  marginRight?: number;
+  marginBottom?: number;
+  marginLeft?: number;
 }
 
 export interface PrinterSettings {
@@ -358,6 +362,10 @@ export const DEFAULT_RECEIPT_DESIGN: ReceiptDesignSettings = {
   showTrn: true,
   fontSize: "medium",
   paperWidth: "80mm",
+  marginTop: 4,
+  marginRight: 2,
+  marginBottom: 4,
+  marginLeft: 2,
 };
 
 export interface ClearDataOptions {
