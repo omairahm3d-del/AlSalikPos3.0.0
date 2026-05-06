@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSync } from "@/context/SyncContext";
+import { useLicense } from "@/context/LicenseContext";
 
 /**
  * Tiny floating indicator showing the cloud sync state. Visible whenever
@@ -10,9 +11,14 @@ import { useSync } from "@/context/SyncContext";
  */
 export function SyncStatusPill() {
   const { pendingCount, isSyncing, lastError, syncNow, adoptLocalDataForCurrentLicense } = useSync();
+  const { session } = useLicense();
   const [expanded, setExpanded] = useState(false);
   const [adopting, setAdopting] = useState(false);
   const canAdopt = !!lastError && lastError.includes("no tenant stamp");
+
+  // Offline-licensed devices have cloud sync hard-disabled, so never surface
+  // the sync indicator (any pending/error state would be misleading).
+  if (session?.license.licenseType === "offline") return null;
 
   if (pendingCount === 0 && !isSyncing && !lastError) return null;
 
