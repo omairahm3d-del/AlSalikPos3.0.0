@@ -23,3 +23,9 @@ id = "nKE59k_ZkcSd_rn5Sfex1"
 uri = "file://desktop-installer/dist/Al-Salik-POS-Setup-1.0.0.tar.gz"
 type = "unspecified"
 title = "Al Salik POS Setup 1.0.0 (instant sync, full wake parity)"
+
+[[outputs]]
+id = "KZyRIwRcE3pKB9TvipGU3"
+uri = "file://desktop-installer/dist/AlSalikPOS-Installer.tar.gz"
+type = "unspecified"
+title = "Al Salik POS Installer (Windows) — hardened offline license + login layout"

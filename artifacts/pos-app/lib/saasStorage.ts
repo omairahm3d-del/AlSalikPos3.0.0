@@ -117,17 +117,27 @@ export async function loadSession(): Promise<LicenseSession | null> {
     return null;
   }
   try {
-    const license = JSON.parse(licenseRaw) as Partial<StoredLicense> & {
-      id: string;
-      expiresAt: string | null;
-      maxDevices: number;
-    };
-    // Default to "online" for sessions persisted before licenseType existed.
+    // Runtime validation, not just a TS cast — old sessions persisted before
+    // `licenseType` existed are tolerated, but malformed shapes (missing id /
+    // wrong types) drop the session and force re-activation rather than
+    // letting `undefined` reach downstream license/sync logic.
+    const raw = JSON.parse(licenseRaw) as unknown;
+    if (!raw || typeof raw !== "object") return null;
+    const r = raw as Record<string, unknown>;
+    if (typeof r["id"] !== "string") return null;
+    if (typeof r["maxDevices"] !== "number" || !Number.isFinite(r["maxDevices"])) {
+      return null;
+    }
+    const expiresAt = r["expiresAt"];
+    if (expiresAt !== null && typeof expiresAt !== "string" && expiresAt !== undefined) {
+      return null;
+    }
     const normalizedLicense: StoredLicense = {
-      id: license.id,
-      expiresAt: license.expiresAt ?? null,
-      maxDevices: license.maxDevices,
-      licenseType: license.licenseType === "offline" ? "offline" : "online",
+      id: r["id"],
+      expiresAt: typeof expiresAt === "string" ? expiresAt : null,
+      maxDevices: r["maxDevices"],
+      // Default to "online" for sessions persisted before licenseType existed.
+      licenseType: r["licenseType"] === "offline" ? "offline" : "online",
     };
     return {
       token,

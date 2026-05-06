@@ -44,6 +44,7 @@ A mobile-first Point of Sale (POS) system for the UAE market, offering sales, in
 ## Architecture decisions
 
 -   **Multi-tenant SaaS via license keys**: Activation requires `POST /api/license/validate` with `licenseKey` and `deviceUid` to obtain a device JWT. Licenses are issued via admin endpoints.
+-   **License types**: `online` licenses keep the cloud sync engine running; `offline` licenses activate online once, persist `expiresAt` locally, then run with sync hard-disabled (enforced in `SyncContext` and `LicenseContext.refresh`). Local expiry is checked on mount so the device re-activates without contacting the server.
 -   **License gate above all providers**: The POS client's local database only opens after successful license validation; session restored from AsyncStorage.
 -   **Append-only sales sync**: Sales are pushed to the server in batches, with idempotency enforced by `UNIQUE(company_id, client_sale_id)`.
 -   **Client outbound sync queue**: A local `sync_queue` table tracks pending pushes, processed in batches with exponential backoff.
