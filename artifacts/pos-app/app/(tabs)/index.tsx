@@ -210,7 +210,7 @@ export default function POSScreen() {
   const handleAddById = useCallback((productId: string) => {
     const product = productById[productId];
     if (!product) return;
-    if (product.stockQuantity <= 0) {
+    if (product.stockTracked && product.stockQuantity <= 0) {
       Alert.alert("Out of Stock", `${product.name} is out of stock.`);
       return;
     }

@@ -14,8 +14,10 @@ interface Props {
 function ProductCardInner({ product, onAdd, quantity }: Props) {
   const colors = useColors();
   const scaleAnim = useRef(new Animated.Value(1)).current;
-  const isOutOfStock = product.stockQuantity <= 0;
-  const isLowStock = !isOutOfStock && product.stockQuantity <= (product.lowStockThreshold ?? 5);
+  const tracked = !!product.stockTracked;
+  const isOutOfStock = tracked && product.stockQuantity <= 0;
+  const isLowStock = tracked && !isOutOfStock && product.stockQuantity <= (product.lowStockThreshold ?? 5);
+  const showNormalStock = tracked && !isOutOfStock && !isLowStock;
 
   const handlePress = useCallback(() => {
     Animated.sequence([
@@ -73,6 +75,11 @@ function ProductCardInner({ product, onAdd, quantity }: Props) {
             {isLowStock && (
               <View style={[styles.lowStockBadge, { backgroundColor: "#F39C12" + "20" }]}>
                 <Text style={styles.lowStockText}>{product.stockQuantity} left</Text>
+              </View>
+            )}
+            {showNormalStock && (
+              <View style={[styles.lowStockBadge, { backgroundColor: "#27AE6018" }]}>
+                <Text style={[styles.lowStockText, { color: "#27AE60" }]}>{product.stockQuantity} left</Text>
               </View>
             )}
           </View>

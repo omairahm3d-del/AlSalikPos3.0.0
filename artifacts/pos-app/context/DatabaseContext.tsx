@@ -22,6 +22,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       id: r.id, name: r.name, category: r.category, price: r.price,
       description: r.description ?? "", colorHex: r.color_hex ?? "#4F8EF7",
       barcode: r.barcode ?? undefined, stockQuantity: r.stock_quantity ?? 999,
+      stockTracked: r.stock_tracking === 1,
       taxGroupId: r.tax_group_id ?? undefined, lowStockThreshold: r.low_stock_threshold ?? 10,
       imageUri: r.image_uri ?? undefined, printerId: r.printer_id ?? undefined,
       priceChangeAllowed: r.price_change_allowed === 1,
@@ -38,8 +39,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     // misses a creation that survived the local commit.
     await db.withExclusiveTransactionAsync(async (tx) => {
       await tx.runAsync(
-        "INSERT INTO products (id, name, category, price, description, color_hex, barcode, stock_quantity, tax_group_id, low_stock_threshold, image_uri, printer_id, price_change_allowed, vat_inclusive, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [id, product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, product.priceChangeAllowed ? 1 : 0, product.vatInclusive ? 1 : 0, updatedAt]
+        "INSERT INTO products (id, name, category, price, description, color_hex, barcode, stock_quantity, stock_tracking, tax_group_id, low_stock_threshold, image_uri, printer_id, price_change_allowed, vat_inclusive, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [id, product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.stockTracked ? 1 : 0, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, product.priceChangeAllowed ? 1 : 0, product.vatInclusive ? 1 : 0, updatedAt]
       );
       await enqueueCatalogTx(tx, "product", id, created, false, updatedAt);
     });
@@ -51,8 +52,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     const next: Product = { ...product, updatedAt };
     await db.withExclusiveTransactionAsync(async (tx) => {
       await tx.runAsync(
-        "UPDATE products SET name=?, category=?, price=?, description=?, color_hex=?, barcode=?, stock_quantity=?, tax_group_id=?, low_stock_threshold=?, image_uri=?, printer_id=?, price_change_allowed=?, vat_inclusive=?, updated_at=? WHERE id=?",
-        [product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, product.priceChangeAllowed ? 1 : 0, product.vatInclusive ? 1 : 0, updatedAt, product.id]
+        "UPDATE products SET name=?, category=?, price=?, description=?, color_hex=?, barcode=?, stock_quantity=?, stock_tracking=?, tax_group_id=?, low_stock_threshold=?, image_uri=?, printer_id=?, price_change_allowed=?, vat_inclusive=?, updated_at=? WHERE id=?",
+        [product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.stockTracked ? 1 : 0, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, product.priceChangeAllowed ? 1 : 0, product.vatInclusive ? 1 : 0, updatedAt, product.id]
       );
       await enqueueCatalogTx(tx, "product", product.id, next, false, updatedAt);
     });
@@ -69,7 +70,16 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
   }, [db]);
 
   const updateStock = useCallback(async (productId: string, delta: number): Promise<void> => {
-    await db.runAsync("UPDATE products SET stock_quantity = stock_quantity + ? WHERE id=?", [delta, productId]);
+    // When receiving stock for the first time (stock_tracking=0), SET the
+    // quantity to `delta` rather than adding to the meaningless 999 default.
+    // Subsequent calls (stock_tracking=1) accumulate normally.
+    await db.runAsync(
+      `UPDATE products SET
+         stock_quantity = CASE WHEN stock_tracking = 0 THEN ? ELSE MAX(0, stock_quantity + ?) END,
+         stock_tracking = 1
+       WHERE id=?`,
+      [delta, delta, productId]
+    );
   }, [db]);
 
   const saveSale = useCallback(async (items: CartItem[], options: SaleOptions): Promise<Sale> => {
@@ -125,11 +135,11 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
           "INSERT INTO sale_items (id, sale_id, product_id, product_name, product_price, quantity, line_total, discount_amount) VALUES (?,?,?,?,?,?,?,?)",
           [itemId, saleId, item.product.id, item.product.name, item.product.price, item.quantity, lineTotal, item.discountAmount ?? 0]
         );
-        // Only reduce stock for products that already have a tracked qty.
-        // NULL stock_quantity means the product is untracked — leave it alone
-        // so Receive Stock can initialize it without a negative phantom count.
+        // Only deduct stock for products the merchant is tracking
+        // (stock_tracking=1). Untracked products (default stock_tracking=0)
+        // are treated as infinite-stock and never decremented.
         await tx.runAsync(
-          "UPDATE products SET stock_quantity=stock_quantity-? WHERE id=? AND stock_quantity IS NOT NULL",
+          "UPDATE products SET stock_quantity=MAX(0,stock_quantity-?) WHERE id=? AND stock_tracking=1",
           [item.quantity, item.product.id]
         );
       }
@@ -1179,14 +1189,24 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         // Use INSERT OR REPLACE to handle both create and update in one
         // statement. Stamp updated_at from the *remote* clock so a
         // subsequent pull doesn't keep re-applying.
+        // Preserve local stock_quantity / stock_tracking when the remote
+        // payload doesn't carry an explicit stockQuantity (NULL). This prevents
+        // a catalog sync from zeroing out stock the merchant just received.
         await tx.runAsync(
           `INSERT OR REPLACE INTO products
            (id, name, category, price, description, color_hex, barcode,
-            stock_quantity, tax_group_id, low_stock_threshold, image_uri,
+            stock_quantity, stock_tracking,
+            tax_group_id, low_stock_threshold, image_uri,
             printer_id, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?,
+            COALESCE(?, (SELECT stock_quantity FROM products WHERE id=?), 999),
+            CASE WHEN ? IS NOT NULL THEN 1
+                 ELSE COALESCE((SELECT stock_tracking FROM products WHERE id=?), 0) END,
+            ?, ?, ?, ?, ?)`,
           [e.id, p.name ?? "", p.category ?? "", p.price ?? 0, p.description ?? "",
-           p.colorHex ?? "#4F8EF7", p.barcode ?? null, p.stockQuantity ?? 999,
+           p.colorHex ?? "#4F8EF7", p.barcode ?? null,
+           p.stockQuantity ?? null, e.id,
+           p.stockQuantity ?? null, e.id,
            p.taxGroupId ?? null, p.lowStockThreshold ?? 10, p.imageUri ?? null,
            p.printerId ?? null, e.updatedAt]
         );

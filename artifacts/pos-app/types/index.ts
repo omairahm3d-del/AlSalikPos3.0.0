@@ -7,6 +7,14 @@ export interface Product {
   colorHex: string;
   barcode?: string;
   stockQuantity: number;
+  /**
+   * When true the product has real stock tracking enabled: the POS deducts
+   * units on sale, shows a quantity badge, and alerts when low.
+   * When false (default) the product is "untracked" — it behaves as if it
+   * has infinite stock. Stored as 0/1 in SQLite via the `stock_tracking`
+   * column; absent in legacy JSON is treated as false.
+   */
+  stockTracked?: boolean;
   taxGroupId?: string;
   lowStockThreshold: number;
   imageUri?: string;

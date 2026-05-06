@@ -219,9 +219,13 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     // otherwise race with applyRemoteCatalog/createProduct/etc.
     return runCatalogExclusive(async () => {
       const products = await getProducts();
-      await setJson(K.products, products.map((p) =>
-        p.id === productId ? { ...p, stockQuantity: Math.max(0, (p.stockQuantity ?? 999) + delta) } : p
-      ));
+      await setJson(K.products, products.map((p) => {
+        if (p.id !== productId) return p;
+        // First receive (stockTracked=false): SET quantity to delta instead of
+        // adding to the default 999 fallback. Subsequent receives accumulate.
+        const base = p.stockTracked ? (p.stockQuantity ?? 0) : 0;
+        return { ...p, stockQuantity: Math.max(0, base + delta), stockTracked: true };
+      }));
     });
   }, []);
 
@@ -288,8 +292,8 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       const products = await getProducts();
       await setJson(K.products, products.map((p) => {
         const cartItem = items.find((i) => i.product.id === p.id);
-        if (cartItem && p.stockQuantity != null) {
-          return { ...p, stockQuantity: Math.max(0, p.stockQuantity - cartItem.quantity) };
+        if (cartItem && p.stockTracked) {
+          return { ...p, stockQuantity: Math.max(0, (p.stockQuantity ?? 0) - cartItem.quantity) };
         }
         return p;
       }));

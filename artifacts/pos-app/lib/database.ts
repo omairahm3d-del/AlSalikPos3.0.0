@@ -274,6 +274,9 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     // rows behave exactly as before this feature shipped.
     "ALTER TABLE products ADD COLUMN price_change_allowed INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE products ADD COLUMN vat_inclusive INTEGER NOT NULL DEFAULT 0",
+    // stock_tracking distinguishes "actively tracked" (1) from "default 999 untracked" (0).
+    // Without this flag there is no way to tell the default 999 from a real 999-unit stock.
+    "ALTER TABLE products ADD COLUMN stock_tracking INTEGER NOT NULL DEFAULT 0",
   ];
 
   // Cash-out / petty-cash log. Created outside the migrations array so it

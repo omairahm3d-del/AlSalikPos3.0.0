@@ -54,7 +54,8 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
   const [description, setDescription] = useState("");
   const [selectedColor, setSelectedColor] = useState(PRODUCT_COLORS[0]);
   const [barcode, setBarcode] = useState("");
-  const [stockQty, setStockQty] = useState("999");
+  const [stockTracked, setStockTracked] = useState(false);
+  const [stockQty, setStockQty] = useState("0");
   const [lowStockThreshold, setLowStockThreshold] = useState("10");
   const [selectedTaxGroupId, setSelectedTaxGroupId] = useState<string | undefined>(undefined);
   const [imageUri, setImageUri] = useState<string | undefined>(undefined);
@@ -115,12 +116,12 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
-  const lowStockCount = products.filter((p) => p.stockQuantity <= p.lowStockThreshold).length;
-  const outOfStockCount = products.filter((p) => p.stockQuantity <= 0).length;
+  const lowStockCount = products.filter((p) => p.stockTracked && p.stockQuantity <= p.lowStockThreshold && p.stockQuantity > 0).length;
+  const outOfStockCount = products.filter((p) => p.stockTracked && p.stockQuantity <= 0).length;
 
   const filteredProducts = (() => {
     let list = products;
-    if (filterLowStock) list = list.filter((p) => p.stockQuantity <= p.lowStockThreshold);
+    if (filterLowStock) list = list.filter((p) => !!p.stockTracked && p.stockQuantity <= p.lowStockThreshold);
     if (search.trim()) {
       const q = search.toLowerCase().trim();
       list = list.filter((p) => p.name.toLowerCase().includes(q) || p.barcode?.toLowerCase().includes(q));
@@ -131,7 +132,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
   const openAdd = () => {
     setEditingProduct(null);
     setName(""); setCategory(categoryOptions[0] ?? ""); setPrice(""); setDescription("");
-    setSelectedColor(PRODUCT_COLORS[0]); setBarcode(""); setStockQty("999");
+    setSelectedColor(PRODUCT_COLORS[0]); setBarcode(""); setStockTracked(false); setStockQty("0");
     setLowStockThreshold("10"); setSelectedTaxGroupId(undefined); setImageUri(undefined);
     setSelectedPrinterId(undefined);
     setPriceChangeAllowed(false); setVatInclusive(false);
@@ -143,7 +144,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     setEditingProduct(product);
     setName(product.name); setCategory(product.category); setPrice(product.price.toFixed(2));
     setDescription(product.description); setSelectedColor(product.colorHex);
-    setBarcode(product.barcode ?? ""); setStockQty(String(product.stockQuantity));
+    setBarcode(product.barcode ?? ""); setStockTracked(!!product.stockTracked); setStockQty(String(product.stockTracked ? product.stockQuantity : 0));
     setLowStockThreshold(String(product.lowStockThreshold));
     setSelectedTaxGroupId(product.taxGroupId); setImageUri(product.imageUri);
     setSelectedPrinterId(product.printerId);
@@ -172,7 +173,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
       Alert.alert("Invalid input", "Please enter a valid name and price.");
       return;
     }
-    const stock = parseInt(stockQty, 10) || 0;
+    const stock = stockTracked ? (parseInt(stockQty, 10) || 0) : 0;
     const threshold = parseInt(lowStockThreshold, 10) || 10;
     const barcodeVal = barcode.trim() || undefined;
 
@@ -181,7 +182,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
       await updateProduct({
         ...editingProduct,
         name: name.trim(), category, price: priceNum, description: description.trim(),
-        colorHex: selectedColor, barcode: barcodeVal, stockQuantity: stock,
+        colorHex: selectedColor, barcode: barcodeVal, stockQuantity: stock, stockTracked,
         lowStockThreshold: threshold, taxGroupId: selectedTaxGroupId, imageUri,
         printerId: selectedPrinterId,
         priceChangeAllowed, vatInclusive,
@@ -190,7 +191,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     } else {
       const created = await createProduct({
         name: name.trim(), category, price: priceNum, description: description.trim(),
-        colorHex: selectedColor, barcode: barcodeVal, stockQuantity: stock,
+        colorHex: selectedColor, barcode: barcodeVal, stockQuantity: stock, stockTracked,
         lowStockThreshold: threshold, taxGroupId: selectedTaxGroupId, imageUri,
         printerId: selectedPrinterId,
         priceChangeAllowed, vatInclusive,
@@ -224,8 +225,8 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
   };
 
   const renderProduct = ({ item }: { item: Product }) => {
-    const isLow = item.stockQuantity <= item.lowStockThreshold && item.stockQuantity > 0;
-    const isOut = item.stockQuantity <= 0;
+    const isLow = !!item.stockTracked && item.stockQuantity <= item.lowStockThreshold && item.stockQuantity > 0;
+    const isOut = !!item.stockTracked && item.stockQuantity <= 0;
     const pName = getPrinterName(item.printerId);
     return (
       <TouchableOpacity
@@ -267,7 +268,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
           <View style={styles.productBottom}>
             <Text style={[styles.productPrice, { color: colors.primary }]}>{formatCurrency(item.price)}</Text>
             <Text style={[styles.stockText, { color: isOut ? colors.destructive : isLow ? "#F39C12" : colors.mutedForeground }]}>
-              {item.stockQuantity} in stock
+              {item.stockTracked ? `${item.stockQuantity} in stock` : "Untracked"}
             </Text>
           </View>
         </View>
@@ -336,16 +337,25 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
               ))}
             </ScrollView>
 
-            <View style={styles.row}>
+            <View style={[styles.toggleRow, { borderColor: colors.border, borderRadius: colors.radius }]}>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Stock Quantity</Text>
-                <TextInput value={stockQty} onChangeText={setStockQty} placeholder="0" placeholderTextColor={colors.mutedForeground} keyboardType="number-pad" style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]} />
+                <Text style={[styles.toggleLabel, { color: colors.foreground }]}>Track Stock</Text>
+                <Text style={[styles.toggleHint, { color: colors.mutedForeground }]}>Count units on hand and alert when running low. Enable after receiving stock.</Text>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Low Stock Alert</Text>
-                <TextInput value={lowStockThreshold} onChangeText={setLowStockThreshold} placeholder="10" placeholderTextColor={colors.mutedForeground} keyboardType="number-pad" style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]} />
-              </View>
+              <Switch value={stockTracked} onValueChange={setStockTracked} />
             </View>
+            {stockTracked && (
+              <View style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Stock Quantity</Text>
+                  <TextInput value={stockQty} onChangeText={setStockQty} placeholder="0" placeholderTextColor={colors.mutedForeground} keyboardType="number-pad" style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Low Stock Alert</Text>
+                  <TextInput value={lowStockThreshold} onChangeText={setLowStockThreshold} placeholder="10" placeholderTextColor={colors.mutedForeground} keyboardType="number-pad" style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]} />
+                </View>
+              </View>
+            )}
 
             {taxGroups.length > 0 && (
               <>
