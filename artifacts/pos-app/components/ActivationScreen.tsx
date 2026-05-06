@@ -12,7 +12,7 @@ import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLicense } from "@/context/LicenseContext";
 import { useColors } from "@/hooks/useColors";
-import { getApiBase } from "@/lib/saasApi";
+import { getApiBase, type ValidatedBranch } from "@/lib/saasApi";
 
 export function ActivationScreen() {
   const colors = useColors();
@@ -21,8 +21,32 @@ export function ActivationScreen() {
   const [deviceName, setDeviceName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // When the server reports the company has >1 active branch and the
+  // device hasn't picked one, we render a branch list and re-submit
+  // with `branchId` once the user makes a choice.
+  const [branchOptions, setBranchOptions] = useState<ValidatedBranch[] | null>(
+    null,
+  );
 
   const apiBase = getApiBase();
+
+  const tryActivate = async (branchId?: string) => {
+    setError(null);
+    setSubmitting(true);
+    try {
+      const res = await activate(licenseKey, deviceName, branchId);
+      if (res.kind === "needs_branch_selection") {
+        setBranchOptions(res.branches);
+      } else {
+        setBranchOptions(null);
+      }
+    } catch (e) {
+      const err = e as { code?: string; message?: string };
+      setError(prettyError(err.code, err.message));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const onSubmit = async () => {
     if (submitting) return;
@@ -31,15 +55,17 @@ export function ActivationScreen() {
       setError("Please enter your license key.");
       return;
     }
-    setSubmitting(true);
-    try {
-      await activate(licenseKey, deviceName);
-    } catch (e) {
-      const err = e as { code?: string; message?: string };
-      setError(prettyError(err.code, err.message));
-    } finally {
-      setSubmitting(false);
-    }
+    await tryActivate();
+  };
+
+  const onPickBranch = async (branchId: string) => {
+    if (submitting) return;
+    await tryActivate(branchId);
+  };
+
+  const onCancelBranchPick = () => {
+    setBranchOptions(null);
+    setError(null);
   };
 
   return (
@@ -72,9 +98,54 @@ export function ActivationScreen() {
         </View>
 
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          Enter the license key your provider gave you to start using this device.
+          {branchOptions
+            ? "This account has multiple branches. Choose the one this device belongs to."
+            : "Enter the license key your provider gave you to start using this device."}
         </Text>
 
+        {branchOptions ? (
+          <View style={styles.branchList}>
+            {branchOptions.map((b) => (
+              <TouchableOpacity
+                key={b.id}
+                onPress={() => onPickBranch(b.id)}
+                disabled={submitting}
+                activeOpacity={0.85}
+                style={[styles.branchCard, submitting && { opacity: 0.6 }]}
+              >
+                <Feather
+                  name="map-pin"
+                  size={16}
+                  color="#8A82FF"
+                  style={{ marginRight: 10 }}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.branchName, { color: colors.foreground }]}>
+                    {b.name}
+                  </Text>
+                  {b.address ? (
+                    <Text style={styles.branchAddr}>{b.address}</Text>
+                  ) : null}
+                </View>
+                <Feather name="chevron-right" size={18} color="rgba(255,255,255,0.45)" />
+              </TouchableOpacity>
+            ))}
+            {error ? (
+              <View style={styles.errorBox}>
+                <Feather name="alert-circle" size={14} color="#FF8585" />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+            <TouchableOpacity
+              onPress={onCancelBranchPick}
+              disabled={submitting}
+              style={styles.linkBtn}
+            >
+              <Text style={styles.linkText}>Use a different license</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+        <>
         <View style={styles.field}>
           <Text style={[styles.label, { color: colors.mutedForeground }]}>
             License key
@@ -139,6 +210,8 @@ export function ActivationScreen() {
             )}
           </LinearGradient>
         </TouchableOpacity>
+        </>
+        )}
 
         <Text style={[styles.helpText, { color: colors.mutedForeground }]}>
           {Platform.OS === "web"
@@ -295,6 +368,34 @@ const styles = StyleSheet.create({
       web: "ui-monospace, SFMono-Regular, Menlo, monospace",
       default: "Inter_400Regular",
     }) as string,
+  },
+  branchList: { gap: 10, marginBottom: 8 },
+  branchCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    borderRadius: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+  },
+  branchName: {
+    fontSize: 15,
+    fontWeight: "600",
+    fontFamily: "Inter_600SemiBold",
+  },
+  branchAddr: {
+    color: "rgba(255,255,255,0.55)",
+    fontSize: 12,
+    marginTop: 2,
+  },
+  linkBtn: { alignSelf: "center", paddingVertical: 8, marginTop: 4 },
+  linkText: {
+    color: "#8A82FF",
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    letterSpacing: 0.4,
   },
   footer: { position: "absolute", bottom: 18, alignItems: "center" },
   footerText: { fontSize: 11, fontFamily: "Inter_500Medium", letterSpacing: 0.3, opacity: 0.7 },

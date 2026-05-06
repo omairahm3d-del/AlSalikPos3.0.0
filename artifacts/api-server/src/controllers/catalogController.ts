@@ -14,6 +14,7 @@ export const catalogController = {
     const result = await catalogService.push(input, {
       companyId: device.companyId,
       deviceId: device.deviceId,
+      branchId: device.branchId ?? null,
     });
     const productsApplied = result.products.filter(
       (r) => r.status === "applied",
@@ -41,6 +42,7 @@ export const catalogController = {
     const query = pullCatalogQuerySchema.parse(req.query);
     const result = await catalogService.pull(query, {
       companyId: device.companyId,
+      branchId: device.branchId ?? null,
     });
     req.log.info(
       {

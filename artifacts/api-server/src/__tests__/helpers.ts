@@ -53,6 +53,13 @@ export async function createTestFixture(opts: {
     name: "vitest",
     platform: "linux",
   });
+  if (validated.kind !== "ok") {
+    // Tests always create single-branch companies, so this branch is
+    // unreachable — but the discriminated union forces us to narrow.
+    throw new Error(
+      `Test fixture expected kind="ok" from license validate, got ${validated.kind}`,
+    );
+  }
 
   return {
     companyId: company.id,

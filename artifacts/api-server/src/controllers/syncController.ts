@@ -10,6 +10,7 @@ export const syncController = {
     const result = await syncService.pushSales(input, {
       companyId: device.companyId,
       deviceId: device.deviceId,
+      branchId: device.branchId ?? null,
     });
     req.log.info(
       {

@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { adminController } from "../controllers/adminController";
+import { branchController } from "../controllers/branchController";
 import { requireAdmin } from "../middlewares/requireAdmin";
 import { asyncHandler } from "../utils/asyncHandler";
 
@@ -21,6 +22,36 @@ router.get(
 router.post(
   "/admin/companies/:companyId/licenses/:licenseId/revoke",
   asyncHandler(adminController.revokeLicense),
+);
+
+router.get(
+  "/admin/companies/:companyId/branches",
+  asyncHandler(branchController.list),
+);
+router.post(
+  "/admin/companies/:companyId/branches",
+  asyncHandler(branchController.create),
+);
+router.patch(
+  "/admin/companies/:companyId/branches/:branchId",
+  asyncHandler(branchController.update),
+);
+
+router.get(
+  "/admin/companies/:companyId/managers",
+  asyncHandler(adminController.listManagers),
+);
+router.post(
+  "/admin/companies/:companyId/managers",
+  asyncHandler(adminController.createManager),
+);
+router.patch(
+  "/admin/companies/:companyId/managers/:managerId/active",
+  asyncHandler(adminController.setManagerActive),
+);
+router.post(
+  "/admin/companies/:companyId/managers/:managerId/password",
+  asyncHandler(adminController.resetManagerPassword),
 );
 
 export default router;

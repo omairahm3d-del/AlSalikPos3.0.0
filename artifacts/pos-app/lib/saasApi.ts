@@ -74,23 +74,43 @@ function devicePlatform(): string {
   }
 }
 
-export interface ValidateLicenseResponse {
-  token: string;
-  tokenExpiresAt: string;
-  company: { id: string; name: string; slug: string };
-  license: {
-    id: string;
-    expiresAt: string | null;
-    maxDevices: number;
-    licenseType: "online" | "offline";
-  };
-  device: {
-    id: string;
-    deviceUid: string;
-    name: string | null;
-    platform: string;
-  };
+export interface ValidatedBranch {
+  id: string;
+  name: string;
+  address: string | null;
 }
+
+/**
+ * Discriminated union returned by `/api/license/validate`. When the company
+ * has more than one active branch and the client didn't pre-select one, the
+ * server returns `kind: "needs_branch_selection"` with the picker payload —
+ * the client prompts the user, then re-submits with `branchId`.
+ */
+export type ValidateLicenseResponse =
+  | {
+      kind: "ok";
+      token: string;
+      tokenExpiresAt: string;
+      company: { id: string; name: string; slug: string };
+      license: {
+        id: string;
+        expiresAt: string | null;
+        maxDevices: number;
+        licenseType: "online" | "offline";
+      };
+      device: {
+        id: string;
+        deviceUid: string;
+        name: string | null;
+        platform: string;
+      };
+      branch: ValidatedBranch;
+    }
+  | {
+      kind: "needs_branch_selection";
+      company: { id: string; name: string; slug: string };
+      branches: ValidatedBranch[];
+    };
 
 async function parseError(res: Response): Promise<ApiError> {
   let body: unknown;
@@ -113,6 +133,8 @@ export async function validateLicense(input: {
   licenseKey: string;
   deviceUid: string;
   name?: string;
+  /** Optional: pre-select a branch (skips the picker round-trip). */
+  branchId?: string;
 }): Promise<ValidateLicenseResponse> {
   const url = `${getApiBase()}/api/license/validate`;
   let res: Response;
@@ -125,6 +147,7 @@ export async function validateLicense(input: {
         deviceUid: input.deviceUid,
         name: input.name,
         platform: devicePlatform(),
+        ...(input.branchId ? { branchId: input.branchId } : {}),
       }),
     });
   } catch (e) {

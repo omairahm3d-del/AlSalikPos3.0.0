@@ -7,9 +7,12 @@ import {
   type Company,
   type License,
   type Device,
+  type Branch,
 } from "@workspace/saas-db";
 import { companyRepo } from "../repositories/companyRepo";
 import { licenseRepo } from "../repositories/licenseRepo";
+import { branchRepo } from "../repositories/branchRepo";
+import { branchService } from "./branchService";
 import { signDeviceToken } from "../middlewares/requireDevice";
 import { generateLicenseKey, normalizeLicenseKey } from "../utils/licenseKey";
 import { badRequest, conflict, forbidden, notFound } from "../lib/errors";
@@ -20,19 +23,83 @@ export interface ValidateInput {
   name?: string;
   platform?: string;
   appVersion?: string;
+  branchId?: string;
 }
 
-export interface ValidateResult {
-  token: string;
-  tokenExpiresAt: Date;
-  company: Pick<Company, "id" | "name" | "slug">;
-  license: Pick<License, "id" | "expiresAt" | "maxDevices" | "licenseType">;
-  device: Pick<Device, "id" | "deviceUid" | "name" | "platform">;
-}
+export type ValidateResult =
+  | {
+      kind: "ok";
+      token: string;
+      tokenExpiresAt: Date;
+      company: Pick<Company, "id" | "name" | "slug">;
+      license: Pick<License, "id" | "expiresAt" | "maxDevices" | "licenseType">;
+      device: Pick<Device, "id" | "deviceUid" | "name" | "platform">;
+      branch: Pick<Branch, "id" | "name" | "address">;
+    }
+  | {
+      kind: "needs_branch_selection";
+      company: Pick<Company, "id" | "name" | "slug">;
+      branches: Array<Pick<Branch, "id" | "name" | "address">>;
+    };
 
 export const licenseService = {
   async validate(input: ValidateInput): Promise<ValidateResult> {
     const key = normalizeLicenseKey(input.licenseKey);
+
+    // Pre-flight: resolve the branch to bind the device to BEFORE entering
+    // the device-upsert transaction. We read the company through the
+    // license (no lock needed for branch lookup; branches don't gate the
+    // device count). If the company has >1 active branch and the caller
+    // didn't pick one, short-circuit with the picker payload — the client
+    // re-submits with branchId.
+    const preLicense = await saasDb.query.licensesTable.findFirst({
+      where: eq(licensesTable.key, key),
+    });
+    if (!preLicense) {
+      throw notFound("license_not_found", "License key is not recognized");
+    }
+    const preCompany = await companyRepo.findById(preLicense.companyId);
+    if (!preCompany) {
+      throw notFound("company_not_found", "Company not found for this license");
+    }
+    // Make sure every company has at least one branch (lazy migration for
+    // companies that haven't been touched by the backfill yet).
+    await branchService.ensureDefault(preCompany.id);
+    const activeBranches = await branchRepo.listActiveByCompany(preCompany.id);
+
+    let chosenBranch: Branch | undefined;
+    if (input.branchId) {
+      chosenBranch = activeBranches.find((b) => b.id === input.branchId);
+      if (!chosenBranch) {
+        throw badRequest(
+          "invalid_branch",
+          "Branch is not part of this company or is inactive",
+        );
+      }
+    } else if (activeBranches.length > 1) {
+      return {
+        kind: "needs_branch_selection",
+        company: {
+          id: preCompany.id,
+          name: preCompany.name,
+          slug: preCompany.slug,
+        },
+        branches: activeBranches.map((b) => ({
+          id: b.id,
+          name: b.name,
+          address: b.address,
+        })),
+      };
+    } else {
+      chosenBranch = activeBranches[0];
+    }
+    if (!chosenBranch) {
+      throw notFound(
+        "branch_not_found",
+        "Company has no active branches available for activation",
+      );
+    }
+    const branchId = chosenBranch.id;
 
     // Run the entire check+upsert in a single transaction with a row lock on
     // the license, so concurrent validations cannot bypass `maxDevices`.
@@ -98,12 +165,15 @@ export const licenseService = {
       }
 
       // 5) Atomic upsert keyed on (license_id, device_uid).
+      // Re-activating against a different branch is allowed and rebinds the
+      // device's branchId — useful when a license/device is moved.
       const now = new Date();
       const upsertedRows = await tx
         .insert(devicesTable)
         .values({
           companyId: company.id,
           licenseId: license.id,
+          branchId,
           deviceUid: input.deviceUid,
           name: input.name ?? null,
           platform: input.platform ?? "unknown",
@@ -113,6 +183,7 @@ export const licenseService = {
         .onConflictDoUpdate({
           target: [devicesTable.licenseId, devicesTable.deviceUid],
           set: {
+            branchId,
             name: input.name ?? sql`${devicesTable.name}`,
             platform: input.platform ?? sql`${devicesTable.platform}`,
             appVersion: input.appVersion ?? sql`${devicesTable.appVersion}`,
@@ -133,9 +204,11 @@ export const licenseService = {
       licenseId: result.license.id,
       deviceId: result.device.id,
       deviceUid: result.device.deviceUid,
+      branchId,
     });
 
     return {
+      kind: "ok",
       token,
       tokenExpiresAt: expiresAt,
       company: {
@@ -154,6 +227,11 @@ export const licenseService = {
         deviceUid: result.device.deviceUid,
         name: result.device.name,
         platform: result.device.platform,
+      },
+      branch: {
+        id: chosenBranch.id,
+        name: chosenBranch.name,
+        address: chosenBranch.address,
       },
     };
   },
@@ -208,6 +286,9 @@ export const licenseService = {
       contactEmail: input.contactEmail ?? null,
       notes: input.notes ?? null,
     });
+    // Every new company starts with a "Main" default branch so subsequent
+    // license activations don't require an admin to manually create one.
+    await branchService.ensureDefault(company.id);
     const license = await this.issueLicense({
       companyId: company.id,
       maxDevices: input.maxDevices,

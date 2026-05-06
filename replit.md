@@ -31,6 +31,7 @@ A mobile-first Point of Sale (POS) system for the UAE market, offering sales, in
 
 -   `artifacts/admin/`: SaaS admin console (React + Vite).
 -   `artifacts/api-server/`: Backend API (Express).
+-   `artifacts/back-office/`: Manager-facing back office web app (React + Vite). Reports, products, customers — scoped to a chosen branch.
 -   `lib/saas-db/`: Multi-tenant Postgres schema.
 -   `artifacts/pos-app/`: Mobile and web POS application (Expo/React Native).
 -   `desktop-installer/`: Electron wrapper and NSIS installer configuration.
@@ -43,6 +44,9 @@ A mobile-first Point of Sale (POS) system for the UAE market, offering sales, in
 
 ## Architecture decisions
 
+-   **Multi-branch isolation**: Each company has one or more `saas_branches` rows. Products, categories, customers, sales, and devices carry a nullable `branch_id`. Sync push/pull is scoped to the device's branch (legacy NULL rows are visible too for back-compat). The backfill script (`scripts/src/backfillBranches.ts`) creates a default "Main" branch per company and stamps existing rows.
+-   **Branch picker on activation**: License validate returns `{kind:"needs_branch_selection", branches:[…]}` when the company has >1 active branch and no `branchId` was provided; the POS client renders a picker and re-submits with the chosen `branchId`. The device row + JWT both pin `branchId`.
+-   **Back-office manager auth**: Managers log in with `companySlug + email + password` against `/api/manager/login` (passwords hashed with Node `scrypt`). The returned JWT (`kind:"manager"`) authorizes `/api/manager/*` read endpoints, all of which take `?branchId=` and reject branches that don't belong to the manager's company. Managers are CRUD'd from admin (`/api/admin/companies/:id/managers`). The Back Office is a separate React+Vite artifact (Expo was originally requested but blocked by the one-mobile-app-per-project constraint).
 -   **Multi-tenant SaaS via license keys**: Activation requires `POST /api/license/validate` with `licenseKey` and `deviceUid` to obtain a device JWT. Licenses are issued via admin endpoints.
 -   **License types**: `online` licenses keep the cloud sync engine running; `offline` licenses activate online once, persist `expiresAt` locally, then run with sync hard-disabled (enforced in `SyncContext` and `LicenseContext.refresh`). Local expiry is checked on mount so the device re-activates without contacting the server.
 -   **License gate above all providers**: The POS client's local database only opens after successful license validation; session restored from AsyncStorage.

@@ -5,6 +5,7 @@ import downloadRouter from "./download";
 import licenseRouter from "./license";
 import adminRouter from "./admin";
 import syncRouter from "./sync";
+import managerRouter from "./manager";
 
 const router: IRouter = Router();
 
@@ -14,5 +15,6 @@ router.use(downloadRouter);
 router.use(licenseRouter);
 router.use(adminRouter);
 router.use(syncRouter);
+router.use(managerRouter);
 
 export default router;

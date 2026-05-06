@@ -163,6 +163,7 @@ function dedupe(entries: CatalogEntry[]): CatalogEntry[] {
 export interface PushCatalogContext {
   companyId: string;
   deviceId: string;
+  branchId?: string | null;
 }
 
 export interface PushCatalogResult {
@@ -188,20 +189,24 @@ export const catalogService = {
     const products = dedupe(input.products ?? []);
     const categories = dedupe(input.categories ?? []);
     const customers = dedupe(input.customers ?? []);
+    const branchId = ctx.branchId ?? null;
     const [productResults, categoryResults, customerResults] = await Promise.all([
       catalogRepo.upsertProducts(
         ctx.companyId,
         ctx.deviceId,
+        branchId,
         toUpsertInputs(products),
       ),
       catalogRepo.upsertCategories(
         ctx.companyId,
         ctx.deviceId,
+        branchId,
         toUpsertInputs(categories),
       ),
       catalogRepo.upsertCustomers(
         ctx.companyId,
         ctx.deviceId,
+        branchId,
         toUpsertInputs(customers),
       ),
     ]);
@@ -214,24 +219,32 @@ export const catalogService = {
 
   async pull(
     query: z.infer<typeof pullCatalogQuerySchema>,
-    ctx: { companyId: string },
+    ctx: { companyId: string; branchId?: string | null },
   ) {
     const { product: pSince, category: cSince, customer: cuSince } = query.since;
+    // When the device is bound to a branch, scope the pull so devices on
+    // other branches don't pull each other's products/customers. Devices
+    // on tokens that predate branches (`branchId == null`) still see the
+    // company-wide stream — preserves back-compat until they re-activate.
+    const branchId = ctx.branchId ?? null;
     const [productsPage, categoriesPage, customersPage] = await Promise.all([
       catalogRepo.listProductsSince(
         ctx.companyId,
+        branchId,
         pSince.since,
         pSince.sinceClientId,
         query.limit,
       ),
       catalogRepo.listCategoriesSince(
         ctx.companyId,
+        branchId,
         cSince.since,
         cSince.sinceClientId,
         query.limit,
       ),
       catalogRepo.listCustomersSince(
         ctx.companyId,
+        branchId,
         cuSince.since,
         cuSince.sinceClientId,
         query.limit,

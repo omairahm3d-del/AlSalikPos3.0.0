@@ -8,6 +8,12 @@ export interface DeviceTokenPayload {
   licenseId: string;
   deviceId: string;
   deviceUid: string;
+  /**
+   * Branch this device is bound to. Optional for back-compat: tokens
+   * minted before branches existed lack this claim and are treated as
+   * "company default branch" by sync handlers.
+   */
+  branchId?: string | null;
 }
 
 declare global {

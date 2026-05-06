@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/back-office/"
+title = "Al Salik Back Office"
+version = "1.0.0"
+id = "artifacts/back-office"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/back-office/" ]
+localPort = 25833
+
+[services.development]
+run = "pnpm --filter @workspace/back-office run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/back-office", "run", "build" ]
+publicDir = "artifacts/back-office/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25833"
+BASE_PATH = "/back-office/"

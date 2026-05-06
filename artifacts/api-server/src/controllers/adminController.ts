@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
 import type { Request, Response } from "express";
 import { licenseService } from "../services/licenseService";
+import { managerService } from "../services/managerService";
 import { companyRepo } from "../repositories/companyRepo";
 import { licenseRepo } from "../repositories/licenseRepo";
 import { deviceRepo } from "../repositories/deviceRepo";
@@ -72,5 +73,67 @@ export const adminController = {
     const license = await licenseRepo.revoke(licenseId, companyId);
     if (!license) throw notFound("license_not_found", "License not found");
     res.json({ license });
+  },
+
+  async listManagers(req: Request, res: Response) {
+    const companyId = z.string().uuid().parse(req.params["companyId"]);
+    const managers = await managerService.listForCompany(companyId);
+    res.json({ managers });
+  },
+
+  async createManager(req: Request, res: Response) {
+    const companyId = z.string().uuid().parse(req.params["companyId"]);
+    const body = z
+      .object({
+        email: z.string().min(3).max(255),
+        name: z.string().min(1).max(200),
+        password: z.string().min(8).max(200),
+        role: z.string().min(1).max(50).optional(),
+      })
+      .parse(req.body);
+    const manager = await managerService.create({ companyId, ...body });
+    req.log.info({ companyId, managerId: manager.id }, "Manager created");
+    res.status(201).json({
+      manager: {
+        id: manager.id,
+        email: manager.email,
+        name: manager.name,
+        role: manager.role,
+      },
+    });
+  },
+
+  async setManagerActive(req: Request, res: Response) {
+    const companyId = z.string().uuid().parse(req.params["companyId"]);
+    const managerId = z.string().uuid().parse(req.params["managerId"]);
+    const body = z.object({ isActive: z.boolean() }).parse(req.body);
+    const manager = await managerService.setActive({
+      companyId,
+      managerId,
+      isActive: body.isActive,
+    });
+    res.json({
+      manager: {
+        id: manager.id,
+        email: manager.email,
+        name: manager.name,
+        role: manager.role,
+        isActive: manager.isActive === "true",
+      },
+    });
+  },
+
+  async resetManagerPassword(req: Request, res: Response) {
+    const companyId = z.string().uuid().parse(req.params["companyId"]);
+    const managerId = z.string().uuid().parse(req.params["managerId"]);
+    const body = z.object({ newPassword: z.string().min(8).max(200) }).parse(
+      req.body,
+    );
+    await managerService.resetPassword({
+      companyId,
+      managerId,
+      newPassword: body.newPassword,
+    });
+    res.json({ ok: true });
   },
 };

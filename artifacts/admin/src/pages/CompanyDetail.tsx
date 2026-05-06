@@ -1,7 +1,16 @@
 import { useState } from "react";
 import { Link, useParams } from "wouter";
-import { useCompanies, useCompanyLicenses, useCompanyDevices, useIssueLicense, useRevokeLicense } from "@/hooks/useAdminApi";
-import type { LicenseType } from "@/lib/adminApi";
+import {
+  useCompanies,
+  useCompanyLicenses,
+  useCompanyDevices,
+  useIssueLicense,
+  useRevokeLicense,
+  useCompanyBranches,
+  useCreateBranch,
+  useUpdateBranch,
+} from "@/hooks/useAdminApi";
+import type { Branch, LicenseType } from "@/lib/adminApi";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { format, formatDistanceToNow, parseISO } from "date-fns";
-import { ArrowLeft, Copy, Eye, EyeOff, KeyRound, MonitorSmartphone, Plus, ShieldAlert, XCircle, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Copy, Eye, EyeOff, KeyRound, MonitorSmartphone, Plus, ShieldAlert, XCircle, CheckCircle2, Building2, Star } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function maskKey(key: string) {
@@ -27,14 +36,22 @@ export function CompanyDetail() {
 
   const { data: licensesData, isLoading: licensesLoading } = useCompanyLicenses(companyId || "");
   const { data: devicesData, isLoading: devicesLoading } = useCompanyDevices(companyId || "");
+  const { data: branchesData, isLoading: branchesLoading } = useCompanyBranches(companyId || "");
 
   const issueLicense = useIssueLicense();
   const revokeLicense = useRevokeLicense();
+  const createBranch = useCreateBranch(companyId || "");
+  const updateBranch = useUpdateBranch(companyId || "");
   const { toast } = useToast();
 
   const [issueOpen, setIssueOpen] = useState(false);
   const [revokeOpen, setRevokeOpen] = useState<string | null>(null);
   const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
+
+  const [branchOpen, setBranchOpen] = useState(false);
+  const [editBranch, setEditBranch] = useState<Branch | null>(null);
+  const [branchName, setBranchName] = useState("");
+  const [branchAddress, setBranchAddress] = useState("");
 
   const [maxDevices, setMaxDevices] = useState(1);
   const [notes, setNotes] = useState("");
@@ -91,6 +108,62 @@ export function CompanyDetail() {
 
   const licenses = licensesData?.licenses || [];
   const devices = devicesData?.devices || [];
+  const branches = branchesData?.branches || [];
+
+  const openCreateBranch = () => {
+    setEditBranch(null);
+    setBranchName("");
+    setBranchAddress("");
+    setBranchOpen(true);
+  };
+
+  const openEditBranch = (b: Branch) => {
+    setEditBranch(b);
+    setBranchName(b.name);
+    setBranchAddress(b.address ?? "");
+    setBranchOpen(true);
+  };
+
+  const handleBranchSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (editBranch) {
+        await updateBranch.mutateAsync({
+          branchId: editBranch.id,
+          name: branchName,
+          address: branchAddress || null,
+        });
+        toast({ title: "Branch updated." });
+      } else {
+        await createBranch.mutateAsync({
+          name: branchName,
+          address: branchAddress || null,
+        });
+        toast({ title: "Branch created." });
+      }
+      setBranchOpen(false);
+    } catch (err: any) {
+      toast({ title: "Failed to save branch", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleSetDefault = async (branchId: string) => {
+    try {
+      await updateBranch.mutateAsync({ branchId, isDefault: true });
+      toast({ title: "Default branch updated." });
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleToggleActive = async (b: Branch) => {
+    try {
+      await updateBranch.mutateAsync({ branchId: b.id, isActive: !b.isActive });
+      toast({ title: b.isActive ? "Branch deactivated." : "Branch activated." });
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.message, variant: "destructive" });
+    }
+  };
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -174,9 +247,10 @@ export function CompanyDetail() {
       </Card>
 
       <Tabs defaultValue="licenses" className="w-full">
-        <TabsList className="grid w-full max-w-[400px] grid-cols-2">
+        <TabsList className="grid w-full max-w-[600px] grid-cols-3">
           <TabsTrigger value="licenses">Licenses ({licenses.length})</TabsTrigger>
           <TabsTrigger value="devices">Devices ({devices.length})</TabsTrigger>
+          <TabsTrigger value="branches">Branches ({branches.length})</TabsTrigger>
         </TabsList>
         
         <TabsContent value="licenses" className="mt-6 space-y-4">
@@ -397,6 +471,126 @@ export function CompanyDetail() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="branches" className="mt-6 space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold">Branches</h2>
+            <Dialog open={branchOpen} onOpenChange={setBranchOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" onClick={openCreateBranch}>
+                  <Plus className="mr-2 h-4 w-4" /> Add Branch
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <form onSubmit={handleBranchSubmit}>
+                  <DialogHeader>
+                    <DialogTitle>{editBranch ? "Edit Branch" : "New Branch"}</DialogTitle>
+                    <DialogDescription>
+                      Branches isolate products, stock, sales, staff and customers.
+                      Each POS device activates against one branch.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="branchName">Name</Label>
+                      <Input
+                        id="branchName"
+                        value={branchName}
+                        onChange={(e) => setBranchName(e.target.value)}
+                        placeholder="Main, Downtown, Mall of Emirates..."
+                        required
+                        maxLength={120}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="branchAddress">Address (optional)</Label>
+                      <Textarea
+                        id="branchAddress"
+                        value={branchAddress}
+                        onChange={(e) => setBranchAddress(e.target.value)}
+                        placeholder="Street, city, emirate..."
+                        maxLength={500}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" type="button" onClick={() => setBranchOpen(false)}>Cancel</Button>
+                    <Button type="submit" disabled={createBranch.isPending || updateBranch.isPending}>
+                      {editBranch ? "Save changes" : "Create branch"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          {branchesLoading ? (
+            <Skeleton className="h-32 w-full" />
+          ) : branches.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="pt-8 pb-8 text-center text-muted-foreground">
+                No branches yet. Add one to begin per-branch isolation.
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {branches.map((branch) => (
+                <Card key={branch.id} className={!branch.isActive ? "opacity-70 bg-muted/50" : ""}>
+                  <CardHeader className="pb-2 flex flex-row items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-lg font-semibold">{branch.name}</span>
+                        {branch.isDefault && (
+                          <Badge variant="default" className="gap-1">
+                            <Star className="h-3 w-3" /> Default
+                          </Badge>
+                        )}
+                        {!branch.isActive && <Badge variant="secondary">Inactive</Badge>}
+                      </div>
+                      {branch.address && (
+                        <p className="text-sm text-muted-foreground whitespace-pre-wrap mt-1">
+                          {branch.address}
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Created {format(parseISO(branch.createdAt), "PPP")}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2 items-end">
+                      <Button variant="outline" size="sm" onClick={() => openEditBranch(branch)}>
+                        Edit
+                      </Button>
+                      {!branch.isDefault && branch.isActive && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleSetDefault(branch.id)}
+                          disabled={updateBranch.isPending}
+                        >
+                          Set Default
+                        </Button>
+                      )}
+                      {!branch.isDefault && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleToggleActive(branch)}
+                          disabled={updateBranch.isPending}
+                        >
+                          {branch.isActive ? "Deactivate" : "Activate"}
+                        </Button>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-2 text-sm text-muted-foreground">
+                    {devices.filter((d) => (d as any).branchId === branch.id).length} device(s) bound to this branch
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           )}
         </TabsContent>

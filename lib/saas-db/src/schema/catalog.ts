@@ -9,6 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { companiesTable } from "./companies";
 import { devicesTable } from "./devices";
+import { branchesTable } from "./branches";
 
 /**
  * Cloud-side mirror of POS catalog (products + categories + customers).
@@ -32,6 +33,13 @@ import { devicesTable } from "./devices";
  *   evolve without forcing a server migration.
  */
 
+/**
+ * Branches isolate catalog rows: a product/category/customer belongs to one
+ * branch. The `(companyId, clientId)` uniqueness predates branches so we
+ * keep it for back-compat, but new rows are inserted with a branchId and
+ * branch-scoped reads filter on `branchId`. Backfill stamps legacy rows
+ * with the company's default branch.
+ */
 export const productsTable = pgTable(
   "saas_products",
   {
@@ -39,6 +47,9 @@ export const productsTable = pgTable(
     companyId: uuid("company_id")
       .notNull()
       .references(() => companiesTable.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id").references(() => branchesTable.id, {
+      onDelete: "restrict",
+    }),
     clientId: text("client_id").notNull(),
     payload: jsonb("payload").notNull(),
     clientUpdatedAt: timestamp("client_updated_at", { withTimezone: true }).notNull(),
@@ -60,6 +71,10 @@ export const productsTable = pgTable(
       t.companyId,
       t.serverUpdatedAt,
     ),
+    branchCursorIdx: index("saas_products_branch_server_updated_idx").on(
+      t.branchId,
+      t.serverUpdatedAt,
+    ),
   }),
 );
 
@@ -70,6 +85,9 @@ export const categoriesTable = pgTable(
     companyId: uuid("company_id")
       .notNull()
       .references(() => companiesTable.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id").references(() => branchesTable.id, {
+      onDelete: "restrict",
+    }),
     clientId: text("client_id").notNull(),
     payload: jsonb("payload").notNull(),
     clientUpdatedAt: timestamp("client_updated_at", { withTimezone: true }).notNull(),
@@ -91,6 +109,10 @@ export const categoriesTable = pgTable(
       t.companyId,
       t.serverUpdatedAt,
     ),
+    branchCursorIdx: index("saas_categories_branch_server_updated_idx").on(
+      t.branchId,
+      t.serverUpdatedAt,
+    ),
   }),
 );
 
@@ -101,6 +123,9 @@ export const customersTable = pgTable(
     companyId: uuid("company_id")
       .notNull()
       .references(() => companiesTable.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id").references(() => branchesTable.id, {
+      onDelete: "restrict",
+    }),
     clientId: text("client_id").notNull(),
     payload: jsonb("payload").notNull(),
     clientUpdatedAt: timestamp("client_updated_at", { withTimezone: true }).notNull(),
@@ -120,6 +145,10 @@ export const customersTable = pgTable(
     ),
     cursorIdx: index("saas_customers_company_server_updated_idx").on(
       t.companyId,
+      t.serverUpdatedAt,
+    ),
+    branchCursorIdx: index("saas_customers_branch_server_updated_idx").on(
+      t.branchId,
       t.serverUpdatedAt,
     ),
   }),

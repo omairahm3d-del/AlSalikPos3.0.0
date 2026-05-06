@@ -61,6 +61,7 @@ export const pushSalesInputSchema = z.object({
 export interface PushSalesContext {
   companyId: string;
   deviceId: string;
+  branchId?: string | null;
 }
 
 export interface PushSalesResult {
@@ -88,6 +89,7 @@ export const syncService = {
     const rows = input.sales.map((s) => ({
       companyId: ctx.companyId,
       deviceId: ctx.deviceId,
+      branchId: ctx.branchId ?? null,
       clientSaleId: s.id,
       invoiceNumber: s.invoiceNumber,
       createdAtClient: new Date(s.createdAt),

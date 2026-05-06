@@ -26,6 +26,30 @@ export interface License {
   updatedAt: string;
 }
 
+export interface Branch {
+  id: string;
+  companyId: string;
+  name: string;
+  address: string | null;
+  isDefault: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateBranchInput {
+  name: string;
+  address?: string | null;
+  isDefault?: boolean;
+}
+
+export interface UpdateBranchInput {
+  name?: string;
+  address?: string | null;
+  isActive?: boolean;
+  isDefault?: boolean;
+}
+
 export interface Device {
   id: string;
   companyId: string;
@@ -138,6 +162,28 @@ export const adminApi = {
   ): Promise<{ license: License }> {
     return request(`/companies/${companyId}/licenses/${licenseId}/revoke`, {
       method: "POST",
+    });
+  },
+  listBranches(companyId: string): Promise<{ branches: Branch[] }> {
+    return request(`/companies/${companyId}/branches`);
+  },
+  createBranch(
+    companyId: string,
+    input: CreateBranchInput,
+  ): Promise<{ branch: Branch }> {
+    return request(`/companies/${companyId}/branches`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+  updateBranch(
+    companyId: string,
+    branchId: string,
+    input: UpdateBranchInput,
+  ): Promise<{ branch: Branch }> {
+    return request(`/companies/${companyId}/branches/${branchId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
     });
   },
   /**

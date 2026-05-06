@@ -63,6 +63,7 @@ async function upsertOne(
   table: typeof productsTable | typeof categoriesTable | typeof customersTable,
   companyId: string,
   deviceId: string,
+  branchId: string | null,
   input: CatalogUpsertInput,
 ): Promise<CatalogUpsertResult> {
   const now = new Date();
@@ -70,6 +71,7 @@ async function upsertOne(
     .insert(table)
     .values({
       companyId,
+      branchId,
       clientId: input.clientId,
       payload: input.payload as object,
       clientUpdatedAt: input.clientUpdatedAt,
@@ -80,6 +82,9 @@ async function upsertOne(
     .onConflictDoUpdate({
       target: [table.companyId, table.clientId],
       set: {
+        // Stamp branchId on existing rows too (zero-cost migration for
+        // legacy NULL rows that are being touched again).
+        branchId,
         payload: input.payload as object,
         clientUpdatedAt: input.clientUpdatedAt,
         serverUpdatedAt: now,
@@ -107,6 +112,7 @@ async function upsertMany(
   table: typeof productsTable | typeof categoriesTable | typeof customersTable,
   companyId: string,
   deviceId: string,
+  branchId: string | null,
   inputs: CatalogUpsertInput[],
 ): Promise<CatalogUpsertResult[]> {
   if (inputs.length === 0) return [];
@@ -117,7 +123,7 @@ async function upsertMany(
   // from a bulk INSERT...ON CONFLICT statement).
   const out: CatalogUpsertResult[] = [];
   for (const input of inputs) {
-    out.push(await upsertOne(table, companyId, deviceId, input));
+    out.push(await upsertOne(table, companyId, deviceId, branchId, input));
   }
   return out;
 }
@@ -125,6 +131,7 @@ async function upsertMany(
 async function listSince(
   table: typeof productsTable | typeof categoriesTable | typeof customersTable,
   companyId: string,
+  branchId: string | null,
   since: Date,
   sinceClientId: string,
   limit: number,
@@ -150,6 +157,16 @@ async function listSince(
     .where(
       and(
         eq(table.companyId, companyId),
+        // Branch-scoped pull: when a device is on a branch, restrict to
+        // its own branch's rows (legacy NULL rows are also visible so
+        // pre-backfill data isn't lost). Devices on tokens without a
+        // branch claim see the full company stream.
+        branchId
+          ? or(
+              eq(table.branchId, branchId),
+              sql`${table.branchId} IS NULL`,
+            )
+          : sql`true`,
         or(
           gt(table.serverUpdatedAt, since),
           and(
@@ -191,36 +208,45 @@ export const catalogRepo = {
   upsertProducts: (
     companyId: string,
     deviceId: string,
+    branchId: string | null,
     inputs: CatalogUpsertInput[],
-  ) => upsertMany(productsTable, companyId, deviceId, inputs),
+  ) => upsertMany(productsTable, companyId, deviceId, branchId, inputs),
   upsertCategories: (
     companyId: string,
     deviceId: string,
+    branchId: string | null,
     inputs: CatalogUpsertInput[],
-  ) => upsertMany(categoriesTable, companyId, deviceId, inputs),
+  ) => upsertMany(categoriesTable, companyId, deviceId, branchId, inputs),
   listProductsSince: (
     companyId: string,
+    branchId: string | null,
     since: Date,
     sinceClientId: string,
     limit: number,
-  ) => listSince(productsTable, companyId, since, sinceClientId, limit),
+  ) =>
+    listSince(productsTable, companyId, branchId, since, sinceClientId, limit),
   listCategoriesSince: (
     companyId: string,
+    branchId: string | null,
     since: Date,
     sinceClientId: string,
     limit: number,
-  ) => listSince(categoriesTable, companyId, since, sinceClientId, limit),
+  ) =>
+    listSince(categoriesTable, companyId, branchId, since, sinceClientId, limit),
   upsertCustomers: (
     companyId: string,
     deviceId: string,
+    branchId: string | null,
     inputs: CatalogUpsertInput[],
-  ) => upsertMany(customersTable, companyId, deviceId, inputs),
+  ) => upsertMany(customersTable, companyId, deviceId, branchId, inputs),
   listCustomersSince: (
     companyId: string,
+    branchId: string | null,
     since: Date,
     sinceClientId: string,
     limit: number,
-  ) => listSince(customersTable, companyId, since, sinceClientId, limit),
+  ) =>
+    listSince(customersTable, companyId, branchId, since, sinceClientId, limit),
 };
 
 export type { ProductRow, CategoryRow, CustomerRow };

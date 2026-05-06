@@ -13,6 +13,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { companiesTable } from "./companies";
 import { devicesTable } from "./devices";
+import { branchesTable } from "./branches";
 
 /**
  * Cloud-side mirror of POS sales pushed from devices.
@@ -36,6 +37,9 @@ export const salesTable = pgTable(
     deviceId: uuid("device_id")
       .notNull()
       .references(() => devicesTable.id, { onDelete: "restrict" }),
+    branchId: uuid("branch_id").references(() => branchesTable.id, {
+      onDelete: "restrict",
+    }),
     clientSaleId: text("client_sale_id").notNull(),
     invoiceNumber: text("invoice_number").notNull(),
     createdAtClient: timestamp("created_at_client", { withTimezone: true }).notNull(),
@@ -58,6 +62,10 @@ export const salesTable = pgTable(
     ),
     companyCreatedIdx: index("saas_sales_company_created_idx").on(
       table.companyId,
+      table.createdAtClient,
+    ),
+    branchCreatedIdx: index("saas_sales_branch_created_idx").on(
+      table.branchId,
       table.createdAtClient,
     ),
     deviceIdx: index("saas_sales_device_idx").on(table.deviceId),

@@ -10,6 +10,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { companiesTable } from "./companies";
 import { licensesTable } from "./licenses";
+import { branchesTable } from "./branches";
 
 export const devicesTable = pgTable(
   "saas_devices",
@@ -21,6 +22,15 @@ export const devicesTable = pgTable(
     licenseId: uuid("license_id")
       .notNull()
       .references(() => licensesTable.id, { onDelete: "cascade" }),
+    /**
+     * Branch this device is bound to. Null only for legacy rows from before
+     * branches existed (the backfill stamps a default branch); after
+     * activation a device is tied to one branch and cannot move without
+     * re-activation.
+     */
+    branchId: uuid("branch_id").references(() => branchesTable.id, {
+      onDelete: "restrict",
+    }),
     deviceUid: text("device_uid").notNull(),
     name: text("name"),
     platform: text("platform").notNull().default("unknown"),

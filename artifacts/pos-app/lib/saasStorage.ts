@@ -7,6 +7,13 @@ const K_COMPANY = "saas.company";
 const K_LICENSE = "saas.license";
 const K_LICENSE_KEY = "saas.licenseKey";
 /**
+ * Branch this device is bound to (set when activation succeeds against a
+ * specific branch). Persisted alongside the license so the device knows
+ * which branch's catalog/sales/staff it belongs to even before the next
+ * `/api/license/validate` round-trip.
+ */
+const K_BRANCH = "saas.branch";
+/**
  * Identity of the company whose data currently lives in this device's local
  * DB. Stamped the first time we sync (or first reconcile) under a given
  * license. Used to refuse cross-tenant pushes after a license swap or
@@ -66,11 +73,23 @@ export interface StoredLicense {
   licenseType: "online" | "offline";
 }
 
+export interface StoredBranch {
+  id: string;
+  name: string;
+  address: string | null;
+}
+
 export interface LicenseSession {
   token: string;
   tokenExpiresAt: string;
   company: StoredCompany;
   license: StoredLicense;
+  /**
+   * Branch this device is bound to. Optional for back-compat with sessions
+   * persisted before branches existed — those sessions still work and are
+   * treated as the company's default branch by the server.
+   */
+  branch: StoredBranch | null;
   licenseKey: string;
   deviceUid: string;
 }
@@ -105,14 +124,16 @@ export function getOrCreateDeviceUid(): Promise<string> {
 }
 
 export async function loadSession(): Promise<LicenseSession | null> {
-  const [token, exp, companyRaw, licenseRaw, key, deviceUid] = await Promise.all([
-    AsyncStorage.getItem(K_TOKEN),
-    AsyncStorage.getItem(K_TOKEN_EXPIRES),
-    AsyncStorage.getItem(K_COMPANY),
-    AsyncStorage.getItem(K_LICENSE),
-    AsyncStorage.getItem(K_LICENSE_KEY),
-    AsyncStorage.getItem(K_DEVICE_UID),
-  ]);
+  const [token, exp, companyRaw, licenseRaw, key, deviceUid, branchRaw] =
+    await Promise.all([
+      AsyncStorage.getItem(K_TOKEN),
+      AsyncStorage.getItem(K_TOKEN_EXPIRES),
+      AsyncStorage.getItem(K_COMPANY),
+      AsyncStorage.getItem(K_LICENSE),
+      AsyncStorage.getItem(K_LICENSE_KEY),
+      AsyncStorage.getItem(K_DEVICE_UID),
+      AsyncStorage.getItem(K_BRANCH),
+    ]);
   if (!token || !companyRaw || !licenseRaw || !key || !deviceUid || !exp) {
     return null;
   }
@@ -139,11 +160,31 @@ export async function loadSession(): Promise<LicenseSession | null> {
       // Default to "online" for sessions persisted before licenseType existed.
       licenseType: r["licenseType"] === "offline" ? "offline" : "online",
     };
+    let branch: StoredBranch | null = null;
+    if (branchRaw) {
+      try {
+        const b = JSON.parse(branchRaw) as unknown;
+        if (b && typeof b === "object") {
+          const br = b as Record<string, unknown>;
+          if (typeof br["id"] === "string" && typeof br["name"] === "string") {
+            branch = {
+              id: br["id"],
+              name: br["name"],
+              address: typeof br["address"] === "string" ? br["address"] : null,
+            };
+          }
+        }
+      } catch {
+        // Tolerate malformed branch payload — falling back to null preserves
+        // back-compat with sessions persisted before branches existed.
+      }
+    }
     return {
       token,
       tokenExpiresAt: exp,
       company: JSON.parse(companyRaw) as StoredCompany,
       license: normalizedLicense,
+      branch,
       licenseKey: key,
       deviceUid,
     };
@@ -153,14 +194,18 @@ export async function loadSession(): Promise<LicenseSession | null> {
 }
 
 export async function saveSession(s: LicenseSession): Promise<void> {
-  await AsyncStorage.multiSet([
+  const pairs: Array<[string, string]> = [
     [K_TOKEN, s.token],
     [K_TOKEN_EXPIRES, s.tokenExpiresAt],
     [K_COMPANY, JSON.stringify(s.company)],
     [K_LICENSE, JSON.stringify(s.license)],
     [K_LICENSE_KEY, s.licenseKey],
     [K_DEVICE_UID, s.deviceUid],
-  ]);
+  ];
+  if (s.branch) pairs.push([K_BRANCH, JSON.stringify(s.branch)]);
+  await AsyncStorage.multiSet(pairs);
+  // If branch was cleared (legacy → new), drop the stale value too.
+  if (!s.branch) await AsyncStorage.removeItem(K_BRANCH);
 }
 
 export async function clearSession(): Promise<void> {
@@ -170,6 +215,7 @@ export async function clearSession(): Promise<void> {
     K_COMPANY,
     K_LICENSE,
     K_LICENSE_KEY,
+    K_BRANCH,
   ]);
   // Intentionally keep K_DEVICE_UID so re-activation reuses the same slot
   // and doesn't burn an extra device against the license's maxDevices.

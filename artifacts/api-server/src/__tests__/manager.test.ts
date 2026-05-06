@@ -1,0 +1,248 @@
+import { describe, it, expect, afterAll, beforeAll } from "vitest";
+import request from "supertest";
+import app from "../app";
+import { managerService } from "../services/managerService";
+import { branchService } from "../services/branchService";
+import { saleRepo } from "../repositories/saleRepo";
+import { catalogRepo } from "../repositories/catalogRepo";
+import {
+  cleanupAllTestCompanies,
+  createTestFixture,
+} from "./helpers";
+
+const ADMIN_KEY = process.env.SAAS_ADMIN_API_KEY!;
+
+interface ManagerCtx {
+  companyId: string;
+  companySlug: string;
+  email: string;
+  password: string;
+  managerId: string;
+  branchAId: string;
+  branchBId: string;
+  deviceIdA: string;
+  deviceIdB: string;
+}
+
+async function setupManager(): Promise<ManagerCtx> {
+  // Single-branch fixture; we add a second branch + a second device to it.
+  const fix = await createTestFixture({ maxDevices: 5 });
+  const branchA = await branchService.ensureDefault(fix.companyId);
+  const branchB = await branchService.create({
+    companyId: fix.companyId,
+    name: "Branch B",
+  });
+
+  // Bind a 2nd device to branch B by re-validating the same license with a
+  // different uid + branchId.
+  const { licenseService } = await import("../services/licenseService");
+  const { licenseRepo } = await import("../repositories/licenseRepo");
+  const lic = (await licenseRepo.listByCompany(fix.companyId))[0]!;
+  const r = await licenseService.validate({
+    licenseKey: lic.key,
+    deviceUid: `${fix.deviceUid}-b`,
+    branchId: branchB.id,
+  });
+  if (r.kind !== "ok") throw new Error("expected ok");
+
+  // Lookup company slug
+  const { companyRepo } = await import("../repositories/companyRepo");
+  const company = await companyRepo.findById(fix.companyId);
+  if (!company) throw new Error("company missing");
+
+  const email = `mgr+${Date.now()}@test.local`;
+  const password = "supersecret123";
+  const m = await managerService.create({
+    companyId: fix.companyId,
+    email,
+    name: "Test Manager",
+    password,
+  });
+
+  // Seed: one sale per branch, one product per branch, one customer per branch.
+  await saleRepo.bulkInsert([
+    {
+      companyId: fix.companyId,
+      deviceId: fix.deviceId,
+      branchId: branchA.id,
+      clientSaleId: `sa-${Date.now()}`,
+      invoiceNumber: "INV-A-1",
+      createdAtClient: new Date(),
+      total: "100.0000",
+      vatAmount: "5.0000",
+      paymentMethod: "cash",
+      isRefund: false,
+      originalClientSaleId: null,
+      staffId: null,
+      customerId: null,
+      payload: {},
+    },
+    {
+      companyId: fix.companyId,
+      deviceId: r.device.id,
+      branchId: branchB.id,
+      clientSaleId: `sb-${Date.now()}`,
+      invoiceNumber: "INV-B-1",
+      createdAtClient: new Date(),
+      total: "200.0000",
+      vatAmount: "10.0000",
+      paymentMethod: "card",
+      isRefund: false,
+      originalClientSaleId: null,
+      staffId: null,
+      customerId: null,
+      payload: {},
+    },
+  ]);
+  await catalogRepo.upsertProducts(fix.companyId, fix.deviceId, branchA.id, [
+    {
+      clientId: `pa-${Date.now()}`,
+      payload: { name: "Coffee A", price: 12 },
+      clientUpdatedAt: new Date(),
+      deletedAt: null,
+    },
+  ]);
+  await catalogRepo.upsertProducts(fix.companyId, r.device.id, branchB.id, [
+    {
+      clientId: `pb-${Date.now()}`,
+      payload: { name: "Tea B", price: 8 },
+      clientUpdatedAt: new Date(),
+      deletedAt: null,
+    },
+  ]);
+
+  return {
+    companyId: fix.companyId,
+    companySlug: company.slug,
+    email,
+    password,
+    managerId: m.id,
+    branchAId: branchA.id,
+    branchBId: branchB.id,
+    deviceIdA: fix.deviceId,
+    deviceIdB: r.device.id,
+  };
+}
+
+describe("Manager auth + branch-scoped reads", () => {
+  let ctx: ManagerCtx;
+
+  beforeAll(async () => {
+    ctx = await setupManager();
+  });
+  afterAll(cleanupAllTestCompanies);
+
+  it("rejects bad password (401 invalid_credentials)", async () => {
+    const res = await request(app)
+      .post("/api/manager/login")
+      .send({
+        companySlug: ctx.companySlug,
+        email: ctx.email,
+        password: "wrong-password",
+      });
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe("invalid_credentials");
+  });
+
+  it("requires bearer for protected routes", async () => {
+    const res = await request(app).get("/api/manager/branches");
+    expect(res.status).toBe(401);
+  });
+
+  it("logs in, lists branches, and reads sales scoped per branch", async () => {
+    const login = await request(app)
+      .post("/api/manager/login")
+      .send({
+        companySlug: ctx.companySlug,
+        email: ctx.email,
+        password: ctx.password,
+      });
+    expect(login.status).toBe(200);
+    expect(login.body.token).toEqual(expect.any(String));
+    expect(login.body.branches).toHaveLength(2);
+    const token = login.body.token as string;
+
+    const branches = await request(app)
+      .get("/api/manager/branches")
+      .set("authorization", `Bearer ${token}`);
+    expect(branches.status).toBe(200);
+    expect(branches.body.branches.map((b: { id: string }) => b.id)).toEqual(
+      expect.arrayContaining([ctx.branchAId, ctx.branchBId]),
+    );
+
+    const salesA = await request(app)
+      .get(`/api/manager/sales?branchId=${ctx.branchAId}`)
+      .set("authorization", `Bearer ${token}`);
+    expect(salesA.status).toBe(200);
+    expect(salesA.body.sales).toHaveLength(1);
+    expect(salesA.body.sales[0].invoiceNumber).toBe("INV-A-1");
+
+    const salesB = await request(app)
+      .get(`/api/manager/sales?branchId=${ctx.branchBId}`)
+      .set("authorization", `Bearer ${token}`);
+    expect(salesB.status).toBe(200);
+    expect(salesB.body.sales).toHaveLength(1);
+    expect(salesB.body.sales[0].invoiceNumber).toBe("INV-B-1");
+
+    const sumA = await request(app)
+      .get(`/api/manager/sales/summary?branchId=${ctx.branchAId}`)
+      .set("authorization", `Bearer ${token}`);
+    expect(sumA.status).toBe(200);
+    expect(sumA.body.count).toBe(1);
+    expect(Number(sumA.body.total)).toBe(100);
+    expect(Number(sumA.body.vat)).toBe(5);
+
+    const prodB = await request(app)
+      .get(`/api/manager/products?branchId=${ctx.branchBId}`)
+      .set("authorization", `Bearer ${token}`);
+    expect(prodB.status).toBe(200);
+    expect(prodB.body.products).toHaveLength(1);
+    expect(
+      (prodB.body.products[0].payload as { name: string }).name,
+    ).toBe("Tea B");
+  });
+
+  it("rejects branchId from another company (404 branch_not_found)", async () => {
+    const login = await request(app)
+      .post("/api/manager/login")
+      .send({
+        companySlug: ctx.companySlug,
+        email: ctx.email,
+        password: ctx.password,
+      });
+    const token = login.body.token as string;
+
+    // Create an unrelated company + branch.
+    const otherSlug = `other-${Date.now()}`;
+    const other = await request(app)
+      .post("/api/admin/companies")
+      .set("x-admin-api-key", ADMIN_KEY)
+      .send({ name: `Other ${otherSlug}`, slug: otherSlug });
+    expect(other.status).toBe(201);
+    const otherCompanyId = other.body.company.id as string;
+    const { trackCompany } = await import("./helpers");
+    trackCompany(otherCompanyId);
+    const otherBranchRes = await request(app)
+      .post(`/api/admin/companies/${otherCompanyId}/branches`)
+      .set("x-admin-api-key", ADMIN_KEY)
+      .send({ name: "Foreign Branch" });
+    expect(otherBranchRes.status).toBe(201);
+    const foreignBranchId = otherBranchRes.body.branch.id as string;
+
+    const res = await request(app)
+      .get(`/api/manager/sales?branchId=${foreignBranchId}`)
+      .set("authorization", `Bearer ${token}`);
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("branch_not_found");
+  });
+
+  it("admin can list managers for the company", async () => {
+    const list = await request(app)
+      .get(`/api/admin/companies/${ctx.companyId}/managers`)
+      .set("x-admin-api-key", ADMIN_KEY);
+    expect(list.status).toBe(200);
+    expect(
+      list.body.managers.find((m: { id: string }) => m.id === ctx.managerId),
+    ).toBeTruthy();
+  });
+});

@@ -13,12 +13,30 @@ import {
   saveSession,
   type LicenseSession,
 } from "@/lib/saasStorage";
-import { validateLicense, type ApiError } from "@/lib/saasApi";
+import {
+  validateLicense,
+  type ApiError,
+  type ValidatedBranch,
+} from "@/lib/saasApi";
+
+/**
+ * Result of an `activate()` call. When the company has multiple active
+ * branches and the caller didn't pre-pick one, the API short-circuits with
+ * a picker payload — the UI must render a branch chooser, then call
+ * `activate(licenseKey, deviceName, branchId)` with the selection.
+ */
+export type ActivateResult =
+  | { kind: "ok" }
+  | { kind: "needs_branch_selection"; branches: ValidatedBranch[] };
 
 interface LicenseContextValue {
   ready: boolean;
   session: LicenseSession | null;
-  activate: (licenseKey: string, deviceName?: string) => Promise<void>;
+  activate: (
+    licenseKey: string,
+    deviceName?: string,
+    branchId?: string,
+  ) => Promise<ActivateResult>;
   deactivate: () => Promise<void>;
   /** Re-validate against the server (used on resume / once per day). */
   refresh: () => Promise<void>;
@@ -74,28 +92,41 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const activate = useCallback(
-    async (licenseKey: string, deviceName?: string) => {
+    async (
+      licenseKey: string,
+      deviceName?: string,
+      branchId?: string,
+    ): Promise<ActivateResult> => {
       const myOp = ++opSeq.current;
       const deviceUid = await getOrCreateDeviceUid();
       const res = await validateLicense({
         licenseKey: licenseKey.trim(),
         deviceUid,
         name: deviceName?.trim() || undefined,
+        branchId,
       });
       // If a newer op (e.g. deactivate) ran while we were awaiting, drop this
       // result rather than clobbering the newer state.
-      if (myOp !== opSeq.current) return;
+      if (myOp !== opSeq.current) return { kind: "ok" };
+      if (res.kind === "needs_branch_selection") {
+        return {
+          kind: "needs_branch_selection",
+          branches: res.branches,
+        };
+      }
       const next: LicenseSession = {
         token: res.token,
         tokenExpiresAt: res.tokenExpiresAt,
         company: res.company,
         license: res.license,
+        branch: res.branch,
         licenseKey: licenseKey.trim().toUpperCase(),
         deviceUid,
       };
       await saveSession(next);
-      if (myOp !== opSeq.current) return;
+      if (myOp !== opSeq.current) return { kind: "ok" };
       setSession(next);
+      return { kind: "ok" };
     },
     [],
   );
@@ -118,13 +149,21 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
       const res = await validateLicense({
         licenseKey: current.licenseKey,
         deviceUid: current.deviceUid,
+        // Pin to the device's current branch on refresh — otherwise a
+        // multi-branch company would re-trigger the picker every renewal.
+        ...(current.branch ? { branchId: current.branch.id } : {}),
       });
       if (myOp !== opSeq.current) return;
+      // Refresh against an unbound legacy session that hits a multi-branch
+      // company would short-circuit to picker — we keep the existing
+      // session in that case and let the next manual re-activate handle it.
+      if (res.kind === "needs_branch_selection") return;
       const next: LicenseSession = {
         token: res.token,
         tokenExpiresAt: res.tokenExpiresAt,
         company: res.company,
         license: res.license,
+        branch: res.branch,
         licenseKey: current.licenseKey,
         deviceUid: current.deviceUid,
       };
