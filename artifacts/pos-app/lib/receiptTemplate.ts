@@ -61,13 +61,13 @@ export function generateReceiptHTML(
         <td style="padding:4px 0;text-align:left;">${item.productName}</td>
         <td style="padding:4px 8px;text-align:center;">${Math.abs(item.quantity)}</td>
         <td style="padding:4px 8px;text-align:right;">${fmt(item.productPrice)}</td>
-        <td style="padding:4px 0;text-align:right;">${fmt(item.lineTotal)}${(item.discountAmount ?? 0) > 0 ? `<br/><small style="color:#2ECC71;">-${fmt(item.discountAmount!)}</small>` : ""}</td>
+        <td style="padding:4px 0;text-align:right;">${fmt(item.lineTotal)}${(item.discountAmount ?? 0) > 0 ? `<br/><small style="color:#000;">-${fmt(item.discountAmount!)}</small>` : ""}</td>
       </tr>`
     )
     .join("");
 
   const discountLine = (sale.discountAmount ?? 0) > 0
-    ? `<tr><td style="text-align:left;color:#2ECC71;">Discount${sale.discountType === "percentage" ? ` (${sale.discountValue}%)` : ""}</td><td style="text-align:right;color:#2ECC71;">-${fmt(sale.discountAmount!)}</td></tr>`
+    ? `<tr><td style="text-align:left;color:#000;">Discount${sale.discountType === "percentage" ? ` (${sale.discountValue}%)` : ""}</td><td style="text-align:right;color:#000;">-${fmt(sale.discountAmount!)}</td></tr>`
     : "";
 
   const headerText = rd.headerText ? `<div class="center" style="font-size:${fs.body}px;margin-bottom:4px;">${rd.headerText.replace(/\n/g, "<br/>")}</div>` : "";
@@ -77,7 +77,7 @@ export function generateReceiptHTML(
     : "Thank you for your business!<br/>شكراً لتعاملكم معنا";
 
   const trnLine = rd.showTrn
-    ? (business.trn ? `<div>TRN: ${business.trn}</div>` : '<div style="color:#999;">TRN: Not configured</div>')
+    ? (business.trn ? `<div>TRN: ${business.trn}</div>` : '<div style="color:#000;">TRN: Not configured</div>')
     : "";
 
   const logoMaxW = rd.paperWidth === "58mm" ? 100 : 140;
@@ -86,7 +86,7 @@ export function generateReceiptHTML(
     : "";
 
   const bilingual = (en: string, ar: string) =>
-    `<span>${en}</span> <span style="font-size:${fs.body - 2}px;color:#444;">/ ${ar}</span>`;
+    `<span>${en}</span> <span style="font-size:${fs.body - 2}px;color:#000;">/ ${ar}</span>`;
 
   return `<!DOCTYPE html>
 <html dir="ltr" lang="en">
@@ -111,7 +111,7 @@ export function generateReceiptHTML(
     .total-section td { padding: 2px 0; }
     .grand-total td { font-size: ${fs.header}px; font-weight: bold; padding: 4px 0; }
     .footer { font-size: ${fs.body - 2}px; text-align: center; margin-top: 8px; line-height: 1.5; }
-    .refund-banner { background: #E74C3C; color: #fff; padding: 4px 0; font-size: ${fs.header}px; font-weight: bold; text-align: center; margin-bottom: 4px; }
+    .refund-banner { background: #fff; color: #000; padding: 4px 0; font-size: ${fs.header}px; font-weight: bold; text-align: center; margin-bottom: 4px; border-top: 2px solid #000; border-bottom: 2px solid #000; }
   </style>
 </head>
 <body>
@@ -191,7 +191,7 @@ export function generateReceiptHTML(
     Prices are inclusive of ${vatPct}% VAT where applicable<br/>
     <span class="ar">الأسعار شاملة ضريبة القيمة المضافة ${vatPct}% حيثما ينطبق</span><br/>
     ${footerText}
-    <div style="margin-top:6px;border-top:1px dashed #ccc;padding-top:5px;font-size:${fs.body - 3}px;color:#888;">Powered by Al Salik Computers</div>
+    <div style="margin-top:6px;border-top:1px dashed #000;padding-top:5px;font-size:${fs.body - 3}px;color:#000;">Powered by Al Salik Computers</div>
   </div>
 </body>
 </html>`;
@@ -223,7 +223,6 @@ export function generateZReportHTML(
 
   const cashDiff = report.closingCash - (report.totalSales - report.totalRefunds);
   const diffLabel = cashDiff >= 0 ? "Over" : "Short";
-  const diffColor = cashDiff >= 0 ? "#2ECC71" : "#E74C3C";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -274,9 +273,9 @@ export function generateZReportHTML(
 
   <div class="section-title">Sales Summary</div>
   <table class="summary-row">
-    <tr><td>Total Sales</td><td style="text-align:right;font-weight:700;color:#2ECC71;">${fmt(report.totalSales)}</td></tr>
-    <tr><td>Total Refunds</td><td style="text-align:right;font-weight:700;color:#E74C3C;">-${fmt(report.totalRefunds)}</td></tr>
-    <tr><td>Total Discounts</td><td style="text-align:right;font-weight:700;color:#F39C12;">-${fmt(report.totalDiscount)}</td></tr>
+    <tr><td>Total Sales</td><td style="text-align:right;font-weight:700;color:#000;">${fmt(report.totalSales)}</td></tr>
+    <tr><td>Total Refunds</td><td style="text-align:right;font-weight:700;color:#000;">-${fmt(report.totalRefunds)}</td></tr>
+    <tr><td>Total Discounts</td><td style="text-align:right;font-weight:700;color:#000;">-${fmt(report.totalDiscount)}</td></tr>
   </table>
   <div class="divider"></div>
   <table>
@@ -295,7 +294,7 @@ export function generateZReportHTML(
     <tr><td>Opening Cash</td><td style="text-align:right;font-weight:600;">${fmt(report.openingCash)}</td></tr>
     <tr><td>Closing Cash</td><td style="text-align:right;font-weight:600;">${fmt(report.closingCash)}</td></tr>
     <tr><td>Expected Cash</td><td style="text-align:right;font-weight:600;">${fmt(report.totalSales - report.totalRefunds)}</td></tr>
-    <tr><td>Difference (${diffLabel})</td><td style="text-align:right;font-weight:700;color:${diffColor};">${fmt(Math.abs(cashDiff))}</td></tr>
+    <tr><td>Difference (${diffLabel})</td><td style="text-align:right;font-weight:700;color:#000;">${fmt(Math.abs(cashDiff))}</td></tr>
   </table>
 
   ${paymentRows ? `
@@ -322,7 +321,7 @@ export function generateZReportHTML(
     End of Day Report<br/>
     Generated: ${fmtDateTime(Date.now())}<br/>
     This is a system-generated Z-Report<br/>
-    <span style="font-size:9px;color:#888;">Powered by Al Salik Computers</span>
+    <span style="font-size:9px;color:#000;">Powered by Al Salik Computers</span>
   </div>
 </body>
 </html>`;
@@ -349,13 +348,13 @@ export function generateCreditPaymentReceiptHTML(
     ? data.invoices.map((inv) => `
         <tr>
           <td style="padding:3px 0;text-align:left;">${inv.invoiceNumber}</td>
-          <td style="padding:3px 0;text-align:right;font-size:${fs.body - 1}px;color:#666;">${new Date(inv.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" })}</td>
+          <td style="padding:3px 0;text-align:right;font-size:${fs.body - 1}px;color:#000;">${new Date(inv.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" })}</td>
           <td style="padding:3px 0;text-align:right;">${fmt(inv.total)}</td>
         </tr>`).join("")
-    : `<tr><td colspan="3" style="text-align:center;color:#999;">No invoice reference</td></tr>`;
+    : `<tr><td colspan="3" style="text-align:center;color:#000;">No invoice reference</td></tr>`;
 
   const noteRow = data.note
-    ? `<tr><td style="text-align:left;color:#555;">Ref / Note</td><td style="text-align:right;">${data.note}</td></tr>`
+    ? `<tr><td style="text-align:left;color:#000;">Ref / Note</td><td style="text-align:right;">${data.note}</td></tr>`
     : "";
 
   return `<!DOCTYPE html>
@@ -378,7 +377,7 @@ export function generateCreditPaymentReceiptHTML(
     th { font-size: ${fs.body - 1}px; font-weight: bold; padding: 4px 0; border-bottom: 1px solid #000; }
     .total-section td { padding: 2px 0; }
     .grand-total td { font-size: ${fs.header + 2}px; font-weight: bold; padding: 6px 0; }
-    .paid-banner { background: #27AE60; color: #fff; padding: 4px 0; font-size: ${fs.header}px; font-weight: bold; text-align: center; margin-bottom: 4px; letter-spacing: 1px; }
+    .paid-banner { background: #fff; color: #000; padding: 4px 0; font-size: ${fs.header}px; font-weight: bold; text-align: center; margin-bottom: 4px; letter-spacing: 1px; border-top: 2px solid #000; border-bottom: 2px solid #000; }
     .footer { font-size: ${fs.body - 2}px; text-align: center; margin-top: 8px; line-height: 1.5; }
   </style>
 </head>
@@ -450,7 +449,7 @@ export function generateCreditPaymentReceiptHTML(
     }<br/>
     Thank you for your payment<br/>
     شكراً على الدفع<br/>
-    <span style="font-size:9px;color:#888;border-top:1px dashed #ccc;display:inline-block;margin-top:4px;padding-top:4px;">Powered by Al Salik Computers</span>
+    <span style="font-size:9px;color:#000;border-top:1px dashed #000;display:inline-block;margin-top:4px;padding-top:4px;">Powered by Al Salik Computers</span>
   </div>
 </body>
 </html>`;
