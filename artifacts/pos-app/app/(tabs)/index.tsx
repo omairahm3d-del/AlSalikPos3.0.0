@@ -69,6 +69,7 @@ export default function POSScreen() {
     removeItem,
     updateQuantity,
     setItemDiscount,
+    setItemPrice,
     restoreCart,
     clearCart,
   } = useCart();
@@ -113,6 +114,9 @@ export default function POSScreen() {
   const [showItemDiscount, setShowItemDiscount] = useState<string | null>(null);
   const [itemDiscType, setItemDiscType] = useState<"percentage" | "fixed">("percentage");
   const [itemDiscValue, setItemDiscValue] = useState("");
+
+  const [showPriceEdit, setShowPriceEdit] = useState<string | null>(null);
+  const [priceEditInput, setPriceEditInput] = useState("");
 
   const [loyaltyRedeemPts, setLoyaltyRedeemPts] = useState("");
   const [loyaltyRate, setLoyaltyRate] = useState(0.01);
@@ -537,18 +541,34 @@ export default function POSScreen() {
           </TouchableOpacity>
         </View>
       ) : null}
-      <TouchableOpacity
-        onPress={() => {
-          setShowItemDiscount(item.product.id);
-          setItemDiscType(item.discountType || "percentage");
-          setItemDiscValue(item.discountValue ? String(item.discountValue) : "");
-        }}
-        style={styles.itemDiscBtn}
-      >
-        <Feather name="percent" size={10} color={colors.primary} />
-      </TouchableOpacity>
+      <View style={styles.itemActionRow}>
+        <TouchableOpacity
+          onPress={() => {
+            setShowItemDiscount(item.product.id);
+            setItemDiscType(item.discountType || "percentage");
+            setItemDiscValue(item.discountValue ? String(item.discountValue) : "");
+          }}
+          style={[styles.itemDiscBtn, { borderColor: colors.primary + "60" }]}
+        >
+          <Feather name="percent" size={10} color={colors.primary} />
+        </TouchableOpacity>
+        {item.product.priceChangeAllowed && (
+          <TouchableOpacity
+            onPress={() => {
+              setShowPriceEdit(item.product.id);
+              setPriceEditInput(String(item.product.price));
+            }}
+            style={[styles.itemDiscBtn, { marginLeft: 4, borderColor: "#F39C12" + "60" }]}
+          >
+            <Feather name="edit-2" size={10} color="#F39C12" />
+            <Text style={{ fontSize: 10, color: "#F39C12", marginLeft: 3, fontWeight: "600" }}>
+              Price
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
-  ), [colors, setItemDiscount, updateQuantity, removeItem]);
+  ), [colors, setItemDiscount, updateQuantity, removeItem, setItemPrice]);
 
   const cartKeyExtractor = useCallback((item: import("@/types").CartItem) => item.product.id, []);
 
@@ -1133,6 +1153,46 @@ export default function POSScreen() {
         </View>
       </Modal>
 
+      <Modal visible={!!showPriceEdit} animationType="fade" transparent>
+        <View style={styles.paymentOverlay}>
+          <View style={[styles.itemDiscSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2 }]}>
+            <Text style={[styles.paymentTitle, { color: colors.foreground, fontSize: 18 }]}>Edit Price</Text>
+            <Text style={{ color: colors.mutedForeground, fontSize: 12, marginBottom: 10 }}>
+              This price applies to this cart line only — the product catalogue is not changed.
+            </Text>
+            <TextInput
+              value={priceEditInput}
+              onChangeText={setPriceEditInput}
+              placeholder="0.00"
+              placeholderTextColor={colors.mutedForeground}
+              keyboardType="decimal-pad"
+              autoFocus
+              style={[styles.discInput, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
+            />
+            <View style={[styles.paymentActions, { marginTop: 16 }]}>
+              <TouchableOpacity
+                onPress={() => { setShowPriceEdit(null); setPriceEditInput(""); }}
+                style={[styles.cancelBtn, { borderColor: colors.border, borderRadius: colors.radius }]}
+              >
+                <Text style={{ color: colors.mutedForeground, fontWeight: "600" }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  if (!showPriceEdit) return;
+                  const p = parseFloat(priceEditInput);
+                  if (!isNaN(p) && p >= 0) setItemPrice(showPriceEdit, p);
+                  setShowPriceEdit(null);
+                  setPriceEditInput("");
+                }}
+                style={[styles.confirmBtn, { backgroundColor: "#F39C12", borderRadius: colors.radius }]}
+              >
+                <Text style={{ color: "#fff", fontWeight: "700" }}>Apply</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={!!showItemDiscount} animationType="fade" transparent>
         <View style={styles.paymentOverlay}>
           <View style={[styles.itemDiscSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2 }]}>
@@ -1382,6 +1442,7 @@ const styles = StyleSheet.create({
   splitInput: { flex: 1, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, borderWidth: 1 },
   splitAddBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
   itemDiscRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingBottom: 4 },
-  itemDiscBtn: { position: "absolute", right: 8, top: 2, padding: 4 },
+  itemActionRow: { position: "absolute", right: 8, top: 2, flexDirection: "row", alignItems: "center", gap: 4 },
+  itemDiscBtn: { flexDirection: "row", alignItems: "center", padding: 4, borderWidth: 1, borderRadius: 6 },
   itemDiscSheet: { width: "100%", maxWidth: 360, padding: 24 },
 });
