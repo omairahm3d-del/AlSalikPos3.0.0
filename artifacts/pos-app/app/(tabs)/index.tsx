@@ -144,6 +144,8 @@ export default function POSScreen() {
 
   const finalSubtotal = Math.max(0, effectiveSubtotal - orderDiscAmt - loyaltyRedeemAmount);
   const finalVat = useMemo(() => {
+    // Guard: if VAT is disabled globally, no tax regardless of per-item rates.
+    if (businessSettings?.vatEnabled === false) return 0;
     const discountRatio = effectiveSubtotal > 0 ? finalSubtotal / effectiveSubtotal : 0;
     let vat = 0;
     for (const item of cartItems) {
@@ -152,7 +154,7 @@ export default function POSScreen() {
       vat += Math.max(0, lineAfterDisc) * rate * discountRatio;
     }
     return vat;
-  }, [cartItems, effectiveSubtotal, finalSubtotal]);
+  }, [cartItems, effectiveSubtotal, finalSubtotal, businessSettings]);
   const finalTotal = finalSubtotal + finalVat;
   const splitRemaining = finalTotal - splitEntries.reduce((s, e) => s + e.amount, 0);
 
@@ -212,10 +214,15 @@ export default function POSScreen() {
       Alert.alert("Out of Stock", `${product.name} is out of stock.`);
       return;
     }
-    const rate = product.taxGroupId ? (taxGroupMap[product.taxGroupId] ?? VAT_RATE) : VAT_RATE;
+    // When VAT is disabled in Business Settings, always pass 0 so the cart
+    // never adds any tax regardless of tax groups or the global VAT_RATE.
+    const vatEnabled = businessSettings?.vatEnabled !== false;
+    const rate = vatEnabled
+      ? (product.taxGroupId ? (taxGroupMap[product.taxGroupId] ?? VAT_RATE) : VAT_RATE)
+      : 0;
     addItem(product, rate);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [productById, taxGroupMap, addItem]);
+  }, [productById, taxGroupMap, addItem, businessSettings]);
 
   const handleAddItem = useCallback((product: Product) => {
     handleAddById(product.id);
