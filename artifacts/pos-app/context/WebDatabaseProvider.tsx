@@ -6,7 +6,7 @@ import type {
   RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
 } from "@/types";
-import { DEFAULT_BUSINESS_SETTINGS, SEED_CATEGORIES, SEED_PRODUCTS, VAT_RATE } from "@/types";
+import { DEFAULT_BUSINESS_SETTINGS, SEED_CATEGORIES, SEED_PRODUCTS, SEED_STAFF, SEED_TABLES, SEED_TAX_GROUPS, SEED_CUSTOMERS, VAT_RATE } from "@/types";
 import { generateId, generateInvoiceNumber } from "@/lib/database";
 import { DatabaseContext, type SaleOptions } from "./DatabaseCore";
 
@@ -277,7 +277,14 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const loadCustomers = useCallback(async (): Promise<Customer[]> => {
-    const c = await getJson<Customer[]>(K.customers, []);
+    const raw = await AsyncStorage.getItem(K.customers);
+    let c: Customer[];
+    if (!raw) {
+      c = SEED_CUSTOMERS.map((x) => ({ ...x, createdAt: Date.now() }));
+      await setJson(K.customers, c);
+    } else {
+      c = JSON.parse(raw) as Customer[];
+    }
     return [...c].sort((a, b) => a.name.localeCompare(b.name));
   }, []);
 
@@ -331,7 +338,15 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const loadStaff = useCallback(async (): Promise<Staff[]> => {
-    const s = await getJson<Staff[]>(K.staff, []);
+    const raw = await AsyncStorage.getItem(K.staff);
+    let s: Staff[];
+    if (!raw) {
+      // Seed default admin (name "Admin", PIN "1234") on first run.
+      s = SEED_STAFF.map((x) => ({ ...x, createdAt: Date.now() }));
+      await setJson(K.staff, s);
+    } else {
+      s = JSON.parse(raw) as Staff[];
+    }
     return [...s].sort((a, b) => a.name.localeCompare(b.name));
   }, []);
 
@@ -353,12 +368,23 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const authenticateStaff = useCallback(async (pin: string): Promise<Staff | null> => {
-    const all = await getJson<Staff[]>(K.staff, []);
+    let all = await getJson<Staff[]>(K.staff, []);
+    if (all.length === 0) {
+      all = SEED_STAFF.map((x) => ({ ...x, createdAt: Date.now() }));
+      await setJson(K.staff, all);
+    }
     return all.find((s) => s.pin === pin && s.active) ?? null;
   }, []);
 
   const loadTables = useCallback(async (): Promise<PosTable[]> => {
-    const t = await getJson<PosTable[]>(K.tables, []);
+    const raw = await AsyncStorage.getItem(K.tables);
+    let t: PosTable[];
+    if (!raw) {
+      t = SEED_TABLES.map((x) => ({ ...x, createdAt: Date.now() }));
+      await setJson(K.tables, t);
+    } else {
+      t = JSON.parse(raw) as PosTable[];
+    }
     return [...t].sort((a, b) => a.name.localeCompare(b.name));
   }, []);
 
@@ -387,8 +413,12 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const loadTaxGroups = useCallback(async (): Promise<TaxGroup[]> => {
-    const groups = await getJson<TaxGroup[]>(K.taxGroups, [{ id: "tg_default", name: "Standard VAT (5%)", rate: 0.05 }]);
-    return groups;
+    const raw = await AsyncStorage.getItem(K.taxGroups);
+    if (!raw) {
+      await setJson(K.taxGroups, SEED_TAX_GROUPS);
+      return SEED_TAX_GROUPS;
+    }
+    return JSON.parse(raw) as TaxGroup[];
   }, []);
 
   const createTaxGroup = useCallback(async (group: Omit<TaxGroup, "id">): Promise<TaxGroup> => {

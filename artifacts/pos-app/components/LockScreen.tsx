@@ -107,7 +107,7 @@ export function LockScreen() {
       <View style={[styles.glow, { backgroundColor: "#6C63FF" }]} />
       <View style={[styles.glow2, { backgroundColor: "#4F8EF7" }]} />
 
-      <View style={styles.topBar}>
+      <View style={styles.topBar} pointerEvents="none">
         <Text style={[styles.timeText, { color: colors.foreground }]}>{fmtTime(now)}</Text>
         <Text style={[styles.dateText, { color: colors.mutedForeground }]}>{fmtDate(now)}</Text>
       </View>
@@ -145,6 +145,9 @@ export function LockScreen() {
         <Text style={[styles.title, { color: colors.foreground }]}>Staff Login</Text>
         <Text style={[styles.subtitle, { color: error ? colors.destructive : colors.mutedForeground }]}>
           {error ? "Incorrect PIN. Try again." : "Enter your 4-digit PIN to continue"}
+        </Text>
+        <Text style={[styles.hint, { color: "#8A82FF" }]}>
+          Default admin · PIN 1234
         </Text>
 
         <Animated.View style={[styles.dotsRow, { transform: [{ translateX: shakeX }] }]}>
@@ -209,7 +212,9 @@ export function LockScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, justifyContent: "center", alignItems: "center", overflow: "hidden" },
+  // Anchor content from the top with safe padding so the absolute-positioned
+  // top clock never sits behind the logo on short or laptop-sized screens.
+  root: { flex: 1, alignItems: "center", overflow: "hidden", paddingTop: 110, paddingBottom: 60 },
   glow: {
     position: "absolute",
     top: -120, left: -120,
@@ -227,7 +232,9 @@ const styles = StyleSheet.create({
   topBar: {
     position: "absolute",
     top: 24,
+    left: 0, right: 0,
     alignItems: "center",
+    zIndex: 5,
   },
   timeText: { fontSize: 32, fontWeight: "300", fontFamily: "Inter_400Regular", letterSpacing: 1 },
   dateText: { fontSize: 13, marginTop: 2, fontFamily: "Inter_500Medium" },
@@ -252,7 +259,8 @@ const styles = StyleSheet.create({
 
   greeting: { fontSize: 13, fontFamily: "Inter_500Medium", marginBottom: 4, letterSpacing: 0.3 },
   title: { fontSize: 22, fontWeight: "700", fontFamily: "Inter_700Bold", marginBottom: 6 },
-  subtitle: { fontSize: 13, marginBottom: 24, textAlign: "center" },
+  subtitle: { fontSize: 13, marginBottom: 6, textAlign: "center" },
+  hint: { fontSize: 11, marginBottom: 18, textAlign: "center", opacity: 0.85, letterSpacing: 0.5, fontFamily: "Inter_500Medium" },
 
   dotsRow: { flexDirection: "row", gap: 18, marginBottom: 32 },
   dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 1 },

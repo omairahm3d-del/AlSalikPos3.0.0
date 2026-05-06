@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
-import { SEED_PRODUCTS, SEED_CATEGORIES } from "@/types";
+import { SEED_PRODUCTS, SEED_CATEGORIES, SEED_STAFF, SEED_TABLES, SEED_TAX_GROUPS, SEED_CUSTOMERS } from "@/types";
 
 export async function initDatabase(db: SQLiteDatabase): Promise<void> {
   await db.execAsync(`
@@ -266,10 +266,53 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     "SELECT COUNT(*) as count FROM tax_groups"
   );
   if (!defaultTax || defaultTax.count === 0) {
-    await db.runAsync(
-      "INSERT INTO tax_groups (id, name, rate) VALUES (?, ?, ?)",
-      ["tg_default", "Standard VAT (5%)", 0.05]
-    );
+    for (const tg of SEED_TAX_GROUPS) {
+      await db.runAsync(
+        "INSERT INTO tax_groups (id, name, rate) VALUES (?, ?, ?)",
+        [tg.id, tg.name, tg.rate]
+      );
+    }
+  }
+
+  // Seed a default admin so the user can log in on first install.
+  // Name "Admin", PIN "1234". They can change/delete from Back Office.
+  const staffCount = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM staff"
+  );
+  if (!staffCount || staffCount.count === 0) {
+    const now = Date.now();
+    for (const s of SEED_STAFF) {
+      await db.runAsync(
+        "INSERT INTO staff (id, name, role, pin, active, created_at) VALUES (?, ?, ?, ?, 1, ?)",
+        [s.id, s.name, s.role, s.pin, now]
+      );
+    }
+  }
+
+  const tableCount = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM pos_tables"
+  );
+  if (!tableCount || tableCount.count === 0) {
+    const now = Date.now();
+    for (const t of SEED_TABLES) {
+      await db.runAsync(
+        "INSERT INTO pos_tables (id, name, capacity, status, created_at) VALUES (?, ?, ?, 'available', ?)",
+        [t.id, t.name, t.capacity, now]
+      );
+    }
+  }
+
+  const custCount = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM customers"
+  );
+  if (!custCount || custCount.count === 0) {
+    const now = Date.now();
+    for (const c of SEED_CUSTOMERS) {
+      await db.runAsync(
+        "INSERT INTO customers (id, name, phone, email, company, credit_balance, loyalty_points, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [c.id, c.name, c.phone, c.email, c.company, c.creditBalance, c.loyaltyPoints, now]
+      );
+    }
   }
 
   const catCount = await db.getFirstAsync<{ count: number }>(

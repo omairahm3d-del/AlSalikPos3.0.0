@@ -217,6 +217,21 @@ export default function POSScreen() {
   const handleHoldOrder = useCallback(async (table: PosTable) => {
     if (cartItems.length === 0) return;
     try {
+      const heldItems = cartItems.map((ci) => ({
+        id: "",
+        heldOrderId: "",
+        productId: ci.product.id,
+        productName: ci.product.name,
+        productPrice: ci.product.price,
+        quantity: ci.quantity,
+        colorHex: ci.product.colorHex,
+        category: ci.product.category,
+        taxRate: ci.taxRate,
+        discountType: ci.discountType,
+        discountValue: ci.discountValue,
+        discountAmount: ci.discountAmount,
+        imageUri: ci.product.imageUri,
+      }));
       await saveHeldOrder({
         id: heldOrderInfo?.id,
         tableId: table.id,
@@ -224,32 +239,60 @@ export default function POSScreen() {
         orderType,
         staffId: currentStaff?.id,
         staffName: currentStaff?.name,
-        items: cartItems.map((ci) => ({
-          id: "",
-          heldOrderId: "",
-          productId: ci.product.id,
-          productName: ci.product.name,
-          productPrice: ci.product.price,
-          quantity: ci.quantity,
-          colorHex: ci.product.colorHex,
-          category: ci.product.category,
-          taxRate: ci.taxRate,
-          discountType: ci.discountType,
-          discountValue: ci.discountValue,
-          discountAmount: ci.discountAmount,
-          imageUri: ci.product.imageUri,
-        })),
+        items: heldItems,
       });
+
+      // Print Kitchen Order Ticket(s) on HOLD only (not on bill/charge),
+      // and only when KOT is enabled in settings. This is the workflow the
+      // user wants: hold = order goes to the kitchen; bill = customer pays.
+      if (kotSettings.enabled) {
+        try {
+          const ps = businessSettings?.printerSettings;
+          const defaultKot = ps?.windowsKOTPrinterName || "";
+          const catPrinters = kotSettings.categoryPrinters ?? {};
+          const groups = new Map<string, typeof cartItems>();
+          for (const it of cartItems) {
+            const printer = catPrinters[it.product.category] || defaultKot;
+            const key = printer || "__default__";
+            if (!groups.has(key)) groups.set(key, [] as any);
+            (groups.get(key) as any).push(it);
+          }
+          const { printHtml: ph } = await import("@/lib/printBridge");
+          const holdInvoice = `HOLD-${table.name}-${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+          for (const [printerKey, items] of groups.entries()) {
+            const stationLabel = (() => {
+              const cats = Array.from(new Set(items.map((i: any) => i.product.category)));
+              const labels = cats.map((c: any) => kotSettings.categoryRouting[c] || c).filter(Boolean);
+              return labels.length === 1 ? labels[0] : (labels.join(" / ") || undefined);
+            })();
+            const ticketHtml = generateKitchenTicketHTML(
+              items as any, holdInvoice, table.name, currentStaff?.name, kotSettings, stationLabel as any
+            );
+            if (!ticketHtml) continue;
+            await ph(ticketHtml, {
+              deviceName: printerKey === "__default__" ? "" : printerKey,
+              paperWidth: ps?.paperWidth || "80mm",
+              rawMode: !!ps?.rawTextMode,
+              autoCut: ps?.autoCutPaper !== false,
+              codepage: ps?.rawCodepage || "cp1252",
+            });
+          }
+        } catch (printErr: any) {
+          // Non-fatal — the order was held successfully even if print failed.
+          console.warn("KOT print failed:", printErr?.message || printErr);
+        }
+      }
+
       clearCart();
       setShowHoldTablePicker(false);
       setShowCart(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert("Order Held", `Order held on ${table.name}`);
+      Alert.alert("Order Held", `Order held on ${table.name}${kotSettings.enabled ? " · Kitchen ticket sent" : ""}`);
       await fetchData();
     } catch (e: any) {
       Alert.alert("Error", e.message || "Failed to hold order");
     }
-  }, [cartItems, heldOrderInfo, orderType, currentStaff, saveHeldOrder, clearCart, fetchData]);
+  }, [cartItems, heldOrderInfo, orderType, currentStaff, saveHeldOrder, clearCart, fetchData, kotSettings, businessSettings]);
 
   const handlePrintBill = useCallback(async () => {
     if (cartItems.length === 0) return;
@@ -315,44 +358,9 @@ export default function POSScreen() {
         splitPayments: paymentMethod === "Split" ? splitEntries : undefined,
       });
 
-      const kotTableName = chargeTableName;
-      const shouldPrintKOT = kotSettings.enabled && kotTableName;
-      if (shouldPrintKOT) {
-        try {
-          const ps = businessSettings?.printerSettings;
-          const defaultKot = ps?.windowsKOTPrinterName || "";
-          const catPrinters = kotSettings.categoryPrinters ?? {};
-          // Group cart items by their assigned printer (per-category routing)
-          const groups = new Map<string, typeof cartItems>();
-          for (const it of cartItems) {
-            const printer = catPrinters[it.product.category] || defaultKot;
-            const key = printer || "__default__";
-            if (!groups.has(key)) groups.set(key, [] as any);
-            (groups.get(key) as any).push(it);
-          }
-          const { printHtml: ph } = await import("@/lib/printBridge");
-          for (const [printerKey, items] of groups.entries()) {
-            const stationLabel = (() => {
-              const cats = Array.from(new Set(items.map((i: any) => i.product.category)));
-              const labels = cats.map((c: any) => kotSettings.categoryRouting[c] || c).filter(Boolean);
-              return labels.length === 1 ? labels[0] : (labels.join(" / ") || undefined);
-            })();
-            const ticketHtml = generateKitchenTicketHTML(
-              items as any, sale.invoiceNumber, kotTableName, currentStaff?.name, kotSettings, stationLabel as any
-            );
-            if (!ticketHtml) continue;
-            await ph(ticketHtml, {
-              deviceName: printerKey === "__default__" ? "" : printerKey,
-              paperWidth: ps?.paperWidth || "80mm",
-              rawMode: !!ps?.rawTextMode,
-              autoCut: ps?.autoCutPaper !== false,
-              codepage: ps?.rawCodepage || "cp1252",
-            });
-          }
-        } catch (printErr: any) {
-          Alert.alert("Kitchen Ticket", "Could not print kitchen ticket: " + (printErr?.message || "Unknown error"));
-        }
-      }
+      // KOT is intentionally NOT printed at billing/charge time. KOT prints
+      // only when the order is HELD on a table (see handleHoldOrder above).
+      // This matches the kitchen workflow: hold = send to kitchen, bill = pay.
 
       clearCart();
       setShowPayment(false);

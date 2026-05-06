@@ -357,6 +357,30 @@ export const SEED_CATEGORIES: Category[] = [
   { id: "cat_desserts", name: "Desserts", colorHex: "#9B59B6", sortOrder: 4 },
 ];
 
+// Default admin staff. PIN login is 4-digit, so the credentials are
+// name "Admin" / PIN "1234". Shown as a hint on the lock screen on a
+// fresh install. Can be changed/removed from Back Office → Staff.
+export const SEED_STAFF: Staff[] = [
+  { id: "staff_admin", name: "Admin", role: "admin", pin: "1234", active: true, createdAt: 0 },
+];
+
+export const SEED_TABLES: PosTable[] = [
+  { id: "tbl_1", name: "Table 1", capacity: 4, status: "available", createdAt: 0 },
+  { id: "tbl_2", name: "Table 2", capacity: 4, status: "available", createdAt: 0 },
+  { id: "tbl_3", name: "Table 3", capacity: 2, status: "available", createdAt: 0 },
+  { id: "tbl_4", name: "Table 4", capacity: 6, status: "available", createdAt: 0 },
+];
+
+export const SEED_TAX_GROUPS: TaxGroup[] = [
+  { id: "tg_default", name: "Standard VAT (5%)", rate: 0.05 },
+  { id: "tg_zero", name: "Zero-rated (0%)", rate: 0 },
+];
+
+export const SEED_CUSTOMERS: Customer[] = [
+  { id: "cust_walkin", name: "Walk-in Customer", phone: "", email: "", company: "", creditBalance: 0, loyaltyPoints: 0, createdAt: 0 },
+  { id: "cust_demo", name: "Demo Customer", phone: "+971500000000", email: "demo@example.com", company: "Al Salik Demo", creditBalance: 0, loyaltyPoints: 0, createdAt: 0 },
+];
+
 export const DEFAULT_RECEIPT_DESIGN: ReceiptDesignSettings = {
   headerText: "",
   footerText: "Thank you for your business!\nشكراً لتعاملكم معنا",
