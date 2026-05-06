@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useFocusEffect } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import {
   ActivityIndicator,
   Alert,
@@ -76,7 +76,10 @@ type Section =
   | "recipes"
   | "permissions"
   | "emailSettings"
-  | "database";
+  | "database"
+  | "stock"
+  | "purchases"
+  | "receiveStock";
 
 interface SectionCard {
   id: Section;
@@ -89,6 +92,9 @@ interface SectionCard {
 }
 
 const SECTIONS: SectionCard[] = [
+  { id: "stock", icon: "box", title: "Stock", subtitle: "On-hand, history & adjust", color: "#16A085", permKey: "boProducts" },
+  { id: "purchases", icon: "shopping-bag", title: "Purchases", subtitle: "Recent goods received", color: "#9B59B6", permKey: "boProducts" },
+  { id: "receiveStock", icon: "plus-square", title: "Receive Stock", subtitle: "Record a goods received note", color: "#27AE60", permKey: "boProducts" },
   { id: "products", icon: "package", title: "Products", subtitle: "Manage items, pricing & stock", color: "#4F8EF7", permKey: "boProducts" },
   { id: "customers", icon: "users", title: "Customers", subtitle: "Manage customer profiles", color: "#1ABC9C", permKey: "boCustomers" },
   { id: "reports", icon: "bar-chart-2", title: "Reports", subtitle: "View sales summaries", color: "#F39C12", permKey: "boReports" },
@@ -256,6 +262,11 @@ export default function BackOfficeScreen() {
   }, [bizSettings, receiptDesign, printerSettings, kotSettings, customerDisplay, db]);
 
   const openSection = useCallback((sec: Section) => {
+    // Inventory screens live as their own expo-router routes (so deep-links
+    // and the back button behave correctly) rather than embedded sections.
+    if (sec === "stock") { router.push("/stock"); return; }
+    if (sec === "purchases") { router.push("/purchases"); return; }
+    if (sec === "receiveStock") { router.push("/receive-stock"); return; }
     setSection(sec);
     if (sec === "staff") loadStaffList();
     if (sec === "tax") loadTaxList();
