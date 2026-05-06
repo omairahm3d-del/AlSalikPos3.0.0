@@ -26,8 +26,14 @@ function makeApiError(
  *  1. `EXPO_PUBLIC_API_BASE` — explicit override (set at build time for the
  *     desktop installer or when the cloud lives on its own domain).
  *  2. Native dev — `EXPO_PUBLIC_DOMAIN` (the Replit dev domain).
- *  3. Web — empty string (relative URLs hit the same origin, which is
- *     proxied to the api-server on Replit and the same host in production).
+ *  3. Web on the Expo dev subdomain — derive the shared-proxy domain from
+ *     the current origin. Replit's Expo dev domain looks like
+ *     `<id>.expo.pike.replit.dev` and the matching shared proxy domain is
+ *     `<id>.pike.replit.dev` (without the `expo.` segment). The api-server
+ *     is mounted under `/api` on the shared proxy, so we MUST go through
+ *     it; relative URLs from the Expo origin would 404.
+ *  4. Web (production / desktop) — empty string. Relative URLs hit the same
+ *     origin, which serves the api-server on the same host.
  */
 export function getApiBase(): string {
   const explicit = process.env["EXPO_PUBLIC_API_BASE"];
@@ -35,6 +41,18 @@ export function getApiBase(): string {
   if (Platform.OS !== "web") {
     const domain = process.env["EXPO_PUBLIC_DOMAIN"];
     if (domain) return `https://${domain}`;
+    return "";
+  }
+  // Web: detect the Replit Expo dev subdomain and rewrite to the shared-
+  // proxy domain that hosts /api. Use runtime detection (window.location)
+  // rather than build-time env so the same web bundle works in dev preview
+  // AND in the desktop installer (where it's served from a local origin).
+  if (typeof window !== "undefined" && window.location) {
+    const host = window.location.hostname;
+    if (host.includes(".expo.pike.replit.dev")) {
+      const proxyHost = host.replace(".expo.pike.replit.dev", ".pike.replit.dev");
+      return `${window.location.protocol}//${proxyHost}`;
+    }
   }
   return "";
 }
