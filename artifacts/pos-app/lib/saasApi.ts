@@ -82,6 +82,7 @@ export interface ValidateLicenseResponse {
     id: string;
     expiresAt: string | null;
     maxDevices: number;
+    licenseType: "online" | "offline";
   };
   device: {
     id: string;

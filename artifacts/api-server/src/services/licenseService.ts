@@ -26,7 +26,7 @@ export interface ValidateResult {
   token: string;
   tokenExpiresAt: Date;
   company: Pick<Company, "id" | "name" | "slug">;
-  license: Pick<License, "id" | "expiresAt" | "maxDevices">;
+  license: Pick<License, "id" | "expiresAt" | "maxDevices" | "licenseType">;
   device: Pick<Device, "id" | "deviceUid" | "name" | "platform">;
 }
 
@@ -147,6 +147,7 @@ export const licenseService = {
         id: result.license.id,
         expiresAt: result.license.expiresAt,
         maxDevices: result.license.maxDevices,
+        licenseType: result.license.licenseType,
       },
       device: {
         id: result.device.id,
@@ -162,6 +163,7 @@ export const licenseService = {
     maxDevices?: number;
     expiresAt?: Date | null;
     notes?: string | null;
+    licenseType?: "online" | "offline";
   }): Promise<License> {
     const company = await companyRepo.findById(input.companyId);
     if (!company) {
@@ -175,6 +177,7 @@ export const licenseService = {
       expiresAt: input.expiresAt ?? null,
       notes: input.notes ?? null,
       status: "active",
+      licenseType: input.licenseType ?? "online",
     });
   },
 
@@ -185,6 +188,7 @@ export const licenseService = {
     notes?: string | null;
     maxDevices?: number;
     expiresAt?: Date | null;
+    licenseType?: "online" | "offline";
   }): Promise<{ company: Company; license: License }> {
     const slug = input.slug.trim().toLowerCase();
     if (!/^[a-z0-9][a-z0-9-]{1,62}$/.test(slug)) {
@@ -208,6 +212,7 @@ export const licenseService = {
       companyId: company.id,
       maxDevices: input.maxDevices,
       expiresAt: input.expiresAt,
+      licenseType: input.licenseType,
     });
     return { company, license };
   },

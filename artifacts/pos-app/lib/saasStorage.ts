@@ -56,6 +56,14 @@ export interface StoredLicense {
   id: string;
   expiresAt: string | null;
   maxDevices: number;
+  /**
+   * "online" — sync engine runs normally.
+   * "offline" — sync is disabled; expiry is enforced locally from
+   * `expiresAt` so the POS keeps working without contacting the server.
+   * Defaulted to "online" on read for backward compatibility with sessions
+   * persisted before this field existed.
+   */
+  licenseType: "online" | "offline";
 }
 
 export interface LicenseSession {
@@ -109,11 +117,23 @@ export async function loadSession(): Promise<LicenseSession | null> {
     return null;
   }
   try {
+    const license = JSON.parse(licenseRaw) as Partial<StoredLicense> & {
+      id: string;
+      expiresAt: string | null;
+      maxDevices: number;
+    };
+    // Default to "online" for sessions persisted before licenseType existed.
+    const normalizedLicense: StoredLicense = {
+      id: license.id,
+      expiresAt: license.expiresAt ?? null,
+      maxDevices: license.maxDevices,
+      licenseType: license.licenseType === "offline" ? "offline" : "online",
+    };
     return {
       token,
       tokenExpiresAt: exp,
       company: JSON.parse(companyRaw) as StoredCompany,
-      license: JSON.parse(licenseRaw) as StoredLicense,
+      license: normalizedLicense,
       licenseKey: key,
       deviceUid,
     };

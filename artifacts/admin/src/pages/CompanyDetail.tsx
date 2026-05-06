@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "wouter";
 import { useCompanies, useCompanyLicenses, useCompanyDevices, useIssueLicense, useRevokeLicense } from "@/hooks/useAdminApi";
+import type { LicenseType } from "@/lib/adminApi";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,9 @@ export function CompanyDetail() {
 
   const [maxDevices, setMaxDevices] = useState(1);
   const [notes, setNotes] = useState("");
+  const [licenseType, setLicenseType] = useState<LicenseType>("online");
+  // Stored as a `yyyy-MM-dd` string from <input type="date">. Empty string = no expiry.
+  const [expiresAt, setExpiresAt] = useState("");
 
   if (companiesLoading) {
     return (
@@ -100,11 +104,19 @@ export function CompanyDetail() {
         companyId: company.id,
         maxDevices,
         notes: notes || undefined,
+        licenseType,
+        // End-of-day UTC for the picked date so the license stays valid
+        // through the chosen calendar day in any timezone.
+        expiresAt: expiresAt
+          ? new Date(`${expiresAt}T23:59:59.000Z`).toISOString()
+          : null,
       });
       toast({ title: "License issued successfully." });
       setIssueOpen(false);
       setMaxDevices(1);
       setNotes("");
+      setLicenseType("online");
+      setExpiresAt("");
     } catch (err: any) {
       toast({ title: "Failed to issue license", description: err.message, variant: "destructive" });
     }
@@ -186,6 +198,18 @@ export function CompanyDetail() {
                   </DialogHeader>
                   <div className="space-y-4 py-4">
                     <div className="space-y-2">
+                      <Label htmlFor="licenseType">License Type</Label>
+                      <select
+                        id="licenseType"
+                        value={licenseType}
+                        onChange={(e) => setLicenseType(e.target.value as LicenseType)}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      >
+                        <option value="online">Online — cloud sync enabled</option>
+                        <option value="offline">Offline — sync disabled, expiry enforced locally</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
                       <Label htmlFor="maxDevices">Max Devices</Label>
                       <Input
                         id="maxDevices"
@@ -193,6 +217,18 @@ export function CompanyDetail() {
                         min={1}
                         value={maxDevices}
                         onChange={(e) => setMaxDevices(parseInt(e.target.value) || 1)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="expiresAt">
+                        Expiry Date {licenseType === "offline" ? "(required for offline)" : "(optional)"}
+                      </Label>
+                      <Input
+                        id="expiresAt"
+                        type="date"
+                        value={expiresAt}
+                        onChange={(e) => setExpiresAt(e.target.value)}
+                        required={licenseType === "offline"}
                       />
                     </div>
                     <div className="space-y-2">
@@ -235,6 +271,9 @@ export function CompanyDetail() {
                         <div className="flex items-center gap-2 mb-1">
                           <Badge variant={license.status === "active" ? "default" : "destructive"}>
                             {license.status}
+                          </Badge>
+                          <Badge variant={license.licenseType === "offline" ? "secondary" : "outline"}>
+                            {license.licenseType === "offline" ? "Offline" : "Online"}
                           </Badge>
                           <span className="text-sm text-muted-foreground">
                             Generated {format(parseISO(license.createdAt), "PPP")}

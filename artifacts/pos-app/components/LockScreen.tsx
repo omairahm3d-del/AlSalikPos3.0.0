@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Animated, Easing, Platform, StyleSheet, Text, TouchableOpacity, View, Vibration } from "react-native";
+import { Animated, Easing, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, Vibration } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useStaff } from "@/context/StaffContext";
@@ -104,15 +104,29 @@ export function LockScreen() {
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       />
-      <View style={[styles.glow, { backgroundColor: "#6C63FF" }]} />
-      <View style={[styles.glow2, { backgroundColor: "#4F8EF7" }]} />
+      <View style={[styles.glow, { backgroundColor: "#6C63FF" }]} pointerEvents="none" />
+      <View style={[styles.glow2, { backgroundColor: "#4F8EF7" }]} pointerEvents="none" />
 
-      <View style={styles.topBar} pointerEvents="none">
-        <Text style={[styles.timeText, { color: colors.foreground }]}>{fmtTime(now)}</Text>
-        <Text style={[styles.dateText, { color: colors.mutedForeground }]}>{fmtDate(now)}</Text>
-      </View>
+      {/*
+        Real flex column (header → scrollable content → footer) instead of
+        absolute-positioned chrome. The previous layout placed topBar/footer
+        with `position: absolute` and reserved space with paddingTop/Bottom —
+        on short or laptop-sized viewports the keypad and brand block
+        overlapped the clock and footer. A flex column with the middle area
+        scrollable guarantees nothing overlaps regardless of height.
+      */}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.topBar} pointerEvents="none">
+          <Text style={[styles.timeText, { color: colors.foreground }]}>{fmtTime(now)}</Text>
+          <Text style={[styles.dateText, { color: colors.mutedForeground }]}>{fmtDate(now)}</Text>
+        </View>
 
-      <View style={styles.content}>
+        <View style={styles.content}>
         <View style={styles.brandWrap}>
           <View style={styles.logoWrap}>
             {logo ? (
@@ -200,21 +214,28 @@ export function LockScreen() {
             </View>
           ))}
         </View>
-      </View>
 
-      <View style={styles.footer}>
-        <Text style={[styles.footerText, { color: colors.mutedForeground }]}>
-          Al Salik POS · Powered by Al Salik Computers
-        </Text>
+        <View style={styles.footer}>
+          <Text style={[styles.footerText, { color: colors.mutedForeground }]}>
+            Al Salik POS · Powered by Al Salik Computers
+          </Text>
+        </View>
       </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  // Anchor content from the top with safe padding so the absolute-positioned
-  // top clock never sits behind the logo on short or laptop-sized screens.
-  root: { flex: 1, alignItems: "center", overflow: "hidden", paddingTop: 110, paddingBottom: 60 },
+  root: { flex: 1, overflow: "hidden" },
+  scroll: { flex: 1 },
+  scrollContent: {
+    minHeight: "100%",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+  },
   glow: {
     position: "absolute",
     top: -120, left: -120,
@@ -230,11 +251,8 @@ const styles = StyleSheet.create({
     opacity: 0.15,
   },
   topBar: {
-    position: "absolute",
-    top: 24,
-    left: 0, right: 0,
     alignItems: "center",
-    zIndex: 5,
+    marginBottom: 24,
   },
   timeText: { fontSize: 32, fontWeight: "300", fontFamily: "Inter_400Regular", letterSpacing: 1 },
   dateText: { fontSize: 13, marginTop: 2, fontFamily: "Inter_500Medium" },
@@ -278,6 +296,6 @@ const styles = StyleSheet.create({
   },
   keyText: { fontSize: 26, fontWeight: "500", color: "#fff", fontFamily: "Inter_500Medium" },
 
-  footer: { position: "absolute", bottom: 18, alignItems: "center" },
+  footer: { alignItems: "center", marginTop: 24 },
   footerText: { fontSize: 11, fontFamily: "Inter_500Medium", letterSpacing: 0.3, opacity: 0.7 },
 });

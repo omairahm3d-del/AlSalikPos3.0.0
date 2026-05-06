@@ -160,6 +160,14 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     verifiedCompanyIdRef.current = null;
 
     if (!session) return;
+    // Offline licenses run with sync hard-disabled. Surface a clear status
+    // and skip the scheduler entirely — no tenant check, no drain timer,
+    // no AppState wake.
+    if (session.license.licenseType === "offline") {
+      setLastError("Offline license — cloud sync is disabled.");
+      refreshCount().catch(() => {});
+      return;
+    }
     const currentCompanyId = session.company.id;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -260,10 +268,14 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   }, [session, db, drain, refreshCount]);
 
   const syncNow = useCallback(async () => {
+    if (session?.license.licenseType === "offline") return;
     await drain();
-  }, [drain]);
+  }, [drain, session]);
 
   const adoptLocalDataForCurrentLicense = useCallback(async () => {
+    if (session?.license.licenseType === "offline") {
+      return { ok: false, error: "Offline license — sync is disabled." };
+    }
     const currentCompanyId = sessionCompanyIdRef.current;
     if (!currentCompanyId) return { ok: false, error: "No active license session." };
     try {
@@ -289,7 +301,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "adopt failed" };
     }
-  }, [db, drain, refreshCount]);
+  }, [db, drain, refreshCount, session]);
 
   return (
     <SyncContext.Provider

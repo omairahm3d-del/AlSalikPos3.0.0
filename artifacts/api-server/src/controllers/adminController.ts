@@ -10,6 +10,8 @@ const isoDate = z.iso
   .datetime()
   .transform((s: string) => new Date(s));
 
+const licenseTypeEnum = z.enum(["online", "offline"]);
+
 const createCompanyBody = z.object({
   name: z.string().min(1).max(200),
   slug: z.string().min(2).max(63),
@@ -17,6 +19,7 @@ const createCompanyBody = z.object({
   notes: z.string().max(1000).optional(),
   maxDevices: z.number().int().min(1).max(1000).optional(),
   expiresAt: isoDate.nullable().optional(),
+  licenseType: licenseTypeEnum.optional(),
 });
 
 const issueLicenseBody = z.object({
@@ -24,6 +27,7 @@ const issueLicenseBody = z.object({
   maxDevices: z.number().int().min(1).max(1000).optional(),
   expiresAt: isoDate.nullable().optional(),
   notes: z.string().max(1000).optional(),
+  licenseType: licenseTypeEnum.optional(),
 });
 
 const revokeLicenseParams = z.object({

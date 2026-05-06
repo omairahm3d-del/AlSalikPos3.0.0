@@ -44,9 +44,27 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
       const stored = await loadSession();
       if (myOp !== opSeq.current) return;
       if (stored) {
-        const expMs = Date.parse(stored.tokenExpiresAt);
-        if (!Number.isNaN(expMs) && expMs > Date.now()) {
+        // Local license-window check (works offline). If the cloud-issued
+        // expiresAt has passed, the device must re-activate regardless of
+        // license type.
+        const licenseExpiresMs = stored.license.expiresAt
+          ? Date.parse(stored.license.expiresAt)
+          : null;
+        const licenseExpired =
+          licenseExpiresMs !== null &&
+          !Number.isNaN(licenseExpiresMs) &&
+          licenseExpiresMs <= Date.now();
+        if (licenseExpired) {
+          await clearSession();
+        } else if (stored.license.licenseType === "offline") {
+          // Offline licenses don't depend on the JWT being fresh — the device
+          // is allowed to keep running purely from local state.
           setSession(stored);
+        } else {
+          const expMs = Date.parse(stored.tokenExpiresAt);
+          if (!Number.isNaN(expMs) && expMs > Date.now()) {
+            setSession(stored);
+          }
         }
       }
       setReady(true);
@@ -91,6 +109,10 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(async () => {
     const current = sessionRef.current;
     if (!current) return;
+    // Offline licenses never re-validate against the server: their whole
+    // point is to keep working without a network. The license-window check
+    // already ran on mount from persisted state.
+    if (current.license.licenseType === "offline") return;
     const myOp = ++opSeq.current;
     try {
       const res = await validateLicense({

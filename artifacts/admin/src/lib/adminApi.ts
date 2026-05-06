@@ -11,6 +11,8 @@ export interface Company {
   updatedAt: string;
 }
 
+export type LicenseType = "online" | "offline";
+
 export interface License {
   id: string;
   companyId: string;
@@ -18,6 +20,7 @@ export interface License {
   maxDevices: number;
   expiresAt: string | null;
   status: string;
+  licenseType: LicenseType;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -43,6 +46,7 @@ export interface CreateCompanyInput {
   notes?: string;
   maxDevices?: number;
   expiresAt?: string | null;
+  licenseType?: LicenseType;
 }
 
 export interface IssueLicenseInput {
@@ -50,6 +54,7 @@ export interface IssueLicenseInput {
   maxDevices?: number;
   expiresAt?: string | null;
   notes?: string;
+  licenseType?: LicenseType;
 }
 
 export class AdminApiError extends Error {

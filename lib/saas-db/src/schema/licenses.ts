@@ -21,6 +21,15 @@ export const licensesTable = pgTable(
     maxDevices: integer("max_devices").notNull().default(1),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     status: text("status").notNull().default("active"),
+    /**
+     * "online" — device must reach the cloud for activation AND keeps a
+     * push/pull sync channel open while running.
+     * "offline" — device activates online once to fetch the JWT and license
+     * window, then runs against local storage only. The POS refuses to
+     * sync sales/catalog under an offline license; expiry is enforced
+     * locally from the persisted `expiresAt`.
+     */
+    licenseType: text("license_type").notNull().default("online"),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
