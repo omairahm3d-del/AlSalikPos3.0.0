@@ -115,6 +115,61 @@ export interface SyncLogEntry {
   error: string | null;
 }
 
+// ---- Local offline storage types ----
+
+/** A supplier stored locally on the device (offline license mode). */
+export interface LocalSupplier {
+  id: string;
+  name: string;
+  trnNumber: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  paymentTerms: string | null;
+  notes: string | null;
+  isActive: boolean;
+  createdAt: number;
+}
+
+/** A purchase header stored locally (offline license mode). */
+export interface LocalPurchase {
+  id: string;
+  supplierName: string;
+  referenceNumber: string | null;
+  receivedAt: number;
+  notes: string | null;
+  subtotal: number;
+  vatAmount: number;
+  total: number;
+  itemCount: number;
+  createdAt: number;
+}
+
+/** A single line on a local purchase. */
+export interface LocalPurchaseItem {
+  id: string;
+  purchaseId: string;
+  productClientId: string;
+  productName: string;
+  sku: string | null;
+  quantity: number;
+  unitCost: number;
+  vatAmount: number;
+  lineTotal: number;
+}
+
+/** One row in the local stock movement ledger (offline license mode). */
+export interface LocalStockMovement {
+  id: string;
+  productClientId: string;
+  productName: string;
+  kind: "purchase" | "sale" | "adjustment";
+  delta: number;
+  refId: string;
+  reason: string | null;
+  createdAt: number;
+}
+
 export interface SaleOptions {
   paymentMethod: string;
   orderType?: OrderType;
@@ -260,6 +315,36 @@ export interface DatabaseContextValue {
   loadSyncLogs: (limit: number) => Promise<SyncLogEntry[]>;
   /** Truncate the entire sync log. */
   clearSyncLogs: () => Promise<void>;
+
+  // ---- Local offline storage (offline license only) ----
+  loadLocalSuppliers: () => Promise<LocalSupplier[]>;
+  createLocalSupplier: (s: Omit<LocalSupplier, "id" | "createdAt">) => Promise<LocalSupplier>;
+  updateLocalSupplier: (s: LocalSupplier) => Promise<void>;
+
+  loadLocalPurchases: () => Promise<LocalPurchase[]>;
+  getLocalPurchase: (id: string) => Promise<{ purchase: LocalPurchase; items: LocalPurchaseItem[] } | null>;
+  createLocalPurchase: (data: {
+    supplierName: string;
+    referenceNumber?: string | null;
+    notes?: string | null;
+    items: Array<{
+      productClientId: string;
+      productName: string;
+      sku?: string | null;
+      quantity: number;
+      unitCost: number;
+      vatAmount: number;
+    }>;
+  }) => Promise<{ purchase: LocalPurchase; items: LocalPurchaseItem[] }>;
+
+  loadLocalMovements: (productClientId?: string) => Promise<LocalStockMovement[]>;
+  createLocalAdjustment: (data: {
+    productClientId: string;
+    productName: string;
+    sku?: string | null;
+    delta: number;
+    reason?: string | null;
+  }) => Promise<LocalStockMovement>;
 }
 
 export const DatabaseContext = createContext<DatabaseContextValue | null>(null);

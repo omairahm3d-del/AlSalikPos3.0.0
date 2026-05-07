@@ -294,6 +294,58 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     CREATE INDEX IF NOT EXISTS sync_log_at_idx ON sync_log(at DESC);
   `);
 
+  // Local offline storage for offline-licensed devices.
+  // Suppliers, purchases, purchase items, and stock movements stored locally
+  // when the device has an offline license. Created outside migrations so they
+  // are idempotent (IF NOT EXISTS).
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS local_suppliers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      trn_number TEXT,
+      phone TEXT,
+      email TEXT,
+      address TEXT,
+      payment_terms TEXT,
+      notes TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS local_purchases (
+      id TEXT PRIMARY KEY,
+      supplier_name TEXT NOT NULL,
+      reference_number TEXT,
+      received_at INTEGER NOT NULL,
+      notes TEXT,
+      subtotal REAL NOT NULL DEFAULT 0,
+      vat_amount REAL NOT NULL DEFAULT 0,
+      total REAL NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS local_purchase_items (
+      id TEXT PRIMARY KEY,
+      purchase_id TEXT NOT NULL,
+      product_client_id TEXT NOT NULL,
+      product_name TEXT NOT NULL,
+      sku TEXT,
+      quantity REAL NOT NULL,
+      unit_cost REAL NOT NULL,
+      vat_amount REAL NOT NULL DEFAULT 0,
+      line_total REAL NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS local_stock_movements (
+      id TEXT PRIMARY KEY,
+      product_client_id TEXT NOT NULL,
+      product_name TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      delta REAL NOT NULL,
+      ref_id TEXT NOT NULL,
+      reason TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS lsm_product_idx ON local_stock_movements(product_client_id, created_at DESC);
+  `);
+
   // Cash-out / petty-cash log. Created outside the migrations array so it
   // executes via execAsync (CREATE TABLE IF NOT EXISTS is idempotent).
   await db.execAsync(`

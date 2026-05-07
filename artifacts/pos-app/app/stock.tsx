@@ -289,6 +289,7 @@ function AdjustModal({
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const db = useDatabase();
   const onHand = Number(row.onHand);
   const [direction, setDirection] = useState<"+" | "-">("+");
   const [qty, setQty] = useState("");
@@ -301,7 +302,16 @@ function AdjustModal({
     if (delta === 0) return;
     setSaving(true);
     try {
-      if (!isOffline) {
+      if (isOffline) {
+        // Offline: record movement in local SQLite / AsyncStorage.
+        await db.createLocalAdjustment({
+          productClientId: row.productClientId,
+          productName: row.productName,
+          sku: row.sku,
+          delta,
+          reason: reason.trim() || null,
+        });
+      } else {
         // Online: persist to cloud stock_movements ledger.
         await posApi.createAdjustment(token, {
           productClientId: row.productClientId,
@@ -311,7 +321,7 @@ function AdjustModal({
           reason: reason.trim() || null,
         });
       }
-      // Offline (and online): caller mirrors delta into local product stock.
+      // Caller mirrors delta into local product stock.
       onSaved(delta);
     } catch (e) {
       Alert.alert("Failed", e instanceof Error ? e.message : "Could not save adjustment.");

@@ -11,7 +11,7 @@ import { computeLineNetVat } from "./CartContext";
 import { generateId, generateInvoiceNumber } from "@/lib/database";
 import { notifySyncQueueChanged } from "@/lib/syncEvents";
 import { clearOwningCompanyId } from "@/lib/saasStorage";
-import { DatabaseContext, type CatalogApplyInput, type CatalogEntityType, type CatalogOutboxItem, type CatalogOutboxRow, type CatalogResultUpdate, type SaleOptions, type SyncEntityType, type SyncLogEntry, type SyncLogKind, type SyncQueueItem, type SyncQueueRow, type SyncResultUpdate } from "./DatabaseCore";
+import { DatabaseContext, type CatalogApplyInput, type CatalogEntityType, type CatalogOutboxItem, type CatalogOutboxRow, type CatalogResultUpdate, type LocalPurchase, type LocalPurchaseItem, type LocalStockMovement, type LocalSupplier, type SaleOptions, type SyncEntityType, type SyncLogEntry, type SyncLogKind, type SyncQueueItem, type SyncQueueRow, type SyncResultUpdate } from "./DatabaseCore";
 
 export function NativeDatabaseProvider({ children }: { children: React.ReactNode }) {
   const db = useSQLiteContext();
@@ -1364,6 +1364,128 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     });
   }, [db]);
 
+  // ---- Local offline storage (SQLite) ----
+
+  const loadLocalSuppliers = useCallback(async (): Promise<LocalSupplier[]> => {
+    const rows = await db.getAllAsync<any>("SELECT * FROM local_suppliers ORDER BY name");
+    return rows.map((r) => ({
+      id: r.id, name: r.name, trnNumber: r.trn_number, phone: r.phone,
+      email: r.email, address: r.address, paymentTerms: r.payment_terms,
+      notes: r.notes, isActive: r.is_active === 1, createdAt: r.created_at,
+    }));
+  }, [db]);
+
+  const createLocalSupplier = useCallback(async (s: Omit<LocalSupplier, "id" | "createdAt">): Promise<LocalSupplier> => {
+    const id = generateId();
+    const createdAt = Date.now();
+    await db.runAsync(
+      "INSERT INTO local_suppliers (id, name, trn_number, phone, email, address, payment_terms, notes, is_active, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+      [id, s.name, s.trnNumber ?? null, s.phone ?? null, s.email ?? null, s.address ?? null, s.paymentTerms ?? null, s.notes ?? null, s.isActive ? 1 : 0, createdAt]
+    );
+    return { ...s, id, createdAt };
+  }, [db]);
+
+  const updateLocalSupplier = useCallback(async (s: LocalSupplier): Promise<void> => {
+    await db.runAsync(
+      "UPDATE local_suppliers SET name=?, trn_number=?, phone=?, email=?, address=?, payment_terms=?, notes=?, is_active=? WHERE id=?",
+      [s.name, s.trnNumber ?? null, s.phone ?? null, s.email ?? null, s.address ?? null, s.paymentTerms ?? null, s.notes ?? null, s.isActive ? 1 : 0, s.id]
+    );
+  }, [db]);
+
+  const loadLocalPurchases = useCallback(async (): Promise<LocalPurchase[]> => {
+    const rows = await db.getAllAsync<any>(`
+      SELECT lp.*, COUNT(lpi.id) AS item_count
+      FROM local_purchases lp
+      LEFT JOIN local_purchase_items lpi ON lpi.purchase_id = lp.id
+      GROUP BY lp.id
+      ORDER BY lp.received_at DESC
+    `);
+    return rows.map((r) => ({
+      id: r.id, supplierName: r.supplier_name, referenceNumber: r.reference_number,
+      receivedAt: r.received_at, notes: r.notes, subtotal: r.subtotal,
+      vatAmount: r.vat_amount, total: r.total, itemCount: r.item_count ?? 0, createdAt: r.created_at,
+    }));
+  }, [db]);
+
+  const getLocalPurchase = useCallback(async (id: string): Promise<{ purchase: LocalPurchase; items: LocalPurchaseItem[] } | null> => {
+    const row = await db.getFirstAsync<any>("SELECT * FROM local_purchases WHERE id=?", [id]);
+    if (!row) return null;
+    const itemRows = await db.getAllAsync<any>("SELECT * FROM local_purchase_items WHERE purchase_id=?", [id]);
+    return {
+      purchase: {
+        id: row.id, supplierName: row.supplier_name, referenceNumber: row.reference_number,
+        receivedAt: row.received_at, notes: row.notes, subtotal: row.subtotal,
+        vatAmount: row.vat_amount, total: row.total, itemCount: itemRows.length, createdAt: row.created_at,
+      },
+      items: itemRows.map((r) => ({
+        id: r.id, purchaseId: r.purchase_id, productClientId: r.product_client_id,
+        productName: r.product_name, sku: r.sku, quantity: r.quantity,
+        unitCost: r.unit_cost, vatAmount: r.vat_amount, lineTotal: r.line_total,
+      })),
+    };
+  }, [db]);
+
+  const createLocalPurchase = useCallback(async (data: {
+    supplierName: string;
+    referenceNumber?: string | null;
+    notes?: string | null;
+    items: Array<{ productClientId: string; productName: string; sku?: string | null; quantity: number; unitCost: number; vatAmount: number }>;
+  }): Promise<{ purchase: LocalPurchase; items: LocalPurchaseItem[] }> => {
+    const id = generateId();
+    const createdAt = Date.now();
+    let subtotal = 0;
+    let vatAmount = 0;
+    for (const l of data.items) { subtotal += l.quantity * l.unitCost; vatAmount += l.vatAmount; }
+    const total = subtotal + vatAmount;
+    const savedItems: LocalPurchaseItem[] = [];
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      await tx.runAsync(
+        "INSERT INTO local_purchases (id, supplier_name, reference_number, received_at, notes, subtotal, vat_amount, total, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+        [id, data.supplierName, data.referenceNumber ?? null, createdAt, data.notes ?? null, subtotal, vatAmount, total, createdAt]
+      );
+      for (const l of data.items) {
+        const itemId = generateId();
+        const lineTotal = l.quantity * l.unitCost + l.vatAmount;
+        await tx.runAsync(
+          "INSERT INTO local_purchase_items (id, purchase_id, product_client_id, product_name, sku, quantity, unit_cost, vat_amount, line_total) VALUES (?,?,?,?,?,?,?,?,?)",
+          [itemId, id, l.productClientId, l.productName, l.sku ?? null, l.quantity, l.unitCost, l.vatAmount, lineTotal]
+        );
+        const movId = generateId();
+        await tx.runAsync(
+          "INSERT INTO local_stock_movements (id, product_client_id, product_name, kind, delta, ref_id, reason, created_at) VALUES (?,?,?,?,?,?,?,?)",
+          [movId, l.productClientId, l.productName, "purchase", l.quantity, id, null, createdAt]
+        );
+        savedItems.push({ id: itemId, purchaseId: id, productClientId: l.productClientId, productName: l.productName, sku: l.sku ?? null, quantity: l.quantity, unitCost: l.unitCost, vatAmount: l.vatAmount, lineTotal });
+      }
+    });
+    return {
+      purchase: { id, supplierName: data.supplierName, referenceNumber: data.referenceNumber ?? null, receivedAt: createdAt, notes: data.notes ?? null, subtotal, vatAmount, total, itemCount: savedItems.length, createdAt },
+      items: savedItems,
+    };
+  }, [db]);
+
+  const loadLocalMovements = useCallback(async (productClientId?: string): Promise<LocalStockMovement[]> => {
+    const rows = productClientId
+      ? await db.getAllAsync<any>("SELECT * FROM local_stock_movements WHERE product_client_id=? ORDER BY created_at DESC LIMIT 200", [productClientId])
+      : await db.getAllAsync<any>("SELECT * FROM local_stock_movements ORDER BY created_at DESC LIMIT 200");
+    return rows.map((r) => ({
+      id: r.id, productClientId: r.product_client_id, productName: r.product_name,
+      kind: r.kind as LocalStockMovement["kind"], delta: r.delta, refId: r.ref_id, reason: r.reason, createdAt: r.created_at,
+    }));
+  }, [db]);
+
+  const createLocalAdjustment = useCallback(async (data: {
+    productClientId: string; productName: string; sku?: string | null; delta: number; reason?: string | null;
+  }): Promise<LocalStockMovement> => {
+    const id = generateId();
+    const createdAt = Date.now();
+    await db.runAsync(
+      "INSERT INTO local_stock_movements (id, product_client_id, product_name, kind, delta, ref_id, reason, created_at) VALUES (?,?,?,?,?,?,?,?)",
+      [id, data.productClientId, data.productName, "adjustment", data.delta, id, data.reason ?? null, createdAt]
+    );
+    return { id, productClientId: data.productClientId, productName: data.productName, kind: "adjustment", delta: data.delta, refId: id, reason: data.reason ?? null, createdAt };
+  }, [db]);
+
   return (
     <DatabaseContext.Provider value={{
       loadProducts, createProduct, updateProduct, deleteProduct, updateStock,
@@ -1386,6 +1508,9 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       loadCatalogBatch, markCatalogResults, countPendingCatalog, applyRemoteCatalog,
       loadSyncQueue, loadCatalogOutbox, dismissSyncItem, dismissCatalogItem,
       insertSyncLog, loadSyncLogs, clearSyncLogs,
+      loadLocalSuppliers, createLocalSupplier, updateLocalSupplier,
+      loadLocalPurchases, getLocalPurchase, createLocalPurchase,
+      loadLocalMovements, createLocalAdjustment,
     }}>
       {children}
     </DatabaseContext.Provider>

@@ -519,6 +519,7 @@ export default function BackOfficeScreen() {
   };
 
   const [clearOpts, setClearOpts] = useState<import("@/types").ClearDataOptions>({});
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [dbBusy, setDbBusy] = useState(false);
 
   const onBackup = useCallback(async () => {
@@ -564,30 +565,17 @@ export default function BackOfficeScreen() {
   }, [db]);
 
   const onClear = useCallback(async () => {
-    const selected = Object.entries(clearOpts).filter(([, v]) => v).map(([k]) => k);
-    const { confirmDestructive, notify } = await import("@/lib/confirm");
-    if (selected.length === 0) {
-      notify("Nothing Selected", "Please tick at least one data category to clear.");
-      return;
-    }
-    const ok = await confirmDestructive(
-      "Clear Selected Data?",
-      `This will permanently delete:\n\n• ${selected.join("\n• ")}\n\nBusiness settings, staff, printers and configuration are NOT affected. Continue?`,
-      "Clear Data",
-    );
-    if (!ok) return;
+    setClearConfirmOpen(false);
     try {
       setDbBusy(true);
       await db.clearData(clearOpts);
       setClearOpts({});
-      // Force re-load of in-memory state so screens reflect the wipe immediately
       try { await loadCats(); } catch {}
       try { await loadProductsList(); } catch {}
       try { await loadIngredientList(); } catch {}
       try { await loadAllSettings(); } catch {}
-      notify("Done", "Selected data has been cleared. Other open screens will refresh next time you open them.");
     } catch (e: any) {
-      notify("Clear Failed", e?.message || String(e));
+      Alert.alert("Clear Failed", e?.message || String(e));
     } finally {
       setDbBusy(false);
     }
@@ -670,13 +658,45 @@ export default function BackOfficeScreen() {
             {renderClearRow("tables",     "POS Tables",            "Removes table list and any held orders on them")}
             {renderClearRow("resetInvoiceCounter", "Reset Invoice Counter", "Restarts invoice numbering at 0001")}
           </View>
-          <TouchableOpacity
-            disabled={dbBusy}
-            onPress={onClear}
-            style={{ backgroundColor: colors.destructive, padding: 14, borderRadius: colors.radius, alignItems: "center", marginTop: 16, opacity: dbBusy ? 0.6 : 1 }}
-          >
-            <Text style={{ color: "#fff", fontWeight: "700" }}>Clear Selected Data</Text>
-          </TouchableOpacity>
+          {!clearConfirmOpen ? (
+            <TouchableOpacity
+              disabled={dbBusy}
+              onPress={() => {
+                const selected = Object.entries(clearOpts).filter(([, v]) => v);
+                if (selected.length === 0) {
+                  Alert.alert("Nothing Selected", "Please tick at least one data category to clear.");
+                  return;
+                }
+                setClearConfirmOpen(true);
+              }}
+              style={{ backgroundColor: colors.destructive, padding: 14, borderRadius: colors.radius, alignItems: "center", marginTop: 16, opacity: dbBusy ? 0.6 : 1 }}
+            >
+              <Text style={{ color: "#fff", fontWeight: "700" }}>Clear Selected Data</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={{ marginTop: 16, padding: 14, backgroundColor: colors.destructive + "12", borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive }}>
+              <Text style={{ color: colors.destructive, fontWeight: "700", fontSize: 14, marginBottom: 6 }}>Permanently delete selected data?</Text>
+              <Text style={{ color: colors.foreground, fontSize: 13, marginBottom: 12 }}>
+                Business settings, staff, printers and configuration are NOT affected.
+              </Text>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <TouchableOpacity
+                  disabled={dbBusy}
+                  onPress={onClear}
+                  style={{ flex: 1, backgroundColor: colors.destructive, padding: 12, borderRadius: colors.radius, alignItems: "center", opacity: dbBusy ? 0.5 : 1 }}
+                >
+                  {dbBusy ? <ActivityIndicator size="small" color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "700" }}>Yes, Clear</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  disabled={dbBusy}
+                  onPress={() => setClearConfirmOpen(false)}
+                  style={{ flex: 1, backgroundColor: colors.secondary, padding: 12, borderRadius: colors.radius, alignItems: "center", borderWidth: 1, borderColor: colors.border }}
+                >
+                  <Text style={{ color: colors.foreground, fontWeight: "600" }}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </View>
 
         <Text style={{ color: colors.mutedForeground, fontSize: 12, textAlign: "center", lineHeight: 18 }}>

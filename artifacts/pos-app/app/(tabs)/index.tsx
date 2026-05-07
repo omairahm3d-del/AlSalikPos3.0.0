@@ -53,7 +53,7 @@ export default function POSScreen() {
   const insets = useSafeAreaInsets();
   const isTablet = width >= 768;
 
-  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment } = useDatabase();
+  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder } = useDatabase();
   const { currentStaff } = useStaff();
   const {
     items: cartItems,
@@ -705,7 +705,20 @@ export default function POSScreen() {
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                   <Text style={{ color: colors.destructive, fontSize: 12, fontWeight: "600" }}>Void order?</Text>
                   <TouchableOpacity
-                    onPress={() => { clearCart(); setVoidConfirm(false); }}
+                    onPress={async () => {
+                      const tableId = heldOrderInfo?.tableId ?? selectedTable?.id;
+                      const heldId = heldOrderInfo?.id;
+                      clearCart();
+                      setVoidConfirm(false);
+                      setSelectedTable(null);
+                      setSelectedRider(null);
+                      if (tableId) {
+                        try { await setTableStatus(tableId, "available"); } catch {}
+                      }
+                      if (heldId) {
+                        try { await deleteHeldOrder(heldId); } catch {}
+                      }
+                    }}
                     style={{ backgroundColor: colors.destructive, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}
                   >
                     <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>Yes</Text>

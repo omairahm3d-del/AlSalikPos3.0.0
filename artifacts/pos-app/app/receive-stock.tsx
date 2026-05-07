@@ -57,12 +57,24 @@ export default function ReceiveStockScreen() {
   );
 
   useEffect(() => {
-    if (!token) return;
     let cancelled = false;
-    Promise.all([posApi.listSuppliers(token), db.loadProducts()])
-      .then(([s, p]) => {
+    const suppliersPromise = isOffline
+      ? db.loadLocalSuppliers().then((list) =>
+          list.map((s): PosSupplier => ({
+            id: s.id, branchId: null,
+            name: s.name, trnNumber: s.trnNumber ?? null,
+            phone: s.phone ?? null, email: s.email ?? null,
+            address: s.address ?? null, paymentTerms: s.paymentTerms ?? null,
+            notes: s.notes ?? null, isActive: s.isActive,
+            createdAt: new Date(s.createdAt).toISOString(),
+            updatedAt: new Date(s.createdAt).toISOString(),
+          })),
+        )
+      : (token ? posApi.listSuppliers(token).then((r) => r.suppliers) : Promise.resolve([] as PosSupplier[]));
+    Promise.all([suppliersPromise, db.loadProducts()])
+      .then(([sups, p]) => {
         if (cancelled) return;
-        setSuppliers(s.suppliers);
+        setSuppliers(sups);
         setProducts(p);
       })
       .catch((e) => {
@@ -75,7 +87,7 @@ export default function ReceiveStockScreen() {
     return () => {
       cancelled = true;
     };
-  }, [token, db]);
+  }, [token, isOffline, db]);
 
   const totals = useMemo(() => {
     let subtotal = 0;
@@ -145,24 +157,42 @@ export default function ReceiveStockScreen() {
   }
 
   async function submit() {
-    if (!token || !canSubmit) return;
+    if (!canSubmit) return;
     setSaving(true);
     try {
-      await posApi.createPurchase(token, {
-        idempotencyKey,
-        supplierId: supplierMode === "existing" ? supplierId || null : null,
-        supplierName: finalSupplierName,
-        referenceNumber: reference.trim() || null,
-        notes: notes.trim() || null,
-        items: lines.map((l) => ({
-          productClientId: l.productClientId,
-          productName: l.productName.trim(),
-          sku: l.sku,
-          quantity: l.quantity,
-          unitCost: l.unitCost,
-          vatAmount: l.vatAmount,
-        })),
-      });
+      if (isOffline) {
+        // Offline: persist to local DB + mirror stock.
+        await db.createLocalPurchase({
+          supplierName: finalSupplierName,
+          referenceNumber: reference.trim() || null,
+          notes: notes.trim() || null,
+          items: lines.map((l) => ({
+            productClientId: l.productClientId,
+            productName: l.productName.trim(),
+            sku: l.sku,
+            quantity: l.quantity,
+            unitCost: l.unitCost,
+            vatAmount: l.vatAmount,
+          })),
+        });
+      } else {
+        if (!token) return;
+        await posApi.createPurchase(token, {
+          idempotencyKey,
+          supplierId: supplierMode === "existing" ? supplierId || null : null,
+          supplierName: finalSupplierName,
+          referenceNumber: reference.trim() || null,
+          notes: notes.trim() || null,
+          items: lines.map((l) => ({
+            productClientId: l.productClientId,
+            productName: l.productName.trim(),
+            sku: l.sku,
+            quantity: l.quantity,
+            unitCost: l.unitCost,
+            vatAmount: l.vatAmount,
+          })),
+        });
+      }
 
       // Mirror the received quantities into the local product catalog so
       // the POS product grid immediately reflects the new stock level.

@@ -11,7 +11,7 @@ import { computeLineNetVat } from "./CartContext";
 import { generateId, generateInvoiceNumber } from "@/lib/database";
 import { notifySyncQueueChanged } from "@/lib/syncEvents";
 import { clearOwningCompanyId } from "@/lib/saasStorage";
-import { DatabaseContext, type CatalogApplyInput, type CatalogEntityType, type CatalogOutboxItem, type CatalogOutboxRow, type CatalogResultUpdate, type SaleOptions, type SyncEntityType, type SyncLogEntry, type SyncLogKind, type SyncQueueItem, type SyncQueueRow, type SyncResultUpdate } from "./DatabaseCore";
+import { DatabaseContext, type CatalogApplyInput, type CatalogEntityType, type CatalogOutboxItem, type CatalogOutboxRow, type CatalogResultUpdate, type LocalPurchase, type LocalPurchaseItem, type LocalStockMovement, type LocalSupplier, type SaleOptions, type SyncEntityType, type SyncLogEntry, type SyncLogKind, type SyncQueueItem, type SyncQueueRow, type SyncResultUpdate } from "./DatabaseCore";
 
 const K = {
   products: "@pos_products", sales: "@pos_sales", saleItems: "@pos_sale_items",
@@ -26,6 +26,10 @@ const K = {
   catalogOutbox: "@pos_catalog_outbox",
   expenses: "@pos_expenses",
   syncLog: "@pos_sync_log",
+  localSuppliers: "@pos_local_suppliers",
+  localPurchases: "@pos_local_purchases",
+  localPurchaseItems: "@pos_local_purchase_items",
+  localStockMovements: "@pos_local_stock_movements",
 };
 
 interface WebCatalogOutboxRow {
@@ -1256,6 +1260,98 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     });
   }, []);
 
+  // ---- Local offline storage (AsyncStorage web) ----
+  async function loadLocalSuppliers(): Promise<LocalSupplier[]> {
+    return getJson<LocalSupplier[]>(K.localSuppliers, []);
+  }
+
+  async function createLocalSupplier(s: Omit<LocalSupplier, "id" | "createdAt">): Promise<LocalSupplier> {
+    const list = await getJson<LocalSupplier[]>(K.localSuppliers, []);
+    const row: LocalSupplier = { ...s, id: generateId(), createdAt: Date.now() };
+    await setJson(K.localSuppliers, [...list, row]);
+    return row;
+  }
+
+  async function updateLocalSupplier(s: LocalSupplier): Promise<void> {
+    const list = await getJson<LocalSupplier[]>(K.localSuppliers, []);
+    await setJson(K.localSuppliers, list.map((x) => x.id === s.id ? s : x));
+  }
+
+  async function loadLocalPurchases(): Promise<LocalPurchase[]> {
+    const purchases = await getJson<LocalPurchase[]>(K.localPurchases, []);
+    const items = await getJson<LocalPurchaseItem[]>(K.localPurchaseItems, []);
+    return purchases
+      .map((p) => ({ ...p, itemCount: items.filter((i) => i.purchaseId === p.id).length }))
+      .sort((a, b) => b.receivedAt - a.receivedAt);
+  }
+
+  async function getLocalPurchase(id: string): Promise<{ purchase: LocalPurchase; items: LocalPurchaseItem[] } | null> {
+    const purchases = await getJson<LocalPurchase[]>(K.localPurchases, []);
+    const purchase = purchases.find((p) => p.id === id);
+    if (!purchase) return null;
+    const allItems = await getJson<LocalPurchaseItem[]>(K.localPurchaseItems, []);
+    const items = allItems.filter((i) => i.purchaseId === id);
+    return { purchase: { ...purchase, itemCount: items.length }, items };
+  }
+
+  async function createLocalPurchase(data: {
+    supplierName: string;
+    referenceNumber?: string | null;
+    notes?: string | null;
+    items: Array<{ productClientId: string; productName: string; sku?: string | null; quantity: number; unitCost: number; vatAmount: number }>;
+  }): Promise<{ purchase: LocalPurchase; items: LocalPurchaseItem[] }> {
+    const id = generateId();
+    const createdAt = Date.now();
+    let subtotal = 0;
+    let vatAmount = 0;
+    for (const l of data.items) { subtotal += l.quantity * l.unitCost; vatAmount += l.vatAmount; }
+    const total = subtotal + vatAmount;
+    const savedItems: LocalPurchaseItem[] = data.items.map((l) => ({
+      id: generateId(), purchaseId: id, productClientId: l.productClientId,
+      productName: l.productName, sku: l.sku ?? null, quantity: l.quantity,
+      unitCost: l.unitCost, vatAmount: l.vatAmount, lineTotal: l.quantity * l.unitCost + l.vatAmount,
+    }));
+    const movements: LocalStockMovement[] = data.items.map((l) => ({
+      id: generateId(), productClientId: l.productClientId, productName: l.productName,
+      kind: "purchase" as const, delta: l.quantity, refId: id, reason: null, createdAt,
+    }));
+    const purchase: LocalPurchase = {
+      id, supplierName: data.supplierName, referenceNumber: data.referenceNumber ?? null,
+      receivedAt: createdAt, notes: data.notes ?? null, subtotal, vatAmount, total,
+      itemCount: savedItems.length, createdAt,
+    };
+    const [purchases, items, movs] = await Promise.all([
+      getJson<LocalPurchase[]>(K.localPurchases, []),
+      getJson<LocalPurchaseItem[]>(K.localPurchaseItems, []),
+      getJson<LocalStockMovement[]>(K.localStockMovements, []),
+    ]);
+    await AsyncStorage.multiSet([
+      [K.localPurchases, JSON.stringify([purchase, ...purchases])],
+      [K.localPurchaseItems, JSON.stringify([...savedItems, ...items])],
+      [K.localStockMovements, JSON.stringify([...movements, ...movs])],
+    ]);
+    return { purchase, items: savedItems };
+  }
+
+  async function loadLocalMovements(productClientId?: string): Promise<LocalStockMovement[]> {
+    const all = await getJson<LocalStockMovement[]>(K.localStockMovements, []);
+    const filtered = productClientId ? all.filter((m) => m.productClientId === productClientId) : all;
+    return filtered.sort((a, b) => b.createdAt - a.createdAt).slice(0, 200);
+  }
+
+  async function createLocalAdjustment(data: {
+    productClientId: string; productName: string; sku?: string | null; delta: number; reason?: string | null;
+  }): Promise<LocalStockMovement> {
+    const id = generateId();
+    const row: LocalStockMovement = {
+      id, productClientId: data.productClientId, productName: data.productName,
+      kind: "adjustment", delta: data.delta, refId: id, reason: data.reason ?? null, createdAt: Date.now(),
+    };
+    const all = await getJson<LocalStockMovement[]>(K.localStockMovements, []);
+    await setJson(K.localStockMovements, [row, ...all]);
+    return row;
+  }
+
   return (
     <DatabaseContext.Provider value={{
       loadProducts, createProduct, updateProduct, deleteProduct, updateStock,
@@ -1278,6 +1374,9 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       loadCatalogBatch, markCatalogResults, countPendingCatalog, applyRemoteCatalog,
       loadSyncQueue, loadCatalogOutbox, dismissSyncItem, dismissCatalogItem,
       insertSyncLog, loadSyncLogs, clearSyncLogs,
+      loadLocalSuppliers, createLocalSupplier, updateLocalSupplier,
+      loadLocalPurchases, getLocalPurchase, createLocalPurchase,
+      loadLocalMovements, createLocalAdjustment,
     }}>
       {children}
     </DatabaseContext.Provider>

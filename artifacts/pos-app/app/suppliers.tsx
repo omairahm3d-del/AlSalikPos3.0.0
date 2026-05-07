@@ -21,6 +21,7 @@ import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useLicense } from "@/context/LicenseContext";
+import { useDatabase } from "@/context/DatabaseCore";
 import { posApi, type PosSupplier, type PosPurchaseRow } from "@/lib/posPurchasing";
 import { printHtml } from "@/lib/printBridge";
 
@@ -144,6 +145,7 @@ export default function SuppliersScreen() {
   const { session } = useLicense();
   const token = session?.token;
   const isOffline = session?.license.licenseType === "offline";
+  const db = useDatabase();
 
   const [suppliers, setSuppliers] = useState<PosSupplier[]>([]);
   const [allPurchases, setAllPurchases] = useState<PosPurchaseRow[]>([]);
@@ -167,22 +169,49 @@ export default function SuppliersScreen() {
   const [isActive, setIsActive] = useState(true);
 
   const load = useCallback(async (silent = false) => {
-    if (!token) return;
     if (!silent) setLoading(true);
     try {
-      const [{ suppliers: list }, { purchases }] = await Promise.all([
-        posApi.listSuppliers(token),
-        posApi.listPurchases(token),
-      ]);
-      setSuppliers(list);
-      setAllPurchases(purchases);
+      if (isOffline) {
+        const [localSups, localPurchases] = await Promise.all([
+          db.loadLocalSuppliers(),
+          db.loadLocalPurchases(),
+        ]);
+        const asPosSupplier: PosSupplier[] = localSups.map((s) => ({
+          id: s.id, branchId: null,
+          name: s.name, trnNumber: s.trnNumber ?? null,
+          phone: s.phone ?? null, email: s.email ?? null,
+          address: s.address ?? null, paymentTerms: s.paymentTerms ?? null,
+          notes: s.notes ?? null, isActive: s.isActive,
+          createdAt: new Date(s.createdAt).toISOString(),
+          updatedAt: new Date(s.createdAt).toISOString(),
+        }));
+        const asPosPurchase: PosPurchaseRow[] = localPurchases.map((p) => ({
+          id: p.id, branchId: null, supplierId: null,
+          supplierName: p.supplierName,
+          referenceNumber: p.referenceNumber ?? null,
+          receivedAt: new Date(p.receivedAt).toISOString(),
+          notes: p.notes ?? null,
+          subtotal: String(p.subtotal), vatAmount: String(p.vatAmount), total: String(p.total),
+          itemCount: p.itemCount,
+        }));
+        setSuppliers(asPosSupplier);
+        setAllPurchases(asPosPurchase);
+      } else {
+        if (!token) return;
+        const [{ suppliers: list }, { purchases }] = await Promise.all([
+          posApi.listSuppliers(token),
+          posApi.listPurchases(token),
+        ]);
+        setSuppliers(list);
+        setAllPurchases(purchases);
+      }
     } catch (e: any) {
       Alert.alert("Error", e.message || "Failed to load suppliers");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [token]);
+  }, [token, isOffline, db]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -217,7 +246,6 @@ export default function SuppliersScreen() {
       Alert.alert("Invalid", "Supplier name is required.");
       return;
     }
-    if (!token) return;
     setSaving(true);
     try {
       const patch = {
@@ -230,13 +258,24 @@ export default function SuppliersScreen() {
         notes: notes.trim() || null,
         isActive,
       };
-      if (editingSupplier) {
-        const { supplier: updated } = await posApi.updateSupplier(token, editingSupplier.id, patch);
+      if (isOffline) {
+        if (editingSupplier) {
+          const existing = (await db.loadLocalSuppliers()).find((s) => s.id === editingSupplier.id);
+          if (existing) await db.updateLocalSupplier({ ...existing, ...patch });
+        } else {
+          await db.createLocalSupplier(patch);
+        }
         setShowModal(false);
-        if (selectedSupplier?.id === updated.id) setSelectedSupplier(updated);
       } else {
-        await posApi.createSupplier(token, patch);
-        setShowModal(false);
+        if (!token) return;
+        if (editingSupplier) {
+          const { supplier: updated } = await posApi.updateSupplier(token, editingSupplier.id, patch);
+          setShowModal(false);
+          if (selectedSupplier?.id === updated.id) setSelectedSupplier(updated);
+        } else {
+          await posApi.createSupplier(token, patch);
+          setShowModal(false);
+        }
       }
       await load(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -258,11 +297,19 @@ export default function SuppliersScreen() {
         text: action,
         style: sup.isActive ? "destructive" : "default",
         onPress: async () => {
-          if (!token) return;
           try {
-            const { supplier: updated } = await posApi.updateSupplier(token, sup.id, { isActive: !sup.isActive });
-            await load(true);
-            if (selectedSupplier?.id === updated.id) setSelectedSupplier(updated);
+            if (isOffline) {
+              const existing = (await db.loadLocalSuppliers()).find((s) => s.id === sup.id);
+              if (existing) {
+                await db.updateLocalSupplier({ ...existing, isActive: !sup.isActive });
+                await load(true);
+              }
+            } else {
+              if (!token) return;
+              const { supplier: updated } = await posApi.updateSupplier(token, sup.id, { isActive: !sup.isActive });
+              await load(true);
+              if (selectedSupplier?.id === updated.id) setSelectedSupplier(updated);
+            }
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           } catch (e: any) {
             Alert.alert("Error", e.message || "Failed to update supplier");
@@ -292,7 +339,11 @@ export default function SuppliersScreen() {
 
   const supplierPurchases = selectedSupplier
     ? [...allPurchases]
-        .filter((p) => p.supplierId === selectedSupplier.id)
+        .filter((p) =>
+          isOffline
+            ? p.supplierName === selectedSupplier.name
+            : p.supplierId === selectedSupplier.id,
+        )
         .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())
     : [];
 

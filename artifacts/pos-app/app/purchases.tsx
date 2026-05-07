@@ -17,6 +17,7 @@ import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useLicense } from "@/context/LicenseContext";
+import { useDatabase } from "@/context/DatabaseCore";
 import { posApi, type PosPurchaseItem, type PosPurchaseRow } from "@/lib/posPurchasing";
 import { formatCurrency } from "@/types";
 
@@ -110,6 +111,7 @@ export default function PurchasesScreen() {
   const { session } = useLicense();
   const token = session?.token;
   const isOffline = session?.license.licenseType === "offline";
+  const db = useDatabase();
 
   const [purchases, setPurchases] = useState<PosPurchaseRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -122,17 +124,31 @@ export default function PurchasesScreen() {
   const [printing, setPrinting] = useState(false);
 
   const load = useCallback(async () => {
-    if (!token) return;
     setError(null);
     try {
-      const r = await posApi.listPurchases(token, { limit: 200 });
-      setPurchases(r.purchases);
+      if (isOffline) {
+        const list = await db.loadLocalPurchases();
+        const asPosRows: PosPurchaseRow[] = list.map((p) => ({
+          id: p.id, branchId: null, supplierId: null,
+          supplierName: p.supplierName,
+          referenceNumber: p.referenceNumber ?? null,
+          receivedAt: new Date(p.receivedAt).toISOString(),
+          notes: p.notes ?? null,
+          subtotal: String(p.subtotal), vatAmount: String(p.vatAmount), total: String(p.total),
+          itemCount: p.itemCount,
+        }));
+        setPurchases(asPosRows);
+      } else {
+        if (!token) return;
+        const r = await posApi.listPurchases(token, { limit: 200 });
+        setPurchases(r.purchases);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load purchases");
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, isOffline, db]);
 
   useFocusEffect(
     useCallback(() => { load(); }, [load]),
@@ -140,14 +156,40 @@ export default function PurchasesScreen() {
 
   // Load detail whenever a row is tapped
   useEffect(() => {
-    if (!selectedId || !token) return;
+    if (!selectedId) return;
     setDetail(null);
     setDetailLoading(true);
-    posApi.getPurchase(token, selectedId)
-      .then((r) => setDetail(r))
-      .catch((e) => Alert.alert("Error", e instanceof Error ? e.message : "Could not load purchase"))
-      .finally(() => setDetailLoading(false));
-  }, [selectedId, token]);
+    if (isOffline) {
+      db.getLocalPurchase(selectedId)
+        .then((r) => {
+          if (!r) { setDetailLoading(false); return; }
+          const purchase: PosPurchaseRow = {
+            id: r.purchase.id, branchId: null, supplierId: null,
+            supplierName: r.purchase.supplierName,
+            referenceNumber: r.purchase.referenceNumber ?? null,
+            receivedAt: new Date(r.purchase.receivedAt).toISOString(),
+            notes: r.purchase.notes ?? null,
+            subtotal: String(r.purchase.subtotal), vatAmount: String(r.purchase.vatAmount),
+            total: String(r.purchase.total), itemCount: r.purchase.itemCount,
+          };
+          const items: PosPurchaseItem[] = r.items.map((i) => ({
+            id: i.id, purchaseId: i.purchaseId, productClientId: i.productClientId,
+            productName: i.productName, sku: i.sku ?? null,
+            quantity: i.quantity, unitCost: String(i.unitCost),
+            vatAmount: String(i.vatAmount), lineTotal: String(i.lineTotal),
+          }));
+          setDetail({ purchase, items });
+        })
+        .catch((e) => Alert.alert("Error", e instanceof Error ? e.message : "Could not load purchase"))
+        .finally(() => setDetailLoading(false));
+    } else {
+      if (!token) { setDetailLoading(false); return; }
+      posApi.getPurchase(token, selectedId)
+        .then((r) => setDetail(r))
+        .catch((e) => Alert.alert("Error", e instanceof Error ? e.message : "Could not load purchase"))
+        .finally(() => setDetailLoading(false));
+    }
+  }, [selectedId, token, isOffline, db]);
 
   const handlePrint = useCallback(async () => {
     if (!detail) return;
