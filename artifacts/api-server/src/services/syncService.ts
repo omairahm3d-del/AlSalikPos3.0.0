@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
 import { saleRepo, type SaleInsertResult } from "../repositories/saleRepo";
 import { stockRepo } from "../repositories/stockRepo";
+import { branchRepo } from "../repositories/branchRepo";
 import { badRequest } from "../lib/errors";
 import type { InsertStockMovement } from "@workspace/saas-db";
 
@@ -126,11 +127,14 @@ export const syncService = {
     // also aggregated by productClientId so the same product appearing
     // twice in one sale isn't dropped by `onConflictDoNothing`.
     // Mirror sale lines into stock_movements. Requires a branchId because the
-    // stock_movements table has branchId NOT NULL (FK to branches). Devices
-    // activated before branches were introduced have no branchId and must
-    // re-activate to get stock tracking. Unbranched sales still record
-    // correctly in saas_sales; only the inventory side is skipped.
-    if (ctx.branchId) {
+    // stock_movements table has branchId NOT NULL (FK to branches). The
+    // requireDevice middleware back-fills branchId from the DB for legacy
+    // tokens; if it's still null here we fall back to the company's default
+    // branch so stock tracking works even for pre-branch devices.
+    const effectiveBranchId =
+      ctx.branchId ??
+      (await branchRepo.findDefault(ctx.companyId).then((b) => b?.id ?? null));
+    if (effectiveBranchId) {
       const insertedIds = new Set(
         results.filter((r) => r.status === "inserted").map((r) => r.clientSaleId),
       );
@@ -157,7 +161,7 @@ export const syncService = {
         for (const [productClientId, agg] of byProduct) {
           movements.push({
             companyId: ctx.companyId,
-            branchId: ctx.branchId,
+            branchId: effectiveBranchId,
             productClientId,
             productName: agg.name,
             sku: agg.sku,

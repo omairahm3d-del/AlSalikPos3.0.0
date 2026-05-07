@@ -1,7 +1,10 @@
 import type { RequestHandler } from "express";
 import jwt from "jsonwebtoken";
+import { eq } from "drizzle-orm";
+import { saasDb, devicesTable } from "@workspace/saas-db";
 import { env } from "../lib/env";
 import { unauthorized } from "../lib/errors";
+import { branchRepo } from "../repositories/branchRepo";
 
 export interface DeviceTokenPayload {
   companyId: string;
@@ -10,8 +13,9 @@ export interface DeviceTokenPayload {
   deviceUid: string;
   /**
    * Branch this device is bound to. Optional for back-compat: tokens
-   * minted before branches existed lack this claim and are treated as
-   * "company default branch" by sync handlers.
+   * minted before branches existed lack this claim. The middleware
+   * back-fills it from the device DB row (which is always stamped on
+   * activation) so downstream handlers can always rely on it being set.
    */
   branchId?: string | null;
 }
@@ -37,17 +41,50 @@ export function signDeviceToken(payload: DeviceTokenPayload): {
   };
 }
 
-export const requireDevice: RequestHandler = (req, _res, next) => {
+/**
+ * Verify the device Bearer JWT and attach the payload to req.device.
+ *
+ * Back-compat: tokens issued before the branch system don't carry a
+ * `branchId` claim. We resolve it lazily from the device DB row (stamped
+ * on every license activation) so all downstream handlers can rely on
+ * req.device.branchId being populated without forcing a re-activation.
+ */
+export const requireDevice: RequestHandler = async (req, _res, next) => {
   const auth = req.header("authorization");
   if (!auth || !auth.startsWith("Bearer ")) {
-    throw unauthorized("missing_token", "Bearer token required");
+    return next(unauthorized("missing_token", "Bearer token required"));
   }
   const token = auth.slice("Bearer ".length).trim();
+  let payload: DeviceTokenPayload;
   try {
-    const payload = jwt.verify(token, env.SAAS_JWT_SECRET) as DeviceTokenPayload;
-    req.device = payload;
-    next();
+    payload = jwt.verify(token, env.SAAS_JWT_SECRET) as DeviceTokenPayload;
   } catch {
-    throw unauthorized("invalid_token", "Token is invalid or expired");
+    return next(unauthorized("invalid_token", "Token is invalid or expired"));
   }
+
+  // Back-fill branchId for legacy tokens that pre-date the branch system.
+  if (!payload.branchId && payload.deviceId) {
+    try {
+      const device = await saasDb.query.devicesTable.findFirst({
+        where: eq(devicesTable.id, payload.deviceId),
+      });
+      if (device?.branchId) {
+        payload = { ...payload, branchId: device.branchId };
+      } else {
+        // Device row also lacks branchId (truly pre-backfill) — use the
+        // company's default branch so stock tracking starts working
+        // immediately without forcing a re-activation.
+        const defaultBranch = await branchRepo.findDefault(payload.companyId);
+        if (defaultBranch) {
+          payload = { ...payload, branchId: defaultBranch.id };
+        }
+      }
+    } catch {
+      // Non-fatal: continue without branchId; purchasing endpoints will
+      // still throw device_unbound, but sync/catalog routes keep working.
+    }
+  }
+
+  req.device = payload;
+  next();
 };
