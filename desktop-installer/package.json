@@ -15,7 +15,7 @@
     "export-web": "cd ../artifacts/pos-app && pnpm exec expo export --platform web --output-dir ../../desktop-installer/www-new --clear",
     "shorten-paths": "node shorten-paths.js",
     "rebuild-web": "rm -rf www && mv www-new www && node shorten-paths.js && mkdir -p dist/win-unpacked/resources/app && rm -rf dist/win-unpacked/resources/app/www && cp -r www dist/win-unpacked/resources/app/www && cp main.js dist/win-unpacked/resources/app/main.js && cp preload.js dist/win-unpacked/resources/app/preload.js",
-    "build:installer": "../.cache/electron-builder/nsis/nsis-3.0.4.1/linux/makensis -V2 installer.nsi",
+    "build:installer": "NSISDIR=$(cd .. && pwd)/.cache/electron-builder/nsis/nsis-3.0.4.1 ../.cache/electron-builder/nsis/nsis-3.0.4.1/linux/makensis -V2 installer.nsi",
     "build:all": "pnpm run export-web && pnpm run rebuild-web && pnpm run build:installer",
     "build:win": "CSC_IDENTITY_AUTO_DISCOVERY=false WIN_CSC_LINK= electron-builder --win --x64"
   },
