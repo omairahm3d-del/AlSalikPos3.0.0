@@ -10,6 +10,7 @@ A mobile-first Point of Sale (POS) system for the UAE market, offering sales, in
 -   **Build POS Web**: `cd artifacts/pos-app && pnpm exec expo export --platform web --output-dir ../../desktop-installer/www-new --clear`
 -   **Build Desktop Installer**: `.cache/electron-builder/nsis/nsis-3.0.4.1/linux/makensis desktop-installer/installer.nsi`
 -   **Push SaaS Schema**: `pnpm --filter @workspace/saas-db run push`
+-   **Backfill branches** (one-shot, idempotent): `pnpm --filter @workspace/scripts run backfill:branches` — creates a default "Main" branch per company and stamps legacy NULL `branch_id` rows on all tables.
 -   **Run API tests**: `pnpm --filter @workspace/api-server run test` (Vitest + supertest, hits the real `SAAS_DATABASE_URL`; tests isolate by per-test company and clean up via cascade)
 -   **Environment Variables**: `DATABASE_URL`, `SAAS_DATABASE_URL`, `SAAS_JWT_SECRET`, `SAAS_ADMIN_API_KEY`
 
