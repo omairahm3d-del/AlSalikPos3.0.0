@@ -3,6 +3,13 @@
 # compiled output
 dist
 tmp
+
+# Desktop installer build artifacts — large binaries, never commit
+desktop-installer/dist/
+desktop-installer/dist-32/
+desktop-installer/www/
+desktop-installer/www-new/
+desktop-installer/static-build/
 out-tsc
 *.tsbuildinfo
 .expo
