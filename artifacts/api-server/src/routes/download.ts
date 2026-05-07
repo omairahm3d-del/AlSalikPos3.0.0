@@ -1,25 +1,8 @@
 import { Router, type IRouter } from "express";
-import { Storage } from "@google-cloud/storage";
 
 const router: IRouter = Router();
 
 const SIDECAR = "http://127.0.0.1:1106";
-
-const gcs = new Storage({
-  credentials: {
-    audience: "replit",
-    subject_token_type: "access_token",
-    token_url: `${SIDECAR}/token`,
-    type: "external_account",
-    credential_source: {
-      url: `${SIDECAR}/credential`,
-      format: { type: "json", subject_token_field_name: "access_token" },
-    },
-    universe_domain: "googleapis.com",
-  },
-  projectId: "",
-});
-
 const BUCKET_ID = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID ?? "";
 
 const INSTALLER_GCS = "downloads/AlSalikPOS-Setup-1.0.0.exe";
@@ -27,96 +10,87 @@ const APK_GCS = "downloads/AlSalikPOS.apk";
 const INSTALLER_NAME = "Al Salik POS Setup 1.0.0.exe";
 const APK_NAME = "Al Salik POS.apk";
 
-async function streamFromGcs(
-  req: any,
-  res: any,
-  gcsPath: string,
-  filename: string,
-) {
+async function getAccessToken(): Promise<string> {
+  const resp = await fetch(`${SIDECAR}/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      audience: "https://storage.googleapis.com/",
+      scopes: ["https://www.googleapis.com/auth/devstorage.read_only"],
+    }),
+  });
+  if (resp.ok) {
+    const data = (await resp.json()) as { access_token?: string; token?: string };
+    const tok = data.access_token ?? data.token;
+    if (tok) return tok;
+  }
+  const resp2 = await fetch(`${SIDECAR}/credential`);
+  const cred = (await resp2.json()) as { access_token?: string };
+  if (cred.access_token) return cred.access_token;
+  throw new Error("Could not obtain access token from sidecar");
+}
+
+function gcsDownloadUrl(gcsPath: string, token: string, filename: string): string {
+  const encoded = encodeURIComponent(gcsPath);
+  const name = encodeURIComponent(filename);
+  return (
+    `https://storage.googleapis.com/storage/v1/b/${BUCKET_ID}/o/${encoded}` +
+    `?alt=media&access_token=${token}&response-content-disposition=attachment%3B%20filename%3D%22${name}%22`
+  );
+}
+
+router.get("/download/installer", async (req, res) => {
   if (!BUCKET_ID) {
-    req.log.error("DEFAULT_OBJECT_STORAGE_BUCKET_ID not set");
     res.status(503).json({ error: "Storage not configured" });
     return;
   }
-  const file = gcs.bucket(BUCKET_ID).file(gcsPath);
-  let metadata: any;
   try {
-    [metadata] = await file.getMetadata();
-  } catch (err: any) {
-    if (err?.code === 404) {
-      res.status(404).json({ error: "File not found" });
-    } else {
-      req.log.error({ err }, "GCS metadata error");
-      res.status(502).json({ error: "Storage error" });
-    }
+    const token = await getAccessToken();
+    const url = gcsDownloadUrl(INSTALLER_GCS, token, INSTALLER_NAME);
+    res.redirect(302, url);
+  } catch (err) {
+    req.log.error({ err }, "Failed to get GCS token for installer");
+    res.status(502).json({ error: "Could not generate download link" });
+  }
+});
+
+router.get("/download/apk", async (req, res) => {
+  if (!BUCKET_ID) {
+    res.status(503).json({ error: "Storage not configured" });
     return;
   }
-
-  res.setHeader("Content-Type", "application/octet-stream");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="${filename}"`,
-  );
-  if (metadata.size) {
-    res.setHeader("Content-Length", metadata.size);
+  try {
+    const token = await getAccessToken();
+    const url = gcsDownloadUrl(APK_GCS, token, APK_NAME);
+    res.redirect(302, url);
+  } catch (err) {
+    req.log.error({ err }, "Failed to get GCS token for APK");
+    res.status(502).json({ error: "Could not generate download link" });
   }
-  res.setHeader("Cache-Control", "no-cache");
+});
 
-  const stream = file.createReadStream();
-  stream.on("error", (err) => {
-    req.log.error({ err }, "GCS stream error");
-    if (!res.headersSent) res.status(502).end();
+router.get("/download/info", (_req, res) => {
+  res.json({
+    available: !!BUCKET_ID,
+    filename: INSTALLER_NAME,
+    sizeBytes: 121785308,
+    sizeMB: 116,
+    downloadUrl: "/api/download/installer",
+    windows: {
+      available: !!BUCKET_ID,
+      filename: INSTALLER_NAME,
+      sizeBytes: 121785308,
+      sizeMB: 116,
+      downloadUrl: "/api/download/installer",
+    },
+    android: {
+      available: !!BUCKET_ID,
+      filename: APK_NAME,
+      sizeBytes: 126302922,
+      sizeMB: 120,
+      downloadUrl: "/api/download/apk",
+    },
   });
-  stream.pipe(res);
-}
-
-router.get("/download/installer", (req, res) => {
-  streamFromGcs(req, res, INSTALLER_GCS, INSTALLER_NAME);
-});
-
-router.get("/download/apk", (req, res) => {
-  streamFromGcs(req, res, APK_GCS, APK_NAME);
-});
-
-router.get("/download/info", async (_req, res) => {
-  const result: Record<string, any> = {};
-  if (BUCKET_ID) {
-    try {
-      const [imeta] = await gcs
-        .bucket(BUCKET_ID)
-        .file(INSTALLER_GCS)
-        .getMetadata();
-      result.windows = {
-        available: true,
-        filename: INSTALLER_NAME,
-        sizeBytes: Number(imeta.size),
-        sizeMB: Math.round(Number(imeta.size) / 1024 / 1024),
-        downloadUrl: "/api/download/installer",
-      };
-    } catch {
-      result.windows = { available: false };
-    }
-    try {
-      const [ameta] = await gcs
-        .bucket(BUCKET_ID)
-        .file(APK_GCS)
-        .getMetadata();
-      result.android = {
-        available: true,
-        filename: APK_NAME,
-        sizeBytes: Number(ameta.size),
-        sizeMB: Math.round(Number(ameta.size) / 1024 / 1024),
-        downloadUrl: "/api/download/apk",
-      };
-    } catch {
-      result.android = { available: false };
-    }
-  } else {
-    result.windows = { available: false };
-    result.android = { available: false };
-  }
-  Object.assign(result, result.windows);
-  res.json(result);
 });
 
 export default router;
