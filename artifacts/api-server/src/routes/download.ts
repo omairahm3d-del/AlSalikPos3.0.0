@@ -6,8 +6,10 @@ const SIDECAR = "http://127.0.0.1:1106";
 const BUCKET_ID = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID ?? "";
 
 const INSTALLER_GCS = "downloads/AlSalikPOS-Setup-1.0.0.exe";
+const INSTALLER_32_GCS = "downloads/AlSalikPOS-Setup-1.0.0-32bit.exe";
 const APK_GCS = "downloads/AlSalikPOS.apk";
 const INSTALLER_NAME = "Al Salik POS Setup 1.0.0.exe";
+const INSTALLER_32_NAME = "Al Salik POS Setup 1.0.0 (32-bit).exe";
 const APK_NAME = "Al Salik POS.apk";
 
 async function getAccessToken(): Promise<string> {
@@ -54,6 +56,21 @@ router.get("/download/installer", async (req, res) => {
   }
 });
 
+router.get("/download/installer-32", async (req, res) => {
+  if (!BUCKET_ID) {
+    res.status(503).json({ error: "Storage not configured" });
+    return;
+  }
+  try {
+    const token = await getAccessToken();
+    const url = gcsDownloadUrl(INSTALLER_32_GCS, token, INSTALLER_32_NAME);
+    res.redirect(302, url);
+  } catch (err) {
+    req.log.error({ err }, "Failed to get GCS token for 32-bit installer");
+    res.status(502).json({ error: "Could not generate download link" });
+  }
+});
+
 router.get("/download/apk", async (req, res) => {
   if (!BUCKET_ID) {
     res.status(503).json({ error: "Storage not configured" });
@@ -72,16 +89,21 @@ router.get("/download/apk", async (req, res) => {
 router.get("/download/info", (_req, res) => {
   res.json({
     available: !!BUCKET_ID,
-    filename: INSTALLER_NAME,
-    sizeBytes: 121785308,
-    sizeMB: 116,
-    downloadUrl: "/api/download/installer",
-    windows: {
+    windows64: {
       available: !!BUCKET_ID,
       filename: INSTALLER_NAME,
       sizeBytes: 121785308,
       sizeMB: 116,
+      platform: "Windows 10 / 11 (64-bit)",
       downloadUrl: "/api/download/installer",
+    },
+    windows32: {
+      available: !!BUCKET_ID,
+      filename: INSTALLER_32_NAME,
+      sizeBytes: 97886681,
+      sizeMB: 93,
+      platform: "Windows 7 SP1+ / 10 / 11 (32-bit)",
+      downloadUrl: "/api/download/installer-32",
     },
     android: {
       available: !!BUCKET_ID,
