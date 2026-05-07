@@ -15,13 +15,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Stack, useFocusEffect } from "expo-router";
+import { Stack, router, useFocusEffect } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useLicense } from "@/context/LicenseContext";
 import { posApi, type PosSupplier, type PosPurchaseRow } from "@/lib/posPurchasing";
+import { printHtml } from "@/lib/printBridge";
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", {
@@ -29,6 +30,98 @@ function fmtDate(iso: string) {
     month: "short",
     year: "numeric",
   });
+}
+
+function buildSupplierStatementHtml(
+  supplier: PosSupplier,
+  purchases: PosPurchaseRow[],
+  companyName: string,
+): string {
+  const now = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  const totalSpend = purchases.reduce((s, p) => s + parseFloat(p.total), 0);
+  const totalVat = purchases.reduce((s, p) => s + parseFloat(p.vatAmount), 0);
+  const totalNet = totalSpend - totalVat;
+
+  const rows = purchases
+    .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())
+    .map((p) => `
+      <tr>
+        <td>${fmtDateTime(p.receivedAt)}</td>
+        <td>${p.referenceNumber ?? "—"}</td>
+        <td style="text-align:center">${p.itemCount}</td>
+        <td style="text-align:right">AED ${(parseFloat(p.total) - parseFloat(p.vatAmount)).toFixed(2)}</td>
+        <td style="text-align:right">AED ${parseFloat(p.vatAmount).toFixed(2)}</td>
+        <td style="text-align:right;font-weight:600">AED ${parseFloat(p.total).toFixed(2)}</td>
+      </tr>
+    `).join("");
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+<title>Supplier Statement — ${supplier.name}</title>
+<style>
+  body{font-family:Arial,sans-serif;font-size:12px;color:#111;margin:0;padding:24px}
+  h1{font-size:18px;margin:0 0 4px}
+  .sub{color:#666;font-size:12px;margin-bottom:20px}
+  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px;font-size:12px}
+  .info-label{color:#888;font-size:10px;text-transform:uppercase;margin-bottom:2px}
+  .summary{display:flex;gap:16px;margin-bottom:20px}
+  .stat{flex:1;border:1px solid #e5e7eb;border-radius:6px;padding:12px;text-align:center}
+  .stat-label{color:#888;font-size:10px;text-transform:uppercase;margin-bottom:4px}
+  .stat-value{font-size:16px;font-weight:700}
+  table{width:100%;border-collapse:collapse;font-size:11px}
+  th{background:#f3f4f6;padding:8px;text-align:left;border-bottom:2px solid #e5e7eb;font-size:10px;text-transform:uppercase;color:#666}
+  td{padding:8px;border-bottom:1px solid #f3f4f6}
+  tr:last-child td{border-bottom:none}
+  .footer{margin-top:24px;font-size:10px;color:#999;text-align:center}
+  @media print{body{padding:12px}}
+</style></head><body>
+<h1>${companyName}</h1>
+<div class="sub">Supplier Statement — Printed ${now}</div>
+
+<div class="info-grid">
+  <div>
+    <div class="info-label">Supplier</div>
+    <div style="font-weight:600;font-size:14px">${supplier.name}</div>
+    ${supplier.trnNumber ? `<div style="color:#666">TRN: ${supplier.trnNumber}</div>` : ""}
+    ${supplier.phone ? `<div style="color:#666">${supplier.phone}</div>` : ""}
+    ${supplier.email ? `<div style="color:#666">${supplier.email}</div>` : ""}
+  </div>
+  <div>
+    ${supplier.address ? `<div class="info-label">Address</div><div style="color:#444">${supplier.address}</div>` : ""}
+    ${supplier.paymentTerms ? `<div class="info-label" style="margin-top:8px">Payment Terms</div><div style="color:#444">${supplier.paymentTerms}</div>` : ""}
+  </div>
+</div>
+
+<div class="summary">
+  <div class="stat">
+    <div class="stat-label">Total GRNs</div>
+    <div class="stat-value">${purchases.length}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Net Amount</div>
+    <div class="stat-value">AED ${totalNet.toFixed(2)}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">VAT (5%)</div>
+    <div class="stat-value">AED ${totalVat.toFixed(2)}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Total Spend</div>
+    <div class="stat-value" style="color:#1d4ed8">AED ${totalSpend.toFixed(2)}</div>
+  </div>
+</div>
+
+${purchases.length > 0 ? `
+<table>
+  <thead><tr>
+    <th>Date</th><th>Reference</th><th style="text-align:center">Items</th>
+    <th style="text-align:right">Net</th><th style="text-align:right">VAT</th>
+    <th style="text-align:right">Total</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+</table>` : `<div style="text-align:center;padding:40px;color:#999">No purchases recorded</div>`}
+
+<div class="footer">${companyName} · Generated ${now}</div>
+</body></html>`;
 }
 
 function fmtDateTime(iso: string) {
@@ -281,9 +374,33 @@ export default function SuppliersScreen() {
     );
   };
 
+  const handlePrintSupplier = async () => {
+    if (!selectedSupplier) return;
+    const html = buildSupplierStatementHtml(
+      selectedSupplier,
+      supplierPurchases,
+      session?.company?.name ?? "Al Salik POS",
+    );
+    await printHtml(html);
+  };
+
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <Stack.Screen options={{ title: "Suppliers", headerBackTitle: "Back Office" }} />
+      <Stack.Screen
+        options={{
+          title: "Suppliers",
+          headerBackTitle: "Back",
+          headerLeft: () => (
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={{ paddingHorizontal: 4, paddingVertical: 4 }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Feather name="arrow-left" size={22} color={colors.foreground} />
+            </TouchableOpacity>
+          ),
+        }}
+      />
 
       <View style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.border, marginTop: insets.top > 0 ? 0 : 8 }]}>
         <Feather name="search" size={15} color={colors.mutedForeground} style={{ marginRight: 8 }} />
@@ -345,15 +462,20 @@ export default function SuppliersScreen() {
       <Modal visible={!!selectedSupplier} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSelectedSupplier(null)}>
         <View style={[styles.modalRoot, { backgroundColor: colors.background, paddingTop: insets.top + 16 }]}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setSelectedSupplier(null)}>
-              <Feather name="arrow-left" size={22} color={colors.foreground} />
+            <TouchableOpacity onPress={() => setSelectedSupplier(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Feather name="x" size={22} color={colors.foreground} />
             </TouchableOpacity>
             <Text style={[styles.modalTitle, { color: colors.foreground }]} numberOfLines={1}>
               {selectedSupplier?.name}
             </Text>
-            <TouchableOpacity onPress={() => selectedSupplier && openEdit(selectedSupplier)}>
-              <Feather name="edit-2" size={18} color={colors.primary} />
-            </TouchableOpacity>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+              <TouchableOpacity onPress={handlePrintSupplier} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Feather name="printer" size={18} color={colors.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => selectedSupplier && openEdit(selectedSupplier)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Feather name="edit-2" size={18} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {selectedSupplier && (

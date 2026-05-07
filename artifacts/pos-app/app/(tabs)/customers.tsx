@@ -21,6 +21,110 @@ import { useColors } from "@/hooks/useColors";
 import { usePermissions } from "@/hooks/usePermissions";
 import type { CreditPayment, Customer, Sale } from "@/types";
 import { formatCurrency } from "@/types";
+import { printHtml } from "@/lib/printBridge";
+
+function buildCustomerStatementHtml(
+  customer: Customer,
+  timeline: { entry: { kind: string; id: string; date: number; amount: number; invNum?: string; loyaltyPts?: number; method?: string; ref?: string }; balance: number }[],
+  companyName: string,
+  loyaltyRate: number,
+): string {
+  const now = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  const outstandingBalance = timeline.length > 0 ? timeline[0].balance : 0;
+
+  const formatDate = (ts: number) =>
+    new Date(ts).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+  const formatAmt = (n: number) => `AED ${n.toFixed(2)}`;
+
+  const rows = [...timeline].reverse().map(({ entry, balance }) => {
+    const isSale = entry.kind === "sale";
+    return `
+      <tr>
+        <td>${formatDate(entry.date)}</td>
+        <td>${isSale ? "Credit Sale" : "Payment"}</td>
+        <td>${isSale ? (entry.invNum ?? "") : (entry.method ?? "")}</td>
+        <td style="text-align:right;color:${isSale ? "#dc2626" : "#16a34a"};font-weight:600">
+          ${isSale ? "+" : "-"}${formatAmt(entry.amount)}
+        </td>
+        <td style="text-align:right;color:${balance > 0 ? "#374151" : "#16a34a"};font-size:10px">
+          ${balance > 0 ? formatAmt(balance) : "Settled"}
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  const totalSales = timeline.filter((t) => t.entry.kind === "sale").reduce((s, t) => s + t.entry.amount, 0);
+  const totalPayments = timeline.filter((t) => t.entry.kind !== "sale").reduce((s, t) => s + t.entry.amount, 0);
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+<title>Customer Statement — ${customer.name}</title>
+<style>
+  body{font-family:Arial,sans-serif;font-size:12px;color:#111;margin:0;padding:24px}
+  h1{font-size:18px;margin:0 0 4px}
+  .sub{color:#666;font-size:12px;margin-bottom:20px}
+  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px}
+  .info-label{color:#888;font-size:10px;text-transform:uppercase;margin-bottom:2px}
+  .summary{display:flex;gap:16px;margin-bottom:20px}
+  .stat{flex:1;border:1px solid #e5e7eb;border-radius:6px;padding:12px;text-align:center}
+  .stat-label{color:#888;font-size:10px;text-transform:uppercase;margin-bottom:4px}
+  .stat-value{font-size:15px;font-weight:700}
+  table{width:100%;border-collapse:collapse;font-size:11px}
+  th{background:#f3f4f6;padding:8px;text-align:left;border-bottom:2px solid #e5e7eb;font-size:10px;text-transform:uppercase;color:#666}
+  td{padding:8px;border-bottom:1px solid #f3f4f6}
+  tr:last-child td{border-bottom:none}
+  .footer{margin-top:24px;font-size:10px;color:#999;text-align:center}
+  @media print{body{padding:12px}}
+</style></head><body>
+<h1>${companyName}</h1>
+<div class="sub">Customer Statement — Printed ${now}</div>
+
+<div class="info-grid">
+  <div>
+    <div class="info-label">Customer</div>
+    <div style="font-weight:600;font-size:14px">${customer.name}</div>
+    ${customer.company ? `<div style="color:#666">${customer.company}</div>` : ""}
+    ${customer.phone ? `<div style="color:#666">${customer.phone}</div>` : ""}
+    ${customer.email ? `<div style="color:#666">${customer.email}</div>` : ""}
+  </div>
+  <div>
+    <div class="info-label">Loyalty Points</div>
+    <div style="font-weight:700;color:#d97706">${customer.loyaltyPoints ?? 0} pts</div>
+    <div style="color:#666;font-size:11px">Worth AED ${((customer.loyaltyPoints ?? 0) * loyaltyRate).toFixed(2)}</div>
+  </div>
+</div>
+
+<div class="summary">
+  <div class="stat">
+    <div class="stat-label">Total Entries</div>
+    <div class="stat-value">${timeline.length}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Total Sales</div>
+    <div class="stat-value" style="color:#dc2626">AED ${totalSales.toFixed(2)}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Total Paid</div>
+    <div class="stat-value" style="color:#16a34a">AED ${totalPayments.toFixed(2)}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Outstanding</div>
+    <div class="stat-value" style="color:${outstandingBalance > 0 ? "#dc2626" : "#16a34a"}">AED ${outstandingBalance.toFixed(2)}</div>
+  </div>
+</div>
+
+${timeline.length > 0 ? `
+<table>
+  <thead><tr>
+    <th>Date</th><th>Type</th><th>Reference</th>
+    <th style="text-align:right">Amount</th><th style="text-align:right">Balance</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+</table>` : `<div style="text-align:center;padding:40px;color:#999">No transactions recorded</div>`}
+
+<div class="footer">${companyName} · Generated ${now}</div>
+</body></html>`;
+}
 
 export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
   const permissions = usePermissions();
@@ -34,6 +138,7 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [companyName, setCompanyName] = useState("Al Salik POS");
 
   const [showEditor, setShowEditor] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -56,6 +161,7 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
     const [data, biz] = await Promise.all([loadCustomers(), loadBusinessSettings()]);
     setCustomers(data);
     setLoyaltyRate(biz.loyaltyRedemptionRate || 0.01);
+    if (biz.businessName) setCompanyName(biz.businessName);
     setLoading(false);
   }, [loadCustomers, loadBusinessSettings]);
 
@@ -112,6 +218,13 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
     const [payments, allSales] = await Promise.all([loadCreditPayments(customer.id), loadSales()]);
     setCreditHistory(payments);
     setCreditSales(allSales.filter((s) => s.customerId === customer.id));
+  };
+
+  const handlePrintCustomer = async () => {
+    if (!selectedCustomer) return;
+    const timeline = buildTimeline();
+    const html = buildCustomerStatementHtml(selectedCustomer, timeline, companyName, loyaltyRate);
+    await printHtml(html);
   };
 
   const handleRecordPayment = async () => {
@@ -262,9 +375,20 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
       <Modal visible={!!selectedCustomer} animationType="slide" presentationStyle="pageSheet">
         <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
           <View style={[styles.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={() => setSelectedCustomer(null)}><Feather name="arrow-left" size={22} color={colors.foreground} /></TouchableOpacity>
+            <TouchableOpacity onPress={() => setSelectedCustomer(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Feather name="x" size={22} color={colors.foreground} />
+            </TouchableOpacity>
             <Text style={[styles.modalTitle, { color: colors.foreground }]} numberOfLines={1}>{selectedCustomer?.name}</Text>
-            <TouchableOpacity onPress={() => selectedCustomer && openEdit(selectedCustomer)}><Feather name="edit-2" size={18} color={colors.primary} /></TouchableOpacity>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+              {(creditSales.length > 0 || creditHistory.length > 0) && (
+                <TouchableOpacity onPress={handlePrintCustomer} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Feather name="printer" size={18} color={colors.primary} />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={() => selectedCustomer && openEdit(selectedCustomer)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Feather name="edit-2" size={18} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
           </View>
           {selectedCustomer && (
             <ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
