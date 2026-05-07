@@ -288,12 +288,15 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     // Stock decrement on sale: only reduce products that already have a
     // tracked (non-null) stockQuantity. Untracked products (null) are left
     // alone — they will start tracking once stock is received via Receive Stock.
+    // When allowNegativeStock is true (default) the quantity may go negative.
+    const clampStock = options.allowNegativeStock === false;
     await runCatalogExclusive(async () => {
       const products = await getProducts();
       await setJson(K.products, products.map((p) => {
         const cartItem = items.find((i) => i.product.id === p.id);
         if (cartItem && p.stockTracked) {
-          return { ...p, stockQuantity: Math.max(0, (p.stockQuantity ?? 0) - cartItem.quantity) };
+          const next = (p.stockQuantity ?? 0) - cartItem.quantity;
+          return { ...p, stockQuantity: clampStock ? Math.max(0, next) : next };
         }
         return p;
       }));

@@ -138,8 +138,14 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         // Only deduct stock for products the merchant is tracking
         // (stock_tracking=1). Untracked products (default stock_tracking=0)
         // are treated as infinite-stock and never decremented.
+        // When allowNegativeStock is true (default) we let quantity go below
+        // zero; otherwise clamp with MAX(0, ...) so the device ledger never
+        // shows negative values.
+        const clamp = options.allowNegativeStock === false;
         await tx.runAsync(
-          "UPDATE products SET stock_quantity=MAX(0,stock_quantity-?) WHERE id=? AND stock_tracking=1",
+          clamp
+            ? "UPDATE products SET stock_quantity=MAX(0,stock_quantity-?) WHERE id=? AND stock_tracking=1"
+            : "UPDATE products SET stock_quantity=stock_quantity-? WHERE id=? AND stock_tracking=1",
           [item.quantity, item.product.id]
         );
       }
@@ -387,6 +393,9 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       loyaltyRedemptionRate: parseFloat(map.loyaltyRedemptionRate || "0.01"),
       // vatEnabled: default true; only false when explicitly stored as "false"
       vatEnabled: map.vatEnabled !== undefined ? map.vatEnabled !== "false" : true,
+      // allowNegativeStock: default true — existing installs should not
+      // suddenly start blocking sales that were previously allowed.
+      allowNegativeStock: map.allowNegativeStock !== undefined ? map.allowNegativeStock !== "false" : true,
       // registerOpen: default true for back-compat (existing DBs with no key
       // stored should not lock out users on first upgrade).
       registerOpen: map.registerOpen !== undefined ? map.registerOpen === "true" : true,
@@ -425,6 +434,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       ["loyaltyPointsPerAed", String(settings.loyaltyPointsPerAed)],
       ["loyaltyRedemptionRate", String(settings.loyaltyRedemptionRate)],
       ["vatEnabled", String(settings.vatEnabled !== false)],
+      ["allowNegativeStock", String(settings.allowNegativeStock !== false)],
       ["registerOpen", String(settings.registerOpen === true)],
       ["openingFloat", String(settings.openingFloat ?? 0)],
       ["lastClosingCash", String(settings.lastClosingCash ?? 0)],

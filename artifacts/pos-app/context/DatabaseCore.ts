@@ -93,6 +93,8 @@ export interface SaleOptions {
   discountAmount?: number;
   loyaltyPointsRedeemed?: number;
   splitPayments?: SplitPaymentEntry[];
+  /** Mirrors BusinessSettings.allowNegativeStock — when true stock can go below zero. Default true. */
+  allowNegativeStock?: boolean;
 }
 
 export interface DatabaseContextValue {

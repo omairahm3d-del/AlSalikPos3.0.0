@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -8,6 +8,7 @@ import {
   Platform,
   RefreshControl,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -18,6 +19,7 @@ import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useLicense } from "@/context/LicenseContext";
+import { useDatabase } from "@/context/DatabaseCore";
 import {
   posApi,
   type PosStockMovement,
@@ -34,6 +36,7 @@ export default function StockScreen() {
   const insets = useSafeAreaInsets();
   const { session } = useLicense();
   const token = session?.token;
+  const { loadBusinessSettings, saveBusinessSettings } = useDatabase();
 
   const [stock, setStock] = useState<PosStockRow[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,6 +44,9 @@ export default function StockScreen() {
   const [search, setSearch] = useState("");
   const [adjusting, setAdjusting] = useState<PosStockRow | null>(null);
   const [historyFor, setHistoryFor] = useState<PosStockRow | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [allowNegativeStock, setAllowNegativeStock] = useState(true);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -55,9 +61,29 @@ export default function StockScreen() {
     }
   }, [token]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    loadBusinessSettings().then((s) => {
+      setAllowNegativeStock(s.allowNegativeStock !== false);
+    }).catch(() => {});
+  }, [loadBusinessSettings]);
+
+  const handleToggleNegativeStock = useCallback(async (value: boolean) => {
+    setAllowNegativeStock(value);
+    setSavingSettings(true);
+    try {
+      const current = await loadBusinessSettings();
+      await saveBusinessSettings({ ...current, allowNegativeStock: value });
+    } catch {
+      Alert.alert("Error", "Could not save setting. Please try again.");
+      setAllowNegativeStock(!value);
+    } finally {
+      setSavingSettings(false);
+    }
+  }, [loadBusinessSettings, saveBusinessSettings]);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -77,7 +103,12 @@ export default function StockScreen() {
   return (
     <View style={[s.root, { backgroundColor: colors.background, paddingTop: insets.top }]}>
       <Stack.Screen options={{ headerShown: false }} />
-      <Header title="Stock on hand" colors={colors} onBack={() => router.back()} />
+      <Header
+        title="Stock on hand"
+        colors={colors}
+        onBack={() => router.back()}
+        onSettings={() => setShowSettings(true)}
+      />
 
       <View style={[s.searchRow, { borderBottomColor: colors.border }]}>
         <Feather name="search" size={16} color={colors.mutedForeground} />
@@ -146,6 +177,45 @@ export default function StockScreen() {
           }}
         />
       )}
+
+      {/* ── Stock Settings Modal ── */}
+      <Modal visible={showSettings} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowSettings(false)}>
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
+          <View style={[m.header, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={() => setShowSettings(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Feather name="x" size={22} color={colors.foreground} />
+            </TouchableOpacity>
+            <Text style={[m.title, { color: colors.foreground }]}>Stock Settings</Text>
+            <View style={{ width: 22 }} />
+          </View>
+          <View style={{ padding: 20, gap: 0 }}>
+            <View style={[st.settingRow, { borderBottomColor: colors.border }]}>
+              <View style={{ flex: 1, marginRight: 16 }}>
+                <Text style={[st.settingLabel, { color: colors.foreground }]}>Allow negative stock</Text>
+                <Text style={[st.settingDesc, { color: colors.mutedForeground }]}>
+                  When enabled, items can be sold even when stock is at zero or below. The quantity will show as negative until stock is received.
+                  {"\n"}When disabled, adding an out-of-stock item to the cart is blocked.
+                </Text>
+              </View>
+              <Switch
+                value={allowNegativeStock}
+                onValueChange={handleToggleNegativeStock}
+                disabled={savingSettings}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor="#fff"
+              />
+            </View>
+            <View style={[st.infoBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Feather name="info" size={14} color={colors.mutedForeground} style={{ marginTop: 1 }} />
+              <Text style={[st.infoText, { color: colors.mutedForeground }]}>
+                Currently: <Text style={{ fontWeight: "700", color: allowNegativeStock ? "#16a34a" : colors.foreground }}>
+                  {allowNegativeStock ? "Negative stock allowed (default)" : "Negative stock blocked"}
+                </Text>
+              </Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {adjusting && (
         <AdjustModal
@@ -369,10 +439,12 @@ function Header({
   title,
   colors,
   onBack,
+  onSettings,
 }: {
   title: string;
   colors: ReturnType<typeof useColors>;
   onBack: () => void;
+  onSettings?: () => void;
 }) {
   return (
     <View style={[s.header, { borderBottomColor: colors.border }]}>
@@ -380,7 +452,13 @@ function Header({
         <Feather name="chevron-left" size={24} color={colors.foreground} />
       </TouchableOpacity>
       <Text style={[s.headerTitle, { color: colors.foreground }]}>{title}</Text>
-      <View style={{ width: 24 }} />
+      {onSettings ? (
+        <TouchableOpacity onPress={onSettings} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Feather name="settings" size={20} color={colors.mutedForeground} />
+        </TouchableOpacity>
+      ) : (
+        <View style={{ width: 24 }} />
+      )}
     </View>
   );
 }
@@ -456,4 +534,25 @@ const m = StyleSheet.create({
   input: { paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, borderWidth: 1, borderRadius: 8 },
   dirBtn: { flex: 1, paddingVertical: 12, alignItems: "center", borderWidth: 1, borderRadius: 8 },
   preview: { padding: 12, borderWidth: 1, borderRadius: 8, marginTop: 4 },
+});
+
+const st = StyleSheet.create({
+  settingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 20,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  settingLabel: { fontSize: 15, fontWeight: "600", marginBottom: 4 },
+  settingDesc: { fontSize: 13, lineHeight: 19 },
+  infoBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginTop: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderRadius: 8,
+  },
+  infoText: { flex: 1, fontSize: 13, lineHeight: 18 },
 });

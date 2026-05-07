@@ -341,6 +341,13 @@ export interface BusinessSettings {
   openingFloat?: number;
   openedAt?: number;
   lastClosingCash?: number;
+  /**
+   * When true (default), selling a tracked product whose stock_quantity
+   * is already at or below zero is allowed — the quantity goes negative.
+   * When false, adding an out-of-stock product to the cart is blocked
+   * and the stock deduction is clamped to zero on the device ledger.
+   */
+  allowNegativeStock?: boolean;
 }
 
 /**
@@ -535,6 +542,7 @@ export const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
   customerDisplay: DEFAULT_CUSTOMER_DISPLAY,
   keyboardMode: "off",
   vatEnabled: true,
+  allowNegativeStock: true,
   registerOpen: false,
   openingFloat: 0,
   lastClosingCash: 0,

@@ -210,7 +210,8 @@ export default function POSScreen() {
   const handleAddById = useCallback((productId: string) => {
     const product = productById[productId];
     if (!product) return;
-    if (product.stockTracked && product.stockQuantity <= 0) {
+    const allowNegative = businessSettings?.allowNegativeStock !== false;
+    if (!allowNegative && product.stockTracked && product.stockQuantity <= 0) {
       Alert.alert("Out of Stock", `${product.name} is out of stock.`);
       return;
     }
@@ -370,6 +371,7 @@ export default function POSScreen() {
         discountAmount: totalDiscAmt,
         loyaltyPointsRedeemed: loyaltyRedeemPtsActual > 0 ? loyaltyRedeemPtsActual : undefined,
         splitPayments: paymentMethod === "Split" ? splitEntries : undefined,
+        allowNegativeStock: businessSettings?.allowNegativeStock !== false,
       });
 
       // KOT printing on charge/bill:
