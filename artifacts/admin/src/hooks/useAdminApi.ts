@@ -3,6 +3,7 @@ import {
   adminApi,
   CreateCompanyInput,
   IssueLicenseInput,
+  ExtendLicenseInput,
   CreateBranchInput,
   UpdateBranchInput,
   CreateManagerInput,
@@ -158,6 +159,22 @@ export function useRevokeLicense() {
   return useMutation({
     mutationFn: ({ companyId, licenseId }: { companyId: string; licenseId: string }) =>
       adminApi.revokeLicense(companyId, licenseId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "company", variables.companyId, "licenses"] });
+    },
+  });
+}
+
+export function useExtendLicense() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      companyId,
+      licenseId,
+      ...input
+    }: ExtendLicenseInput & { companyId: string; licenseId: string }) =>
+      adminApi.extendLicense(companyId, licenseId, input),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["admin", "company", variables.companyId, "licenses"] });
     },

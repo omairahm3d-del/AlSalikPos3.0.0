@@ -36,6 +36,10 @@ const revokeLicenseParams = z.object({
   licenseId: z.string().uuid(),
 });
 
+const extendLicenseBody = z.object({
+  expiresAt: isoDate.nullable(),
+});
+
 export const adminController = {
   async createCompany(req: Request, res: Response) {
     const input = createCompanyBody.parse(req.body);
@@ -72,6 +76,15 @@ export const adminController = {
     const { companyId, licenseId } = revokeLicenseParams.parse(req.params);
     const license = await licenseRepo.revoke(licenseId, companyId);
     if (!license) throw notFound("license_not_found", "License not found");
+    res.json({ license });
+  },
+
+  async extendLicense(req: Request, res: Response) {
+    const { companyId, licenseId } = revokeLicenseParams.parse(req.params);
+    const { expiresAt } = extendLicenseBody.parse(req.body);
+    const license = await licenseRepo.extend(licenseId, companyId, expiresAt);
+    if (!license) throw notFound("license_not_found", "License not found");
+    req.log.info({ licenseId, expiresAt }, "License extended");
     res.json({ license });
   },
 

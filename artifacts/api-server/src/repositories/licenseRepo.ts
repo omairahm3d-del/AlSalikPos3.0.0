@@ -35,4 +35,17 @@ export const licenseRepo = {
       .returning();
     return row;
   },
+
+  async extend(
+    id: string,
+    companyId: string,
+    expiresAt: Date | null,
+  ): Promise<License | undefined> {
+    const [row] = await saasDb
+      .update(licensesTable)
+      .set({ expiresAt })
+      .where(and(eq(licensesTable.id, id), eq(licensesTable.companyId, companyId)))
+      .returning();
+    return row;
+  },
 };

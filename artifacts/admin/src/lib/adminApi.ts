@@ -98,6 +98,10 @@ export interface IssueLicenseInput {
   licenseType?: LicenseType;
 }
 
+export interface ExtendLicenseInput {
+  expiresAt: string | null;
+}
+
 export class AdminApiError extends Error {
   constructor(
     message: string,
@@ -179,6 +183,16 @@ export const adminApi = {
   ): Promise<{ license: License }> {
     return request(`/companies/${companyId}/licenses/${licenseId}/revoke`, {
       method: "POST",
+    });
+  },
+  extendLicense(
+    companyId: string,
+    licenseId: string,
+    input: ExtendLicenseInput,
+  ): Promise<{ license: License }> {
+    return request(`/companies/${companyId}/licenses/${licenseId}/extend`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
     });
   },
   listBranches(companyId: string): Promise<{ branches: Branch[] }> {

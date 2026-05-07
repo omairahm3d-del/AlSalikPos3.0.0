@@ -23,6 +23,10 @@ router.post(
   "/admin/companies/:companyId/licenses/:licenseId/revoke",
   asyncHandler(adminController.revokeLicense),
 );
+router.patch(
+  "/admin/companies/:companyId/licenses/:licenseId/extend",
+  asyncHandler(adminController.extendLicense),
+);
 
 router.get(
   "/admin/companies/:companyId/branches",

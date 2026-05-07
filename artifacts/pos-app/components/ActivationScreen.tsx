@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -12,21 +13,10 @@ import {
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { useLicense } from "@/context/LicenseContext";
+import { useLicense, type ActivationReason } from "@/context/LicenseContext";
 import { useColors } from "@/hooks/useColors";
 import { getApiBase, type ValidatedBranch } from "@/lib/saasApi";
 
-/**
- * Two-column on wide viewports (≥ 900 px web / desktop / tablet landscape):
- *   ┌─────────────────────┬─────────────────────┐
- *   │  Brand panel        │  Activation form    │
- *   │  – logo, headline   │  – license key      │
- *   │  – value props      │  – device name      │
- *   │  – server hint      │  – Activate button  │
- *   └─────────────────────┴─────────────────────┘
- * Single-column on phones / narrow tablets so nothing overlaps or hides
- * behind the keyboard.
- */
 const WIDE_BREAKPOINT = 900;
 
 const VALUE_PROPS: { icon: keyof typeof Feather.glyphMap; title: string; sub: string }[] = [
@@ -35,19 +25,134 @@ const VALUE_PROPS: { icon: keyof typeof Feather.glyphMap; title: string; sub: st
   { icon: "git-branch", title: "Multi-branch ready", sub: "Each device pinned to its branch — no mix-ups." },
 ];
 
+const CONTACTS = [
+  { name: "Syed Omair Ahmed", phone: "0554483885" },
+  { name: "Owais Ahmed", phone: "0544083641" },
+];
+
+function statusBannerProps(reason: ActivationReason): {
+  icon: keyof typeof Feather.glyphMap;
+  color: string;
+  bg: string;
+  border: string;
+  title: string;
+  body: string;
+} | null {
+  if (!reason) return null;
+  if (reason === "expired") return {
+    icon: "clock",
+    color: "#FFC86B",
+    bg: "rgba(255,180,60,0.12)",
+    border: "rgba(255,180,60,0.35)",
+    title: "License expired",
+    body: "Your subscription has ended. Please contact Al Salik Computers to renew.",
+  };
+  if (reason === "revoked") return {
+    icon: "slash",
+    color: "#FF8585",
+    bg: "rgba(255,92,92,0.12)",
+    border: "rgba(255,92,92,0.35)",
+    title: "License revoked",
+    body: "This license has been deactivated. Please contact Al Salik Computers for assistance.",
+  };
+  if (reason === "suspended") return {
+    icon: "alert-octagon",
+    color: "#FF8585",
+    bg: "rgba(255,92,92,0.12)",
+    border: "rgba(255,92,92,0.35)",
+    title: "Account suspended",
+    body: "Your account has been suspended. Please contact Al Salik Computers to resolve this.",
+  };
+  return null;
+}
+
+function ContactCard({ compact = false }: { compact?: boolean }) {
+  const callPhone = (phone: string) => Linking.openURL(`tel:${phone}`).catch(() => {});
+  const emailUs = () => Linking.openURL("mailto:info@alsalik.com").catch(() => {});
+
+  if (compact) {
+    return (
+      <View style={styles.contactCompact}>
+        <Text style={styles.contactCompactHeader}>Need help? Contact Al Salik Computers</Text>
+        <TouchableOpacity onPress={emailUs} style={styles.contactCompactRow}>
+          <Feather name="mail" size={12} color="#8A82FF" />
+          <Text style={styles.contactCompactLink}>info@alsalik.com</Text>
+        </TouchableOpacity>
+        <View style={styles.contactCompactPhones}>
+          {CONTACTS.map(c => (
+            <TouchableOpacity key={c.phone} onPress={() => callPhone(c.phone)} style={styles.contactCompactRow}>
+              <Feather name="phone" size={12} color="#8A82FF" />
+              <Text style={styles.contactCompactLink}>{c.phone}</Text>
+              <Text style={styles.contactCompactName}>{c.name}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.contactCard}>
+      <View style={styles.contactHeader}>
+        <LinearGradient
+          colors={["#8A82FF", "#5448E0"]}
+          style={styles.contactIcon}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        >
+          <Feather name="headphones" size={14} color="#fff" />
+        </LinearGradient>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.contactTitle}>Al Salik Computers</Text>
+          <Text style={styles.contactSub}>Authorized POS provider</Text>
+        </View>
+      </View>
+
+      <TouchableOpacity onPress={emailUs} style={styles.contactRow} activeOpacity={0.7}>
+        <View style={styles.contactRowIcon}>
+          <Feather name="mail" size={13} color="#8A82FF" />
+        </View>
+        <Text style={styles.contactRowText}>info@alsalik.com</Text>
+        <Feather name="external-link" size={11} color="rgba(255,255,255,0.3)" />
+      </TouchableOpacity>
+
+      <View style={styles.contactDivider} />
+
+      {CONTACTS.map((c, i) => (
+        <TouchableOpacity
+          key={c.phone}
+          onPress={() => callPhone(c.phone)}
+          style={[styles.contactRow, i < CONTACTS.length - 1 && styles.contactRowGap]}
+          activeOpacity={0.7}
+        >
+          <View style={styles.contactRowIcon}>
+            <Feather name="phone" size={13} color="#4ADE80" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.contactRowText}>{c.phone}</Text>
+            <Text style={styles.contactRowSub}>{c.name}</Text>
+          </View>
+          <Feather name="external-link" size={11} color="rgba(255,255,255,0.3)" />
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
 export function ActivationScreen() {
   const colors = useColors();
-  const { activate } = useLicense();
+  const { activate, activationReason, savedKey } = useLicense();
   const { width } = useWindowDimensions();
   const isWide = width >= WIDE_BREAKPOINT;
 
-  const [licenseKey, setLicenseKey] = useState("");
+  const [licenseKey, setLicenseKey] = useState(savedKey ?? "");
   const [deviceName, setDeviceName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [branchOptions, setBranchOptions] = useState<ValidatedBranch[] | null>(null);
 
   const apiBase = getApiBase();
+  const statusBanner = statusBannerProps(activationReason);
 
   const tryActivate = async (branchId?: string) => {
     setError(null);
@@ -106,10 +211,23 @@ export function ActivationScreen() {
         </Text>
       )}
 
+      {/* License status banner */}
+      {statusBanner && !branchOptions && (
+        <View style={[styles.statusBanner, { backgroundColor: statusBanner.bg, borderColor: statusBanner.border }]}>
+          <Feather name={statusBanner.icon} size={15} color={statusBanner.color} style={{ marginTop: 1 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.statusTitle, { color: statusBanner.color }]}>{statusBanner.title}</Text>
+            <Text style={styles.statusBody}>{statusBanner.body}</Text>
+          </View>
+        </View>
+      )}
+
       <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
         {branchOptions
           ? "This account has multiple branches. Choose the one this device belongs to."
-          : "Enter the license key your provider gave you to start using this device."}
+          : activationReason
+            ? "Enter your license key below, or contact us to renew your subscription."
+            : "Enter the license key your provider gave you to start using this device."}
       </Text>
 
       {branchOptions ? (
@@ -213,45 +331,53 @@ export function ActivationScreen() {
           : "Make sure this device is online before tapping Activate."}
       </Text>
       {apiBase && !isWide ? <Text style={styles.serverText}>{apiBase}</Text> : null}
+
+      {/* Compact contact info under form on mobile */}
+      {!isWide && <ContactCard compact />}
     </View>
   );
 
   /* ─── Brand panel (left column on wide only) ──────────────────────── */
   const brandPanel = (
     <View style={styles.brandPanel}>
-      <View>
-        <View style={styles.brandRow}>
-          <LinearGradient
-            colors={["#7C73FF", "#5448E0"]}
-            style={styles.brandLogoSm}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <Feather name="key" size={20} color="#fff" />
-          </LinearGradient>
-          <Text style={styles.brandWord}>Al Salik POS</Text>
-        </View>
-        <Text style={styles.heroTitle}>
-          A modern POS{"\n"}built for the UAE.
-        </Text>
-        <Text style={styles.heroSub}>
-          Activate this device once and start ringing up sales — online or off,
-          on the counter or on the road.
-        </Text>
+      <View style={{ gap: 24 }}>
+        <View>
+          <View style={styles.brandRow}>
+            <LinearGradient
+              colors={["#7C73FF", "#5448E0"]}
+              style={styles.brandLogoSm}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Feather name="key" size={20} color="#fff" />
+            </LinearGradient>
+            <Text style={styles.brandWord}>Al Salik POS</Text>
+          </View>
+          <Text style={styles.heroTitle}>
+            A modern POS{"\n"}built for the UAE.
+          </Text>
+          <Text style={styles.heroSub}>
+            Activate this device once and start ringing up sales — online or off,
+            on the counter or on the road.
+          </Text>
 
-        <View style={styles.propsList}>
-          {VALUE_PROPS.map((p) => (
-            <View key={p.title} style={styles.propRow}>
-              <View style={styles.propIcon}>
-                <Feather name={p.icon} size={16} color="#fff" />
+          <View style={styles.propsList}>
+            {VALUE_PROPS.map((p) => (
+              <View key={p.title} style={styles.propRow}>
+                <View style={styles.propIcon}>
+                  <Feather name={p.icon} size={16} color="#fff" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.propTitle}>{p.title}</Text>
+                  <Text style={styles.propSub}>{p.sub}</Text>
+                </View>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.propTitle}>{p.title}</Text>
-                <Text style={styles.propSub}>{p.sub}</Text>
-              </View>
-            </View>
-          ))}
+            ))}
+          </View>
         </View>
+
+        {/* Contact info on brand panel */}
+        <ContactCard />
       </View>
 
       <View>
@@ -304,13 +430,13 @@ function prettyError(code?: string, fallback?: string): string {
     case "license_not_found":
       return "That license key isn't recognized. Double-check the characters and try again.";
     case "license_revoked":
-      return "This license has been revoked. Please contact your provider.";
+      return "This license has been revoked. Please contact Al Salik Computers to get a new license.";
     case "license_expired":
-      return "This license has expired. Please contact your provider to renew.";
+      return "This license has expired. Please contact Al Salik Computers to renew.";
     case "company_suspended":
-      return "Your account is suspended. Please contact your provider.";
+      return "Your account is suspended. Please contact Al Salik Computers.";
     case "device_limit_reached":
-      return "All device slots on this license are in use. Ask your provider to free a slot or upgrade the license.";
+      return "All device slots on this license are in use. Ask Al Salik Computers to free a slot or upgrade the license.";
     case "validation_error":
       return "The license key looks invalid. Make sure you copied it exactly.";
     case "network_unreachable":
@@ -335,7 +461,6 @@ const styles = StyleSheet.create({
   scrollNarrow: { paddingTop: 60, paddingBottom: 60, paddingHorizontal: 24 },
   scrollWide: { padding: 40 },
 
-  /* Wide split-pane shell */
   shell: {
     flexDirection: "row",
     alignItems: "stretch",
@@ -346,7 +471,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     width: "100%",
     maxWidth: 980,
-    minHeight: 540,
+    minHeight: 580,
   },
   divider: { width: 1, backgroundColor: "rgba(255,255,255,0.08)" },
 
@@ -392,6 +517,58 @@ const styles = StyleSheet.create({
       default: "Inter_400Regular",
     }) as string,
   },
+
+  /* Contact card */
+  contactCard: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.10)",
+    borderRadius: 12, padding: 14, gap: 10,
+  },
+  contactHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 },
+  contactIcon: {
+    width: 32, height: 32, borderRadius: 8,
+    alignItems: "center", justifyContent: "center",
+  },
+  contactTitle: {
+    color: "#fff", fontSize: 13, fontWeight: "700", fontFamily: "Inter_700Bold",
+  },
+  contactSub: { color: "rgba(255,255,255,0.45)", fontSize: 11 },
+  contactRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  contactRowGap: { marginBottom: 6 },
+  contactRowIcon: {
+    width: 26, height: 26, borderRadius: 7,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    alignItems: "center", justifyContent: "center",
+  },
+  contactRowText: { color: "#fff", fontSize: 13, fontFamily: "Inter_500Medium", flex: 1 },
+  contactRowSub: { color: "rgba(255,255,255,0.45)", fontSize: 11, marginTop: 1 },
+  contactDivider: { height: 1, backgroundColor: "rgba(255,255,255,0.08)", marginVertical: 2 },
+
+  /* Compact contact (mobile) */
+  contactCompact: {
+    marginTop: 20,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.09)",
+    borderRadius: 10, padding: 12, gap: 6,
+  },
+  contactCompactHeader: {
+    color: "rgba(255,255,255,0.55)", fontSize: 11,
+    fontFamily: "Inter_600SemiBold", letterSpacing: 0.3, marginBottom: 4,
+  },
+  contactCompactRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  contactCompactLink: { color: "#8A82FF", fontSize: 12, fontFamily: "Inter_500Medium" },
+  contactCompactName: { color: "rgba(255,255,255,0.45)", fontSize: 11, marginLeft: 4 },
+  contactCompactPhones: { gap: 4 },
+
+  /* Status banner */
+  statusBanner: {
+    flexDirection: "row", alignItems: "flex-start", gap: 10,
+    borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 14,
+  },
+  statusTitle: {
+    fontSize: 13, fontWeight: "700", fontFamily: "Inter_700Bold", marginBottom: 2,
+  },
+  statusBody: { color: "rgba(255,255,255,0.70)", fontSize: 12, lineHeight: 17 },
 
   /* Form panel (right on wide; full on mobile) */
   formCard: { width: "100%", maxWidth: 380, alignSelf: "center" },

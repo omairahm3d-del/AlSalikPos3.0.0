@@ -14,6 +14,13 @@ const K_LICENSE_KEY = "saas.licenseKey";
  */
 const K_BRANCH = "saas.branch";
 /**
+ * The last license key that successfully activated this device. Unlike
+ * K_LICENSE_KEY (which is part of the session and cleared on expiry/revoke),
+ * this value is NEVER cleared — it lets the app silently re-validate after
+ * the admin extends a license, so the customer doesn't have to retype the key.
+ */
+const K_SAVED_KEY = "saas.savedKey";
+/**
  * Identity of the company whose data currently lives in this device's local
  * DB. Stamped the first time we sync (or first reconcile) under a given
  * license. Used to refuse cross-tenant pushes after a license swap or
@@ -193,6 +200,10 @@ export async function loadSession(): Promise<LicenseSession | null> {
   }
 }
 
+export async function loadSavedLicenseKey(): Promise<string | null> {
+  return AsyncStorage.getItem(K_SAVED_KEY);
+}
+
 export async function saveSession(s: LicenseSession): Promise<void> {
   const pairs: Array<[string, string]> = [
     [K_TOKEN, s.token],
@@ -201,6 +212,9 @@ export async function saveSession(s: LicenseSession): Promise<void> {
     [K_LICENSE, JSON.stringify(s.license)],
     [K_LICENSE_KEY, s.licenseKey],
     [K_DEVICE_UID, s.deviceUid],
+    // Always keep the most-recently-used key so silent re-validate can find it
+    // even after clearSession() removes the rest of the session.
+    [K_SAVED_KEY, s.licenseKey],
   ];
   if (s.branch) pairs.push([K_BRANCH, JSON.stringify(s.branch)]);
   await AsyncStorage.multiSet(pairs);

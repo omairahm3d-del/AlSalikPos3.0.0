@@ -9,6 +9,7 @@ import React, {
 import {
   clearSession,
   getOrCreateDeviceUid,
+  loadSavedLicenseKey,
   loadSession,
   saveSession,
   type LicenseSession,
@@ -29,9 +30,21 @@ export type ActivateResult =
   | { kind: "ok" }
   | { kind: "needs_branch_selection"; branches: ValidatedBranch[] };
 
+/**
+ * Why the activation screen is showing.
+ * - "expired"   — license window lapsed (may auto-recover if admin extended it)
+ * - "revoked"   — license was explicitly revoked by admin
+ * - "suspended" — company account suspended
+ * - null        — fresh install / manual deactivate (no prior session)
+ */
+export type ActivationReason = "expired" | "revoked" | "suspended" | null;
+
 interface LicenseContextValue {
   ready: boolean;
   session: LicenseSession | null;
+  activationReason: ActivationReason;
+  /** The most-recently-used license key, pre-fills the activation form. */
+  savedKey: string | null;
   activate: (
     licenseKey: string,
     deviceName?: string,
@@ -47,6 +60,8 @@ const LicenseContext = createContext<LicenseContextValue | null>(null);
 export function LicenseProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState<LicenseSession | null>(null);
+  const [activationReason, setActivationReason] = useState<ActivationReason>(null);
+  const [savedKey, setSavedKey] = useState<string | null>(null);
 
   // Monotonically increasing token used to ignore stale async results
   // when activate/refresh/deactivate overlap or race.
@@ -58,13 +73,11 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
     const myOp = ++opSeq.current;
     (async () => {
       // Mint the device UID up-front so it's available before activation.
-      await getOrCreateDeviceUid();
+      const deviceUid = await getOrCreateDeviceUid();
       const stored = await loadSession();
       if (myOp !== opSeq.current) return;
+
       if (stored) {
-        // Local license-window check (works offline). If the cloud-issued
-        // expiresAt has passed, the device must re-activate regardless of
-        // license type.
         const licenseExpiresMs = stored.license.expiresAt
           ? Date.parse(stored.license.expiresAt)
           : null;
@@ -72,8 +85,53 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
           licenseExpiresMs !== null &&
           !Number.isNaN(licenseExpiresMs) &&
           licenseExpiresMs <= Date.now();
+
         if (licenseExpired) {
+          // Always clear the stale session first.
           await clearSession();
+
+          // Try silent re-validation — catches the case where the admin
+          // extended the license while the device was offline / app was closed.
+          const key = await loadSavedLicenseKey();
+          if (key && myOp === opSeq.current) {
+            try {
+              const res = await validateLicense({
+                licenseKey: key,
+                deviceUid,
+                ...(stored.branch ? { branchId: stored.branch.id } : {}),
+              });
+              if (myOp !== opSeq.current) return;
+              // License was successfully extended — restore session transparently.
+              if (res.kind !== "needs_branch_selection") {
+                const next: LicenseSession = {
+                  token: res.token,
+                  tokenExpiresAt: res.tokenExpiresAt,
+                  company: res.company,
+                  license: res.license,
+                  branch: res.branch,
+                  licenseKey: key,
+                  deviceUid,
+                };
+                await saveSession(next);
+                if (myOp !== opSeq.current) return;
+                setSession(next);
+                setReady(true);
+                return; // ✓ no activation screen needed
+              }
+            } catch (e) {
+              if (myOp !== opSeq.current) return;
+              const code = (e as ApiError)?.code;
+              setActivationReason(
+                code === "license_revoked" ? "revoked" :
+                code === "company_suspended" ? "suspended" :
+                "expired",
+              );
+              setSavedKey(key);
+            }
+          } else if (myOp === opSeq.current) {
+            // No saved key — plain expired, no pre-fill.
+            setActivationReason("expired");
+          }
         } else if (stored.license.licenseType === "offline") {
           // Offline licenses don't depend on the JWT being fresh — the device
           // is allowed to keep running purely from local state.
@@ -85,10 +143,19 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
           }
         }
       }
+
+      // Always load the saved key so the form can pre-fill it even on fresh
+      // opens where there's no expired session.
+      if (myOp === opSeq.current && !session) {
+        const key = await loadSavedLicenseKey();
+        if (key && myOp === opSeq.current) setSavedKey(key);
+      }
+
       setReady(true);
     })().catch(() => {
       if (myOp === opSeq.current) setReady(true);
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const activate = useCallback(
@@ -105,8 +172,6 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
         name: deviceName?.trim() || undefined,
         branchId,
       });
-      // If a newer op (e.g. deactivate) ran while we were awaiting, drop this
-      // result rather than clobbering the newer state.
       if (myOp !== opSeq.current) return { kind: "ok" };
       if (res.kind === "needs_branch_selection") {
         return {
@@ -125,6 +190,7 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
       };
       await saveSession(next);
       if (myOp !== opSeq.current) return { kind: "ok" };
+      setActivationReason(null);
       setSession(next);
       return { kind: "ok" };
     },
@@ -135,28 +201,21 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
     opSeq.current++;
     await clearSession();
     setSession(null);
+    setActivationReason(null);
   }, []);
 
   const refresh = useCallback(async () => {
     const current = sessionRef.current;
     if (!current) return;
-    // Offline licenses never re-validate against the server: their whole
-    // point is to keep working without a network. The license-window check
-    // already ran on mount from persisted state.
     if (current.license.licenseType === "offline") return;
     const myOp = ++opSeq.current;
     try {
       const res = await validateLicense({
         licenseKey: current.licenseKey,
         deviceUid: current.deviceUid,
-        // Pin to the device's current branch on refresh — otherwise a
-        // multi-branch company would re-trigger the picker every renewal.
         ...(current.branch ? { branchId: current.branch.id } : {}),
       });
       if (myOp !== opSeq.current) return;
-      // Refresh against an unbound legacy session that hits a multi-branch
-      // company would short-circuit to picker — we keep the existing
-      // session in that case and let the next manual re-activate handle it.
       if (res.kind === "needs_branch_selection") return;
       const next: LicenseSession = {
         token: res.token,
@@ -173,7 +232,6 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       if (myOp !== opSeq.current) return;
       const err = e as ApiError;
-      // Hard-revoke states: drop the session and force re-activation.
       if (
         err?.code === "license_revoked" ||
         err?.code === "license_expired" ||
@@ -181,15 +239,20 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
         err?.code === "company_suspended"
       ) {
         await clearSession();
-        if (myOp === opSeq.current) setSession(null);
+        if (myOp === opSeq.current) {
+          setActivationReason(
+            err.code === "license_revoked" ? "revoked" :
+            err.code === "company_suspended" ? "suspended" :
+            "expired",
+          );
+          setSession(null);
+        }
       }
-      // For network errors, keep the existing session — POS must keep working
-      // offline once activated, until the JWT itself expires.
     }
   }, []);
 
   return (
-    <LicenseContext.Provider value={{ ready, session, activate, deactivate, refresh }}>
+    <LicenseContext.Provider value={{ ready, session, activationReason, savedKey, activate, deactivate, refresh }}>
       {children}
     </LicenseContext.Provider>
   );

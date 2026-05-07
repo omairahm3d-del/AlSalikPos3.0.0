@@ -90,5 +90,7 @@ Section "Uninstall"
   Delete "$SMPROGRAMS\${PUBLISHER}\Uninstall ${APP_NAME}.lnk"
   RMDir  "$SMPROGRAMS\${PUBLISHER}"
   RMDir /r "$INSTDIR"
+  ; Remove app data so a fresh reinstall starts with a clean database
+  RMDir /r "$APPDATA\Al Salik POS"
   DeleteRegKey HKLM "${UNINSTALL_KEY}"
 SectionEnd

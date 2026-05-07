@@ -6,6 +6,7 @@ import {
   useCompanyDevices,
   useIssueLicense,
   useRevokeLicense,
+  useExtendLicense,
   useCompanyBranches,
   useCreateBranch,
   useUpdateBranch,
@@ -25,7 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { format, formatDistanceToNow, parseISO } from "date-fns";
-import { ArrowLeft, Copy, Eye, EyeOff, KeyRound, MonitorSmartphone, Plus, ShieldAlert, XCircle, CheckCircle2, Building2, Star, UserCog } from "lucide-react";
+import { ArrowLeft, CalendarClock, Copy, Eye, EyeOff, KeyRound, MonitorSmartphone, Plus, ShieldAlert, XCircle, CheckCircle2, Building2, Star, UserCog } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function maskKey(key: string) {
@@ -45,6 +46,7 @@ export function CompanyDetail() {
 
   const issueLicense = useIssueLicense();
   const revokeLicense = useRevokeLicense();
+  const extendLicense = useExtendLicense();
   const createBranch = useCreateBranch(companyId || "");
   const updateBranch = useUpdateBranch(companyId || "");
   const createManager = useCreateManager(companyId || "");
@@ -54,6 +56,8 @@ export function CompanyDetail() {
 
   const [issueOpen, setIssueOpen] = useState(false);
   const [revokeOpen, setRevokeOpen] = useState<string | null>(null);
+  const [extendOpen, setExtendOpen] = useState<string | null>(null);
+  const [extendDate, setExtendDate] = useState("");
   const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
 
   const [branchOpen, setBranchOpen] = useState(false);
@@ -270,6 +274,25 @@ export function CompanyDetail() {
     }
   };
 
+  const handleExtend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!extendOpen) return;
+    try {
+      await extendLicense.mutateAsync({
+        companyId: company.id,
+        licenseId: extendOpen,
+        expiresAt: extendDate
+          ? new Date(`${extendDate}T23:59:59`).toISOString()
+          : null,
+      });
+      toast({ title: "License extended.", description: extendDate ? `New expiry: ${extendDate}` : "Expiry cleared (no expiry)." });
+      setExtendOpen(null);
+      setExtendDate("");
+    } catch (err: any) {
+      toast({ title: "Failed to extend license", description: err.message, variant: "destructive" });
+    }
+  };
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
@@ -436,34 +459,84 @@ export function CompanyDetail() {
                           </Button>
                         </div>
                       </div>
-                      {license.status === 'active' && (
-                        <Dialog open={revokeOpen === license.id} onOpenChange={(open) => setRevokeOpen(open ? license.id : null)}>
-                          <DialogTrigger asChild>
-                            <Button variant="destructive" size="sm" className="bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground">
-                              <XCircle className="mr-2 h-4 w-4" /> Revoke
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle className="text-destructive flex items-center gap-2">
-                                <ShieldAlert className="h-5 w-5" /> Revoke License
-                              </DialogTitle>
-                              <DialogDescription>
-                                Are you sure you want to revoke this license? This action cannot be undone. Devices using this license will be disconnected.
-                              </DialogDescription>
-                            </DialogHeader>
-                            <div className="py-4">
-                              <code className="font-mono text-center block bg-muted p-2 rounded">{license.key}</code>
-                            </div>
-                            <DialogFooter>
-                              <Button variant="outline" onClick={() => setRevokeOpen(null)}>Cancel</Button>
-                              <Button variant="destructive" onClick={() => handleRevoke(license.id)} disabled={revokeLicense.isPending}>
-                                Yes, Revoke Key
+                      <div className="flex items-center gap-2">
+                        {license.status !== 'revoked' && (
+                          <Dialog open={extendOpen === license.id} onOpenChange={(open) => {
+                            if (open) {
+                              const cur = license.expiresAt ? license.expiresAt.slice(0, 10) : "";
+                              setExtendDate(cur);
+                              setExtendOpen(license.id);
+                            } else {
+                              setExtendOpen(null);
+                            }
+                          }}>
+                            <DialogTrigger asChild>
+                              <Button variant="outline" size="sm">
+                                <CalendarClock className="mr-2 h-4 w-4" /> Extend
                               </Button>
-                            </DialogFooter>
-                          </DialogContent>
-                        </Dialog>
-                      )}
+                            </DialogTrigger>
+                            <DialogContent>
+                              <form onSubmit={handleExtend}>
+                                <DialogHeader>
+                                  <DialogTitle className="flex items-center gap-2">
+                                    <CalendarClock className="h-5 w-5 text-primary" /> Extend License
+                                  </DialogTitle>
+                                  <DialogDescription>
+                                    Set a new expiry date. The POS device will automatically reconnect the next time it opens — no need for the customer to re-enter the key.
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <div className="py-4 space-y-4">
+                                  <code className="font-mono text-center block bg-muted p-2 rounded text-sm">{license.key}</code>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="extendDate">New Expiry Date</Label>
+                                    <Input
+                                      id="extendDate"
+                                      type="date"
+                                      value={extendDate}
+                                      onChange={(e) => setExtendDate(e.target.value)}
+                                    />
+                                    <p className="text-xs text-muted-foreground">Leave blank to remove the expiry date (license never expires).</p>
+                                  </div>
+                                </div>
+                                <DialogFooter>
+                                  <Button variant="outline" type="button" onClick={() => setExtendOpen(null)}>Cancel</Button>
+                                  <Button type="submit" disabled={extendLicense.isPending}>
+                                    {extendLicense.isPending ? "Saving…" : "Save New Expiry"}
+                                  </Button>
+                                </DialogFooter>
+                              </form>
+                            </DialogContent>
+                          </Dialog>
+                        )}
+                        {license.status === 'active' && (
+                          <Dialog open={revokeOpen === license.id} onOpenChange={(open) => setRevokeOpen(open ? license.id : null)}>
+                            <DialogTrigger asChild>
+                              <Button variant="destructive" size="sm" className="bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground">
+                                <XCircle className="mr-2 h-4 w-4" /> Revoke
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle className="text-destructive flex items-center gap-2">
+                                  <ShieldAlert className="h-5 w-5" /> Revoke License
+                                </DialogTitle>
+                                <DialogDescription>
+                                  Are you sure you want to revoke this license? This action cannot be undone. Devices using this license will be disconnected.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <div className="py-4">
+                                <code className="font-mono text-center block bg-muted p-2 rounded">{license.key}</code>
+                              </div>
+                              <DialogFooter>
+                                <Button variant="outline" onClick={() => setRevokeOpen(null)}>Cancel</Button>
+                                <Button variant="destructive" onClick={() => handleRevoke(license.id)} disabled={revokeLicense.isPending}>
+                                  Yes, Revoke Key
+                                </Button>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+                        )}
+                      </div>
                     </CardHeader>
                     <CardContent className="pt-2 text-sm">
                       <div className="flex items-center gap-6 text-muted-foreground">
