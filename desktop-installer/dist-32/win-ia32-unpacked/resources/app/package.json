@@ -1,0 +1,13 @@
+{
+  "name": "alsalik-pos",
+  "productName": "Al Salik POS",
+  "version": "1.0.0",
+  "description": "Point of Sale system by Al Salik Computers",
+  "main": "main.js",
+  "author": {
+    "name": "Al Salik Computers",
+    "email": "info@alsalikcomputers.com"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

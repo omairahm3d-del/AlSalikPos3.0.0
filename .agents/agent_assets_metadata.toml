@@ -35,3 +35,9 @@ id = "A3tAgHZdmdtdQB8e70K4l"
 uri = "file://desktop-installer/dist/AlSalikPOS-Setup-1.0.0.tar.gz"
 type = "unspecified"
 title = "Al Salik POS Setup 1.0.0 — Windows Installer (tar.gz)"
+
+[[outputs]]
+id = "w7f5AXRLnB72D9WvlbnAd"
+uri = "file://desktop-installer/dist-32/Al_Salik_POS_Setup_1.0.0_32bit.tar.gz"
+type = "unspecified"
+title = "Al Salik POS Setup 1.0.0 (32-bit) — Windows 7 SP1+"
