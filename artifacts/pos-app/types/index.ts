@@ -480,12 +480,16 @@ export interface ClearDataOptions {
   products?: boolean;
   categories?: boolean;
   ingredients?: boolean;
+  recipes?: boolean;
   taxGroups?: boolean;
   riders?: boolean;
   tables?: boolean;
   zReports?: boolean;
   heldOrders?: boolean;
   expenses?: boolean;
+  suppliers?: boolean;
+  purchases?: boolean;
+  stockMovements?: boolean;
   resetInvoiceCounter?: boolean;
 }
 

@@ -949,6 +949,9 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       const outbox = await getJson<WebCatalogOutboxRow[]>(K.catalogOutbox, []);
       await setJson(K.catalogOutbox, outbox.filter((o) => o.entityType !== "category"));
     }
+    if (opts.recipes) {
+      await wipe(K.recipeIngredients);
+    }
     if (opts.ingredients) {
       await wipe(K.ingredients);
       await wipe(K.recipeIngredients);
@@ -967,6 +970,12 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     if (opts.resetInvoiceCounter || opts.sales) {
       await AsyncStorage.setItem(K.counter, "1");
     }
+    if (opts.suppliers) await wipe(K.localSuppliers);
+    if (opts.purchases) {
+      await wipe(K.localPurchases);
+      await wipe(K.localPurchaseItems);
+    }
+    if (opts.stockMovements) await wipe(K.localStockMovements);
   }, []);
 
   // ---- Phase 3b: outbound sync queue ----

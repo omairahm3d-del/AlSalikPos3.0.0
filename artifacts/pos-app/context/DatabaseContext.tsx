@@ -997,6 +997,9 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         // explicitly cleared.
         await db.runAsync("DELETE FROM catalog_outbox WHERE entity_type='customer'");
       }
+      if (opts.recipes) {
+        await db.runAsync("DELETE FROM recipe_ingredients");
+      }
       if (opts.ingredients) {
         await db.runAsync("DELETE FROM recipe_ingredients");
         await db.runAsync("DELETE FROM ingredients");
@@ -1018,6 +1021,16 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       }
       if (opts.expenses) {
         await db.runAsync("DELETE FROM expenses");
+      }
+      if (opts.suppliers) {
+        await db.runAsync("DELETE FROM local_suppliers");
+      }
+      if (opts.purchases) {
+        await db.runAsync("DELETE FROM local_purchase_items");
+        await db.runAsync("DELETE FROM local_purchases");
+      }
+      if (opts.stockMovements) {
+        await db.runAsync("DELETE FROM local_stock_movements");
       }
     });
   }, [db]);

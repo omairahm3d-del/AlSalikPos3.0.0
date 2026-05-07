@@ -522,6 +522,18 @@ export default function BackOfficeScreen() {
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [dbBusy, setDbBusy] = useState(false);
 
+  const ALL_CLEAR_KEYS: Array<keyof import("@/types").ClearDataOptions> = [
+    "suppliers", "purchases", "stockMovements", "ingredients", "recipes",
+    "riders", "sales", "zReports", "heldOrders", "customers", "products",
+    "categories", "taxGroups", "tables", "expenses", "resetInvoiceCounter",
+  ];
+  const allClearSelected = ALL_CLEAR_KEYS.every((k) => !!clearOpts[k]);
+  const onMasterClearToggle = (v: boolean) => {
+    const next: import("@/types").ClearDataOptions = {};
+    if (v) ALL_CLEAR_KEYS.forEach((k) => { (next as Record<string, boolean>)[k] = true; });
+    setClearOpts(next);
+  };
+
   const onBackup = useCallback(async () => {
     try {
       setDbBusy(true);
@@ -645,17 +657,33 @@ export default function BackOfficeScreen() {
           <Text style={{ color: colors.mutedForeground, fontSize: 13, marginBottom: 8, lineHeight: 18 }}>
             Tick what you want to wipe. Business details, staff, printers, KOT, receipt design and email settings are always kept.
           </Text>
-          <View style={{ marginTop: 8 }}>
-            {renderClearRow("sales",      "Sales & Transactions",  "Removes sales, sale items, split payments, resets invoice number")}
-            {renderClearRow("zReports",   "Z-Report History",      "Removes all end-of-day Z-Reports")}
-            {renderClearRow("heldOrders", "Held Orders / KOT",     "Removes parked orders and frees occupied tables")}
-            {renderClearRow("customers",  "Customers",             "Removes customers + their credit payments")}
-            {renderClearRow("products",   "Products",              "Removes products and their recipe links")}
-            {renderClearRow("categories", "Categories",            "Removes product categories")}
-            {renderClearRow("ingredients","Ingredients",           "Removes ingredients and their recipe links")}
-            {renderClearRow("taxGroups",  "Tax Groups",            "Removes VAT/tax group configuration")}
-            {renderClearRow("riders",     "Delivery Riders",       "Removes rider list")}
-            {renderClearRow("tables",     "POS Tables",            "Removes table list and any held orders on them")}
+          <View style={{ marginTop: 4, marginBottom: 4, paddingVertical: 12, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: "row", alignItems: "center" }}>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.switchLabel, { color: colors.foreground, fontSize: 14 }]}>Select All</Text>
+              <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 2 }}>Enable or disable all categories at once</Text>
+            </View>
+            <Switch
+              value={allClearSelected}
+              onValueChange={onMasterClearToggle}
+              trackColor={{ false: colors.border, true: colors.destructive }}
+            />
+          </View>
+          <View style={{ marginTop: 4 }}>
+            {renderClearRow("suppliers",     "Suppliers",             "Removes all local supplier records")}
+            {renderClearRow("purchases",     "Purchases / GRNs",      "Removes all goods received notes and purchase lines")}
+            {renderClearRow("stockMovements","Stock Movements",        "Removes local stock movement history")}
+            {renderClearRow("ingredients",   "Ingredients",           "Removes ingredients and their recipe links")}
+            {renderClearRow("recipes",       "Recipes",               "Removes recipe ingredient links (keeps ingredients)")}
+            {renderClearRow("riders",        "Delivery Riders",       "Removes rider list")}
+            {renderClearRow("sales",         "Sales & Transactions",  "Removes sales, sale items, split payments, resets invoice number")}
+            {renderClearRow("zReports",      "Z-Report History",      "Removes all end-of-day Z-Reports")}
+            {renderClearRow("heldOrders",    "Held Orders / KOT",     "Removes parked orders and frees occupied tables")}
+            {renderClearRow("customers",     "Customers",             "Removes customers + their credit payments")}
+            {renderClearRow("products",      "Products",              "Removes products and their recipe links")}
+            {renderClearRow("categories",    "Categories",            "Removes product categories")}
+            {renderClearRow("taxGroups",     "Tax Groups",            "Removes VAT/tax group configuration")}
+            {renderClearRow("tables",        "POS Tables",            "Removes table list and any held orders on them")}
+            {renderClearRow("expenses",      "Cash-Out / Expenses",   "Removes all expense records")}
             {renderClearRow("resetInvoiceCounter", "Reset Invoice Counter", "Restarts invoice numbering at 0001")}
           </View>
           {!clearConfirmOpen ? (
