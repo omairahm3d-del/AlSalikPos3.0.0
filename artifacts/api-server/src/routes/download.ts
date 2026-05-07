@@ -1,13 +1,30 @@
 import { Router, type IRouter } from "express";
 import { createReadStream, statSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
 
 const router: IRouter = Router();
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Locate a file inside desktop-installer/dist relative to THIS compiled file.
+ *
+ * In dev (tsx runs the TypeScript source directly):
+ *   __dirname = …/artifacts/api-server/src/routes/
+ *   ↑ 4 levels → workspace root
+ *
+ * In production (esbuild bundles everything into dist/index.mjs):
+ *   __dirname = …/artifacts/api-server/dist/
+ *   ↑ 3 levels → workspace root
+ *
+ * We try both so it works in both environments.
+ */
 function findFile(filename: string): string {
   const candidates = [
-    resolve(process.cwd(), "desktop-installer/dist", filename),
-    resolve(process.cwd(), "../../desktop-installer/dist", filename),
+    resolve(__dirname, "../../../desktop-installer/dist", filename),
+    resolve(__dirname, "../../../../desktop-installer/dist", filename),
   ];
   return candidates.find(existsSync) ?? candidates[0];
 }
