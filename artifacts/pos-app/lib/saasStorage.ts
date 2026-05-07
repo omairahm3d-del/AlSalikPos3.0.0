@@ -204,6 +204,16 @@ export async function loadSavedLicenseKey(): Promise<string | null> {
   return AsyncStorage.getItem(K_SAVED_KEY);
 }
 
+/**
+ * Write `key` to K_SAVED_KEY only when it is not already set.
+ * Used as a one-shot migration for devices that activated before
+ * K_SAVED_KEY was introduced.
+ */
+export async function ensureSavedLicenseKey(key: string): Promise<void> {
+  const existing = await AsyncStorage.getItem(K_SAVED_KEY);
+  if (!existing) await AsyncStorage.setItem(K_SAVED_KEY, key);
+}
+
 export async function saveSession(s: LicenseSession): Promise<void> {
   const pairs: Array<[string, string]> = [
     [K_TOKEN, s.token],

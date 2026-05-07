@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -147,6 +147,13 @@ export function ActivationScreen() {
 
   const [licenseKey, setLicenseKey] = useState(savedKey ?? "");
   const [deviceName, setDeviceName] = useState("");
+
+  // savedKey loads asynchronously — if it arrives after the initial render,
+  // pre-fill the input (only if the user hasn't typed anything yet).
+  useEffect(() => {
+    if (savedKey && licenseKey === "") setLicenseKey(savedKey);
+  }, [savedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [branchOptions, setBranchOptions] = useState<ValidatedBranch[] | null>(null);

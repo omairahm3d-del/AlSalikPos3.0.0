@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import {
   clearSession,
+  ensureSavedLicenseKey,
   getOrCreateDeviceUid,
   loadSavedLicenseKey,
   loadSession,
@@ -78,6 +79,13 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
       if (myOp !== opSeq.current) return;
 
       if (stored) {
+        // Migration: existing users activated before K_SAVED_KEY existed.
+        // Write it once so silent re-validation and pre-fill both work.
+        if (stored.licenseKey) {
+          await ensureSavedLicenseKey(stored.licenseKey);
+          if (myOp === opSeq.current) setSavedKey(stored.licenseKey);
+        }
+
         const licenseExpiresMs = stored.license.expiresAt
           ? Date.parse(stored.license.expiresAt)
           : null;
