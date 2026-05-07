@@ -4,14 +4,16 @@ import { resolve } from "node:path";
 
 const router: IRouter = Router();
 
-const INSTALLER_PATH = resolve(
-  process.cwd(),
-  "../../desktop-installer/dist/Al Salik POS Setup 1.0.0.exe",
-);
-const APK_PATH = resolve(
-  process.cwd(),
-  "../../desktop-installer/dist/Al Salik POS.apk",
-);
+function findFile(filename: string): string {
+  const candidates = [
+    resolve(process.cwd(), "desktop-installer/dist", filename),
+    resolve(process.cwd(), "../../desktop-installer/dist", filename),
+  ];
+  return candidates.find(existsSync) ?? candidates[0];
+}
+
+const INSTALLER_NAME = "Al Salik POS Setup 1.0.0.exe";
+const APK_NAME = "Al Salik POS.apk";
 
 function streamFile(req: any, res: any, filePath: string, filename: string) {
   if (!existsSync(filePath)) {
@@ -33,20 +35,21 @@ function streamFile(req: any, res: any, filePath: string, filename: string) {
 }
 
 router.get("/download/installer", (req, res) => {
-  streamFile(req, res, INSTALLER_PATH, "Al Salik POS Setup 1.0.0.exe");
+  streamFile(req, res, findFile(INSTALLER_NAME), INSTALLER_NAME);
 });
 
 router.get("/download/apk", (req, res) => {
-  streamFile(req, res, APK_PATH, "Al Salik POS.apk");
+  streamFile(req, res, findFile(APK_NAME), APK_NAME);
 });
 
 router.get("/download/info", (_req, res) => {
   const result: Record<string, any> = {};
-  if (existsSync(INSTALLER_PATH)) {
-    const s = statSync(INSTALLER_PATH);
+  const installerPath = findFile(INSTALLER_NAME);
+  if (existsSync(installerPath)) {
+    const s = statSync(installerPath);
     result.windows = {
       available: true,
-      filename: "Al Salik POS Setup 1.0.0.exe",
+      filename: INSTALLER_NAME,
       sizeBytes: s.size,
       sizeMB: Math.round(s.size / 1024 / 1024),
       downloadUrl: "/api/download/installer",
@@ -54,11 +57,12 @@ router.get("/download/info", (_req, res) => {
   } else {
     result.windows = { available: false };
   }
-  if (existsSync(APK_PATH)) {
-    const s = statSync(APK_PATH);
+  const apkPath = findFile(APK_NAME);
+  if (existsSync(apkPath)) {
+    const s = statSync(apkPath);
     result.android = {
       available: true,
-      filename: "Al Salik POS.apk",
+      filename: APK_NAME,
       sizeBytes: s.size,
       sizeMB: Math.round(s.size / 1024 / 1024),
       downloadUrl: "/api/download/apk",
@@ -66,7 +70,6 @@ router.get("/download/info", (_req, res) => {
   } else {
     result.android = { available: false };
   }
-  // Backwards-compat: top-level keys mirror the windows installer.
   Object.assign(result, result.windows);
   res.json(result);
 });
