@@ -2,11 +2,67 @@
 
 const { app, BrowserWindow, Menu, shell, dialog, ipcMain } = require('electron');
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const net = require('net');
 
 const WWW_DIR = path.join(__dirname, 'www');
+
+// ===== API base URL (read from api-config.json next to main.js) =====
+let API_BASE = '';
+try {
+  const cfgPath = path.join(__dirname, 'api-config.json');
+  const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+  API_BASE = (cfg.apiBase || '').replace(/\/+$/, '');
+} catch { /* api-config.json missing or invalid — will surface a clear error */ }
+
+function proxyApiRequest(req, res) {
+  if (!API_BASE) {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      error: {
+        code: 'not_configured',
+        message: 'API server URL is not configured. Open api-config.json next to the app and set "apiBase" to your server URL, then restart.',
+      },
+    }));
+    return;
+  }
+  let targetUrl;
+  try {
+    targetUrl = new URL(req.url, API_BASE);
+    // Ensure we're calling the right base (not re-basing on localhost)
+    targetUrl = new URL(API_BASE + req.url);
+  } catch (e) {
+    res.writeHead(502, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: { code: 'proxy_error', message: 'Invalid API base URL in api-config.json' } }));
+    return;
+  }
+
+  const transport = targetUrl.protocol === 'https:' ? https : http;
+  const options = {
+    hostname: targetUrl.hostname,
+    port: targetUrl.port || (targetUrl.protocol === 'https:' ? 443 : 80),
+    path: targetUrl.pathname + targetUrl.search,
+    method: req.method,
+    headers: Object.assign({}, req.headers, { host: targetUrl.hostname }),
+  };
+
+  const proxyReq = transport.request(options, (proxyRes) => {
+    // Strip hop-by-hop headers that shouldn't be forwarded
+    const fwdHeaders = Object.assign({}, proxyRes.headers);
+    delete fwdHeaders['transfer-encoding'];
+    res.writeHead(proxyRes.statusCode, fwdHeaders);
+    proxyRes.pipe(res, { end: true });
+  });
+  proxyReq.on('error', (e) => {
+    if (!res.headersSent) {
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { code: 'proxy_error', message: `Cannot reach API server: ${e.message}` } }));
+    }
+  });
+  req.pipe(proxyReq, { end: true });
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -50,6 +106,12 @@ function startLocalServer(port) {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, `http://localhost:${port}`);
     let pathname = url.pathname;
+
+    // Proxy all /api/* requests to the cloud API server
+    if (pathname.startsWith('/api/')) {
+      proxyApiRequest(req, res);
+      return;
+    }
 
     // Strip leading slash, default to index.html
     let rel = pathname.replace(/^\//, '') || 'index.html';

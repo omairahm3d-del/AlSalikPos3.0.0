@@ -22,7 +22,7 @@ title = "Al Salik POS Setup 1.0.0 — Windows Installer (Extract & Run .exe)"
 id = "nKE59k_ZkcSd_rn5Sfex1"
 uri = "file://desktop-installer/dist/Al-Salik-POS-Setup-1.0.0.tar.gz"
 type = "unspecified"
-title = "Al Salik POS Setup 1.0.0 — Windows Installer"
+title = "Al Salik POS Setup 1.0.0 — Windows Installer (fixed)"
 
 [[outputs]]
 id = "KZyRIwRcE3pKB9TvipGU3"

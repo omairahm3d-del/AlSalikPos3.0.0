@@ -15,13 +15,20 @@ Install on your build machine:
 
 ---
 
-## Step 1 — Update the App URL
+## Step 1 — Set the API Server URL
 
-Open `main.js` and set `APP_URL` to your published app domain:
+Open `api-config.json` and set `apiBase` to your deployed API server domain:
 
-```js
-const APP_URL = 'https://your-replit-app.replit.app/pos-app/';
+```json
+{
+  "apiBase": "https://your-replit-app.replit.app"
+}
 ```
+
+This file is installed next to the app executable at:
+`C:\Program Files\Al Salik Computers\Al Salik POS\resources\app\api-config.json`
+
+After editing it, restart the app — no reinstall needed.
 
 ---
 
