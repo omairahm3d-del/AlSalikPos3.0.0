@@ -243,10 +243,10 @@ export function CompanyDetail() {
         maxDevices,
         notes: notes || undefined,
         licenseType,
-        // End-of-day UTC for the picked date so the license stays valid
-        // through the chosen calendar day in any timezone.
+        // No trailing Z — JavaScript parses without Z as local time,
+        // so end-of-day is 23:59:59 in the admin user's browser timezone.
         expiresAt: expiresAt
-          ? new Date(`${expiresAt}T23:59:59.000Z`).toISOString()
+          ? new Date(`${expiresAt}T23:59:59`).toISOString()
           : null,
       });
       toast({ title: "License issued successfully." });
@@ -471,11 +471,20 @@ export function CompanyDetail() {
                           <MonitorSmartphone className="h-4 w-4" />
                           <span>{activeDevices} / {license.maxDevices} Devices</span>
                         </div>
-                        {license.expiresAt && (
-                          <div className="flex items-center gap-2">
-                            <span>Expires {format(parseISO(license.expiresAt), "PPP")}</span>
-                          </div>
-                        )}
+                        {license.expiresAt && (() => {
+                          const expired = new Date(license.expiresAt) < new Date();
+                          return (
+                            <div className="flex items-center gap-2">
+                              {expired ? (
+                                <span className="font-semibold text-destructive">
+                                  Expired {format(parseISO(license.expiresAt), "PPP")}
+                                </span>
+                              ) : (
+                                <span>Expires {format(parseISO(license.expiresAt), "PPP")}</span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                       {license.notes && (
                         <p className="mt-3 text-muted-foreground border-t border-border pt-3">
