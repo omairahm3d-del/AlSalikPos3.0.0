@@ -208,9 +208,7 @@ export default function ReceiveStockScreen() {
         }
       }
 
-      Alert.alert("Stock received", `Received ${lines.length} item(s).`, [
-        { text: "OK", onPress: () => router.back() },
-      ]);
+      router.back();
     } catch (e) {
       Alert.alert("Failed", e instanceof Error ? e.message : "Could not save purchase.");
     } finally {
