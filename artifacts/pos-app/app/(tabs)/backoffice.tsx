@@ -123,7 +123,7 @@ export default function BackOfficeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const db = useDatabase();
-  const { session: licenseSession } = useLicense();
+  const { session: licenseSession, deactivate } = useLicense();
   const isOffline = licenseSession?.license.licenseType === "offline";
   const { currentStaff, refreshStaffCheck, logout } = useStaff();
   const [section, setSection] = useState<Section>("menu");
@@ -242,6 +242,21 @@ export default function BackOfficeScreen() {
     const cats = await db.loadCategories();
     setCategories(cats);
   }, [db]);
+
+  const handleDeactivate = useCallback(() => {
+    Alert.alert(
+      "Deactivate Device",
+      "This will sign this device out of its license. You will need to enter a license key again to use the POS.\n\nAll local data (products, sales history) stays on this device.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Deactivate",
+          style: "destructive",
+          onPress: () => deactivate(),
+        },
+      ],
+    );
+  }, [deactivate]);
 
   useEffect(() => {
     loadAllSettings();
@@ -772,6 +787,24 @@ export default function BackOfficeScreen() {
             <Text style={[s.aboutProviderName, { color: "#6C63FF" }]}>Al Salik Computers</Text>
           </View>
         </View>
+
+        {licenseSession && (
+          <View style={[s.deactivateCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+            <View style={s.deactivateInfo}>
+              <Text style={[s.deactivateTitle, { color: colors.foreground }]}>
+                {licenseSession.company.name}
+              </Text>
+              <Text style={[s.deactivateSub, { color: colors.mutedForeground }]}>
+                {licenseSession.branch ? licenseSession.branch.name + " · " : ""}
+                {licenseSession.license.licenseType === "offline" ? "Offline license" : "Online license"}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={handleDeactivate} style={s.deactivateBtn}>
+              <Feather name="log-out" size={14} color="#E74C3C" />
+              <Text style={s.deactivateBtnText}>Deactivate</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -2169,4 +2202,10 @@ const s = StyleSheet.create({
   removeImageBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1 },
   lowStockBanner: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1 },
   recipeItemRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 0.5, gap: 8 },
+  deactivateCard: { flexDirection: "row", alignItems: "center", padding: 14, borderWidth: 1, marginTop: 12, gap: 12 },
+  deactivateInfo: { flex: 1 },
+  deactivateTitle: { fontSize: 13, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
+  deactivateSub: { fontSize: 11, marginTop: 2 },
+  deactivateBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: "rgba(231,76,60,0.10)", borderWidth: 1, borderColor: "rgba(231,76,60,0.25)" },
+  deactivateBtnText: { color: "#E74C3C", fontSize: 12, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
 });
