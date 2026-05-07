@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useLicense } from "@/context/LicenseContext";
 import { useDatabase } from "@/context/DatabaseCore";
+import { useSync } from "@/context/SyncContext";
 import {
   posApi,
   type PosStockMovement,
@@ -36,7 +37,9 @@ export default function StockScreen() {
   const insets = useSafeAreaInsets();
   const { session } = useLicense();
   const token = session?.token;
-  const { loadBusinessSettings, saveBusinessSettings } = useDatabase();
+  const db = useDatabase();
+  const { loadBusinessSettings, saveBusinessSettings, updateStock } = db;
+  const { syncNow } = useSync();
 
   const [stock, setStock] = useState<PosStockRow[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,6 +54,9 @@ export default function StockScreen() {
   const load = useCallback(async () => {
     if (!token) return;
     setError(null);
+    // Flush any pending sales first so the cloud stock_movements table
+    // reflects the latest local sales before we read on-hand figures.
+    try { await syncNow(); } catch { /* offline — proceed with cached cloud data */ }
     try {
       const r = await posApi.listStock(token);
       setStock(r.stock);
@@ -59,7 +65,7 @@ export default function StockScreen() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, syncNow]);
 
   useEffect(() => {
     load();
@@ -222,8 +228,11 @@ export default function StockScreen() {
           row={adjusting}
           token={token}
           onClose={() => setAdjusting(null)}
-          onSaved={() => {
+          onSaved={async (delta) => {
             setAdjusting(null);
+            // Mirror adjustment into local SQLite / in-memory product so that
+            // the Products screen reflects the change without waiting for a sync.
+            try { await updateStock(adjusting.productClientId, delta); } catch { /* best-effort */ }
             load();
           }}
         />
@@ -248,7 +257,7 @@ function AdjustModal({
   row: PosStockRow;
   token: string;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (delta: number) => void;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -271,7 +280,7 @@ function AdjustModal({
         delta,
         reason: reason.trim() || null,
       });
-      onSaved();
+      onSaved(delta);
     } catch (e) {
       Alert.alert("Failed", e instanceof Error ? e.message : "Could not save adjustment.");
     } finally {
