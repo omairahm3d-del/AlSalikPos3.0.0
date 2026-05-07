@@ -196,10 +196,6 @@ export default function ReceiveStockScreen() {
     );
   }
 
-  if (isOffline) {
-    return <OfflineLockout colors={colors} insets={insets} onBack={() => router.back()} title="Receive Stock" />;
-  }
-
   return (
     <KeyboardAvoidingView
       style={[s.root, { backgroundColor: colors.background, paddingTop: insets.top }]}

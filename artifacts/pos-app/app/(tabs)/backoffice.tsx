@@ -1794,19 +1794,11 @@ export default function BackOfficeScreen() {
         )}
 
         {/* ── Actions ── */}
-        {isOffline && (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, padding: 12, marginTop: 20 }}>
-            <Feather name="wifi-off" size={14} color={colors.mutedForeground} />
-            <Text style={{ color: colors.mutedForeground, fontSize: 13, flex: 1 }}>
-              Email test is not available on an offline license. SMTP settings are saved but email sending requires a cloud connection.
-            </Text>
-          </View>
-        )}
         <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
           <TouchableOpacity
             onPress={testSmtpConnection}
-            disabled={isSendingTest || isOffline}
-            style={[s.saveBtn, { flex: 1, backgroundColor: colors.secondary, borderRadius: colors.radius, marginTop: 0, borderWidth: 1, borderColor: colors.border, opacity: (isSendingTest || isOffline) ? 0.4 : 1, flexDirection: "row", gap: 6 }]}
+            disabled={isSendingTest}
+            style={[s.saveBtn, { flex: 1, backgroundColor: colors.secondary, borderRadius: colors.radius, marginTop: 0, borderWidth: 1, borderColor: colors.border, opacity: isSendingTest ? 0.4 : 1, flexDirection: "row", gap: 6 }]}
           >
             {isSendingTest ? (
               <ActivityIndicator size="small" color={colors.primary} />

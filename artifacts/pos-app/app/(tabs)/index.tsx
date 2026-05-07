@@ -118,6 +118,7 @@ export default function POSScreen() {
 
   const [showPriceEdit, setShowPriceEdit] = useState<string | null>(null);
   const [priceEditInput, setPriceEditInput] = useState("");
+  const [voidConfirm, setVoidConfirm] = useState(false);
 
   const [loyaltyRedeemPts, setLoyaltyRedeemPts] = useState("");
   const [loyaltyRate, setLoyaltyRate] = useState(0.01);
@@ -691,10 +692,31 @@ export default function POSScreen() {
                   {currentStaff.name}
                 </Text>
               )}
-              {cartItems.length > 0 && (
-                <TouchableOpacity onPress={clearCart}>
-                  <Text style={{ color: colors.destructive, fontSize: 13 }}>Clear</Text>
+              {cartItems.length > 0 && !voidConfirm && (
+                <TouchableOpacity
+                  onPress={() => setVoidConfirm(true)}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.destructive + "15", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}
+                >
+                  <Feather name="slash" size={12} color={colors.destructive} />
+                  <Text style={{ color: colors.destructive, fontSize: 12, fontWeight: "700" }}>Void</Text>
                 </TouchableOpacity>
+              )}
+              {voidConfirm && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={{ color: colors.destructive, fontSize: 12, fontWeight: "600" }}>Void order?</Text>
+                  <TouchableOpacity
+                    onPress={() => { clearCart(); setVoidConfirm(false); }}
+                    style={{ backgroundColor: colors.destructive, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}
+                  >
+                    <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>Yes</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setVoidConfirm(false)}
+                    style={{ backgroundColor: colors.secondary, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: colors.border }}
+                  >
+                    <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: "600" }}>No</Text>
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
           </View>

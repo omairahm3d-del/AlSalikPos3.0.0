@@ -385,10 +385,6 @@ export default function SuppliersScreen() {
     await printHtml(html);
   };
 
-  if (isOffline) {
-    return <OfflineLockout colors={colors} insets={insets} onBack={() => router.back()} title="Suppliers" />;
-  }
-
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <Stack.Screen

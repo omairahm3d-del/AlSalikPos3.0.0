@@ -196,10 +196,6 @@ export default function PurchasesScreen() {
     );
   }
 
-  if (isOffline) {
-    return <OfflineLockout colors={colors} insets={insets} onBack={() => router.back()} title="Purchase History" />;
-  }
-
   return (
     <View style={[s.root, { backgroundColor: colors.background, paddingTop: insets.top }]}>
       <Stack.Screen options={{ headerShown: false }} />
