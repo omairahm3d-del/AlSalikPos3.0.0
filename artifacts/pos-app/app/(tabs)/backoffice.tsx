@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { DropdownPicker } from "@/components/DropdownPicker";
 import { router, useFocusEffect } from "expo-router";
 import {
   ActivityIndicator,
@@ -1006,32 +1007,22 @@ export default function BackOfficeScreen() {
                   { label: "Kitchen (KOT) Printer", key: "windowsKOTPrinterName" as const },
                   { label: "Cash Drawer Printer", key: "windowsDrawerPrinterName" as const },
                 ]).map((row) => {
-                  const cur = (printerSettings as any)[row.key] as string | undefined;
+                  const cur = (printerSettings as any)[row.key] as string ?? "";
+                  const opts = [
+                    { label: "None", value: "" },
+                    ...windowsPrinters.map((wp) => ({
+                      label: wp.displayName + (wp.isDefault ? " ★" : ""),
+                      value: wp.name,
+                    })),
+                  ];
                   return (
                     <View key={row.key} style={{ marginBottom: 10 }}>
                       <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 4 }}>{row.label}</Text>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                        <TouchableOpacity
-                          onPress={() => setPrinterSettings({ ...printerSettings, [row.key]: "" })}
-                          style={[s.chip, { backgroundColor: !cur ? colors.primary : colors.secondary, borderColor: !cur ? colors.primary : colors.border, borderRadius: colors.radius, marginRight: 8 }]}
-                        >
-                          <Text style={{ color: !cur ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 12 }}>None</Text>
-                        </TouchableOpacity>
-                        {windowsPrinters.map((wp) => {
-                          const sel = cur === wp.name;
-                          return (
-                            <TouchableOpacity
-                              key={wp.name}
-                              onPress={() => setPrinterSettings({ ...printerSettings, [row.key]: wp.name })}
-                              style={[s.chip, { backgroundColor: sel ? colors.primary : colors.secondary, borderColor: sel ? colors.primary : colors.border, borderRadius: colors.radius, marginRight: 8 }]}
-                            >
-                              <Text style={{ color: sel ? "#fff" : colors.foreground, fontWeight: "600", fontSize: 12 }} numberOfLines={1}>
-                                {wp.displayName}{wp.isDefault ? " ★" : ""}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </ScrollView>
+                      <DropdownPicker
+                        options={opts}
+                        value={cur}
+                        onChange={(v) => setPrinterSettings({ ...printerSettings, [row.key]: v })}
+                      />
                     </View>
                   );
                 })}
@@ -1148,40 +1139,28 @@ export default function BackOfficeScreen() {
         {printerList.length > 0 && (
           <>
             <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 24 }]}>Default Receipt Printer</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginBottom: 8 }}>
-              <TouchableOpacity
-                onPress={() => setPrinterSettings({ ...printerSettings, defaultReceiptPrinterId: "" })}
-                style={[s.chip, { backgroundColor: !printerSettings.defaultReceiptPrinterId ? colors.primary : colors.secondary, borderColor: !printerSettings.defaultReceiptPrinterId ? colors.primary : colors.border, borderRadius: colors.radius, marginRight: 8 }]}
-              >
-                <Text style={{ color: !printerSettings.defaultReceiptPrinterId ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 13 }}>None</Text>
-              </TouchableOpacity>
-              {printerList.filter((p) => p.type === "receipt" || p.type === "both").map((p) => (
-                <TouchableOpacity key={p.id}
-                  onPress={() => setPrinterSettings({ ...printerSettings, defaultReceiptPrinterId: p.id })}
-                  style={[s.chip, { backgroundColor: printerSettings.defaultReceiptPrinterId === p.id ? colors.primary : colors.secondary, borderColor: printerSettings.defaultReceiptPrinterId === p.id ? colors.primary : colors.border, borderRadius: colors.radius, marginRight: 8 }]}
-                >
-                  <Text style={{ color: printerSettings.defaultReceiptPrinterId === p.id ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 13 }}>{p.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            <DropdownPicker
+              options={[
+                { label: "None", value: "" },
+                ...printerList
+                  .filter((p) => p.type === "receipt" || p.type === "both")
+                  .map((p) => ({ label: p.name, value: p.id })),
+              ]}
+              value={printerSettings.defaultReceiptPrinterId ?? ""}
+              onChange={(v) => setPrinterSettings({ ...printerSettings, defaultReceiptPrinterId: v })}
+            />
 
-            <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 16 }]}>Default KOT Printer</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}>
-              <TouchableOpacity
-                onPress={() => setPrinterSettings({ ...printerSettings, defaultKOTPrinterId: "" })}
-                style={[s.chip, { backgroundColor: !printerSettings.defaultKOTPrinterId ? colors.primary : colors.secondary, borderColor: !printerSettings.defaultKOTPrinterId ? colors.primary : colors.border, borderRadius: colors.radius, marginRight: 8 }]}
-              >
-                <Text style={{ color: !printerSettings.defaultKOTPrinterId ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 13 }}>None</Text>
-              </TouchableOpacity>
-              {printerList.filter((p) => p.type === "kitchen" || p.type === "both").map((p) => (
-                <TouchableOpacity key={p.id}
-                  onPress={() => setPrinterSettings({ ...printerSettings, defaultKOTPrinterId: p.id })}
-                  style={[s.chip, { backgroundColor: printerSettings.defaultKOTPrinterId === p.id ? colors.primary : colors.secondary, borderColor: printerSettings.defaultKOTPrinterId === p.id ? colors.primary : colors.border, borderRadius: colors.radius, marginRight: 8 }]}
-                >
-                  <Text style={{ color: printerSettings.defaultKOTPrinterId === p.id ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 13 }}>{p.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 8 }]}>Default KOT Printer</Text>
+            <DropdownPicker
+              options={[
+                { label: "None", value: "" },
+                ...printerList
+                  .filter((p) => p.type === "kitchen" || p.type === "both")
+                  .map((p) => ({ label: p.name, value: p.id })),
+              ]}
+              value={printerSettings.defaultKOTPrinterId ?? ""}
+              onChange={(v) => setPrinterSettings({ ...printerSettings, defaultKOTPrinterId: v })}
+            />
           </>
         )}
 
@@ -1263,30 +1242,21 @@ export default function BackOfficeScreen() {
 
                   <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 4 }}>Windows Printer</Text>
                   {isElectron() && windowsPrinters.length > 0 ? (
-                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-                      <TouchableOpacity
-                        onPress={() => {
-                          const next = { ...(kotSettings.categoryPrinters ?? {}) };
-                          delete next[cat.name];
-                          setKotSettings({ ...kotSettings, categoryPrinters: next });
-                        }}
-                        style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: colors.radius, backgroundColor: !printerName ? colors.primary : colors.card, borderWidth: 1, borderColor: !printerName ? colors.primary : colors.border }}
-                      >
-                        <Text style={{ color: !printerName ? "#fff" : colors.mutedForeground, fontSize: 11, fontWeight: "600" }}>(Default KOT)</Text>
-                      </TouchableOpacity>
-                      {windowsPrinters.map((wp) => {
-                        const active = printerName === wp.name;
-                        return (
-                          <TouchableOpacity
-                            key={wp.name}
-                            onPress={() => setKotSettings({ ...kotSettings, categoryPrinters: { ...(kotSettings.categoryPrinters ?? {}), [cat.name]: wp.name } })}
-                            style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: colors.radius, backgroundColor: active ? colors.primary : colors.card, borderWidth: 1, borderColor: active ? colors.primary : colors.border }}
-                          >
-                            <Text style={{ color: active ? "#fff" : colors.foreground, fontSize: 11, fontWeight: "600" }} numberOfLines={1}>{wp.displayName || wp.name}</Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
+                    <DropdownPicker
+                      options={[
+                        { label: "(Default KOT)", value: "" },
+                        ...windowsPrinters.map((wp) => ({
+                          label: wp.displayName || wp.name,
+                          value: wp.name,
+                        })),
+                      ]}
+                      value={printerName ?? ""}
+                      onChange={(v) => {
+                        const next = { ...(kotSettings.categoryPrinters ?? {}) };
+                        if (v) { next[cat.name] = v; } else { delete next[cat.name]; }
+                        setKotSettings({ ...kotSettings, categoryPrinters: next });
+                      }}
+                    />
                   ) : (
                     <TextInput
                       value={printerName}

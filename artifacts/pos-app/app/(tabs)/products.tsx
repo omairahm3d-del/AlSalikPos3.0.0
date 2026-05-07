@@ -15,6 +15,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { DropdownPicker } from "@/components/DropdownPicker";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
@@ -377,17 +378,14 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
               <>
                 <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Printer</Text>
                 <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 8 }}>Assign a printer for this product's orders</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips}>
-                  <TouchableOpacity onPress={() => setSelectedPrinterId(undefined)} style={[styles.chip, { backgroundColor: !selectedPrinterId ? colors.primary : colors.secondary, borderColor: !selectedPrinterId ? colors.primary : colors.border, borderRadius: colors.radius }]}>
-                    <Text style={{ color: !selectedPrinterId ? "#fff" : colors.mutedForeground, fontWeight: "600" }}>Default</Text>
-                  </TouchableOpacity>
-                  {printerConfigs.map((p) => (
-                    <TouchableOpacity key={p.id} onPress={() => setSelectedPrinterId(p.id)} style={[styles.chip, { backgroundColor: selectedPrinterId === p.id ? colors.primary : colors.secondary, borderColor: selectedPrinterId === p.id ? colors.primary : colors.border, borderRadius: colors.radius }]}>
-                      <Feather name="printer" size={12} color={selectedPrinterId === p.id ? "#fff" : colors.mutedForeground} style={{ marginRight: 4 }} />
-                      <Text style={{ color: selectedPrinterId === p.id ? "#fff" : colors.mutedForeground, fontWeight: "600" }}>{p.name}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
+                <DropdownPicker
+                  options={[
+                    { label: "Default", value: "" },
+                    ...printerConfigs.map((p) => ({ label: p.name, value: p.id })),
+                  ]}
+                  value={selectedPrinterId ?? ""}
+                  onChange={(v) => setSelectedPrinterId(v || undefined)}
+                />
               </>
             )}
 
