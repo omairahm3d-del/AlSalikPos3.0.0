@@ -29,3 +29,9 @@ id = "KZyRIwRcE3pKB9TvipGU3"
 uri = "file://desktop-installer/dist/AlSalikPOS-Installer.tar.gz"
 type = "unspecified"
 title = "Al Salik POS Installer (Windows) — hardened offline license + login layout"
+
+[[outputs]]
+id = "A3tAgHZdmdtdQB8e70K4l"
+uri = "file://desktop-installer/dist/AlSalikPOS-Setup-1.0.0.tar.gz"
+type = "unspecified"
+title = "Al Salik POS Setup 1.0.0 — Windows Installer (tar.gz)"
