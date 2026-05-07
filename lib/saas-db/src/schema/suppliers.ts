@@ -31,6 +31,7 @@ export const suppliersTable = pgTable(
       onDelete: "restrict",
     }),
     name: text("name").notNull(),
+    trnNumber: text("trn_number"),
     phone: text("phone"),
     email: text("email"),
     address: text("address"),

@@ -9,6 +9,7 @@ import { authedFetch } from "@/lib/saasApi";
 export interface PosSupplier {
   id: string;
   name: string;
+  trnNumber: string | null;
   phone: string | null;
   email: string | null;
   address: string | null;
@@ -85,7 +86,7 @@ export const posApi = {
 
   createSupplier: async (
     token: string,
-    body: { name: string; phone?: string | null; email?: string | null; address?: string | null; paymentTerms?: string | null; notes?: string | null },
+    body: { name: string; trnNumber?: string | null; phone?: string | null; email?: string | null; address?: string | null; paymentTerms?: string | null; notes?: string | null },
   ) =>
     jsonOk<{ supplier: PosSupplier }>(
       await authedFetch("/api/pos/suppliers", token, {
@@ -99,6 +100,7 @@ export const posApi = {
     id: string,
     patch: Partial<{
       name: string;
+      trnNumber: string | null;
       phone: string | null;
       email: string | null;
       address: string | null;

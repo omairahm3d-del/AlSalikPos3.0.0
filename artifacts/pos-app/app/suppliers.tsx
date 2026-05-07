@@ -21,7 +21,7 @@ import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useLicense } from "@/context/LicenseContext";
-import { posApi, type PosSupplier } from "@/lib/posPurchasing";
+import { posApi, type PosSupplier, type PosPurchaseRow } from "@/lib/posPurchasing";
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", {
@@ -31,6 +31,20 @@ function fmtDate(iso: string) {
   });
 }
 
+function fmtDateTime(iso: string) {
+  return new Date(iso).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function fmtAmount(val: string) {
+  return `AED ${parseFloat(val).toFixed(2)}`;
+}
+
 export default function SuppliersScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -38,15 +52,19 @@ export default function SuppliersScreen() {
   const token = session?.token;
 
   const [suppliers, setSuppliers] = useState<PosSupplier[]>([]);
+  const [allPurchases, setAllPurchases] = useState<PosPurchaseRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
+
+  const [selectedSupplier, setSelectedSupplier] = useState<PosSupplier | null>(null);
 
   const [showModal, setShowModal] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<PosSupplier | null>(null);
   const [saving, setSaving] = useState(false);
 
   const [name, setName] = useState("");
+  const [trnNumber, setTrnNumber] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
@@ -58,8 +76,12 @@ export default function SuppliersScreen() {
     if (!token) return;
     if (!silent) setLoading(true);
     try {
-      const { suppliers: list } = await posApi.listSuppliers(token);
+      const [{ suppliers: list }, { purchases }] = await Promise.all([
+        posApi.listSuppliers(token),
+        posApi.listPurchases(token),
+      ]);
       setSuppliers(list);
+      setAllPurchases(purchases);
     } catch (e: any) {
       Alert.alert("Error", e.message || "Failed to load suppliers");
     } finally {
@@ -77,7 +99,7 @@ export default function SuppliersScreen() {
 
   const openAdd = () => {
     setEditingSupplier(null);
-    setName(""); setPhone(""); setEmail("");
+    setName(""); setTrnNumber(""); setPhone(""); setEmail("");
     setAddress(""); setPaymentTerms(""); setNotes("");
     setIsActive(true);
     setShowModal(true);
@@ -86,6 +108,7 @@ export default function SuppliersScreen() {
   const openEdit = (sup: PosSupplier) => {
     setEditingSupplier(sup);
     setName(sup.name);
+    setTrnNumber(sup.trnNumber ?? "");
     setPhone(sup.phone ?? "");
     setEmail(sup.email ?? "");
     setAddress(sup.address ?? "");
@@ -105,6 +128,7 @@ export default function SuppliersScreen() {
     try {
       const patch = {
         name: name.trim(),
+        trnNumber: trnNumber.trim() || null,
         phone: phone.trim() || null,
         email: email.trim() || null,
         address: address.trim() || null,
@@ -113,11 +137,13 @@ export default function SuppliersScreen() {
         isActive,
       };
       if (editingSupplier) {
-        await posApi.updateSupplier(token, editingSupplier.id, patch);
+        const { supplier: updated } = await posApi.updateSupplier(token, editingSupplier.id, patch);
+        setShowModal(false);
+        if (selectedSupplier?.id === updated.id) setSelectedSupplier(updated);
       } else {
         await posApi.createSupplier(token, patch);
+        setShowModal(false);
       }
-      setShowModal(false);
       await load(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
@@ -140,8 +166,9 @@ export default function SuppliersScreen() {
         onPress: async () => {
           if (!token) return;
           try {
-            await posApi.updateSupplier(token, sup.id, { isActive: !sup.isActive });
+            const { supplier: updated } = await posApi.updateSupplier(token, sup.id, { isActive: !sup.isActive });
             await load(true);
+            if (selectedSupplier?.id === updated.id) setSelectedSupplier(updated);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           } catch (e: any) {
             Alert.alert("Error", e.message || "Failed to update supplier");
@@ -157,7 +184,8 @@ export default function SuppliersScreen() {
     return (
       s.name.toLowerCase().includes(q) ||
       (s.phone ?? "").toLowerCase().includes(q) ||
-      (s.email ?? "").toLowerCase().includes(q)
+      (s.email ?? "").toLowerCase().includes(q) ||
+      (s.trnNumber ?? "").toLowerCase().includes(q)
     );
   });
 
@@ -167,6 +195,14 @@ export default function SuppliersScreen() {
     ...(active.length > 0 ? [{ type: "header" as const, title: `Active (${active.length})` }, ...active.map((s) => ({ type: "item" as const, data: s }))] : []),
     ...(inactive.length > 0 ? [{ type: "header" as const, title: `Inactive (${inactive.length})` }, ...inactive.map((s) => ({ type: "item" as const, data: s }))] : []),
   ];
+
+  const supplierPurchases = selectedSupplier
+    ? [...allPurchases]
+        .filter((p) => p.supplierId === selectedSupplier.id)
+        .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())
+    : [];
+
+  const totalSpend = supplierPurchases.reduce((s, p) => s + parseFloat(p.total), 0);
 
   const renderRow = ({ item }: { item: typeof sections[number] }) => {
     if (item.type === "header") {
@@ -180,7 +216,7 @@ export default function SuppliersScreen() {
     return (
       <TouchableOpacity
         style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, opacity: sup.isActive ? 1 : 0.6 }]}
-        onPress={() => openEdit(sup)}
+        onPress={() => setSelectedSupplier(sup)}
         activeOpacity={0.75}
       >
         <View style={[styles.cardIcon, { backgroundColor: "#8E44AD18" }]}>
@@ -197,6 +233,12 @@ export default function SuppliersScreen() {
               </View>
             )}
           </View>
+          {sup.trnNumber ? (
+            <View style={styles.metaItem}>
+              <Feather name="hash" size={11} color={colors.mutedForeground} />
+              <Text style={[styles.metaText, { color: colors.mutedForeground }]}>TRN: {sup.trnNumber}</Text>
+            </View>
+          ) : null}
           {(sup.phone || sup.email) && (
             <View style={styles.metaRow}>
               {sup.phone ? (
@@ -299,6 +341,168 @@ export default function SuppliersScreen() {
         <Feather name="plus" size={22} color="#fff" />
       </TouchableOpacity>
 
+      {/* ── Supplier Detail Modal ── */}
+      <Modal visible={!!selectedSupplier} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSelectedSupplier(null)}>
+        <View style={[styles.modalRoot, { backgroundColor: colors.background, paddingTop: insets.top + 16 }]}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setSelectedSupplier(null)}>
+              <Feather name="arrow-left" size={22} color={colors.foreground} />
+            </TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]} numberOfLines={1}>
+              {selectedSupplier?.name}
+            </Text>
+            <TouchableOpacity onPress={() => selectedSupplier && openEdit(selectedSupplier)}>
+              <Feather name="edit-2" size={18} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+
+          {selectedSupplier && (
+            <ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
+              {/* Stats row */}
+              <View style={{ flexDirection: "row", gap: 12, marginBottom: 16 }}>
+                <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, flex: 1 }]}>
+                  <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Total Purchases</Text>
+                  <Text style={[styles.statValue, { color: colors.foreground }]}>{supplierPurchases.length}</Text>
+                </View>
+                <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, flex: 1 }]}>
+                  <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Total Spend</Text>
+                  <Text style={[styles.statValue, { color: colors.primary }]}>AED {totalSpend.toFixed(2)}</Text>
+                </View>
+              </View>
+
+              {/* Contact info */}
+              <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+                {selectedSupplier.trnNumber ? (
+                  <View style={styles.infoRow}>
+                    <Feather name="hash" size={15} color={colors.mutedForeground} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>TRN</Text>
+                      <Text style={[styles.infoValue, { color: colors.foreground }]}>{selectedSupplier.trnNumber}</Text>
+                    </View>
+                  </View>
+                ) : null}
+                {selectedSupplier.phone ? (
+                  <View style={[styles.infoRow, { borderTopWidth: selectedSupplier.trnNumber ? StyleSheet.hairlineWidth : 0, borderTopColor: colors.border }]}>
+                    <Feather name="phone" size={15} color={colors.mutedForeground} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>Phone</Text>
+                      <Text style={[styles.infoValue, { color: colors.foreground }]}>{selectedSupplier.phone}</Text>
+                    </View>
+                  </View>
+                ) : null}
+                {selectedSupplier.email ? (
+                  <View style={[styles.infoRow, { borderTopWidth: (selectedSupplier.trnNumber || selectedSupplier.phone) ? StyleSheet.hairlineWidth : 0, borderTopColor: colors.border }]}>
+                    <Feather name="mail" size={15} color={colors.mutedForeground} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>Email</Text>
+                      <Text style={[styles.infoValue, { color: colors.foreground }]}>{selectedSupplier.email}</Text>
+                    </View>
+                  </View>
+                ) : null}
+                {selectedSupplier.address ? (
+                  <View style={[styles.infoRow, { borderTopWidth: (selectedSupplier.trnNumber || selectedSupplier.phone || selectedSupplier.email) ? StyleSheet.hairlineWidth : 0, borderTopColor: colors.border }]}>
+                    <Feather name="map-pin" size={15} color={colors.mutedForeground} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>Address</Text>
+                      <Text style={[styles.infoValue, { color: colors.foreground }]}>{selectedSupplier.address}</Text>
+                    </View>
+                  </View>
+                ) : null}
+                {selectedSupplier.paymentTerms ? (
+                  <View style={[styles.infoRow, { borderTopWidth: (selectedSupplier.trnNumber || selectedSupplier.phone || selectedSupplier.email || selectedSupplier.address) ? StyleSheet.hairlineWidth : 0, borderTopColor: colors.border }]}>
+                    <Feather name="clock" size={15} color={colors.mutedForeground} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>Payment Terms</Text>
+                      <Text style={[styles.infoValue, { color: colors.foreground }]}>{selectedSupplier.paymentTerms}</Text>
+                    </View>
+                  </View>
+                ) : null}
+                {selectedSupplier.notes ? (
+                  <View style={[styles.infoRow, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}>
+                    <Feather name="file-text" size={15} color={colors.mutedForeground} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>Notes</Text>
+                      <Text style={[styles.infoValue, { color: colors.foreground }]}>{selectedSupplier.notes}</Text>
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+
+              {/* Deactivate / Reactivate */}
+              <TouchableOpacity
+                onPress={() => { setSelectedSupplier(null); handleDeactivate(selectedSupplier); }}
+                style={[styles.deactivateBtn, {
+                  borderColor: selectedSupplier.isActive ? colors.destructive : colors.success,
+                  borderRadius: colors.radius,
+                }]}
+              >
+                <Feather
+                  name={selectedSupplier.isActive ? "user-x" : "user-check"}
+                  size={15}
+                  color={selectedSupplier.isActive ? colors.destructive : colors.success}
+                />
+                <Text style={{ color: selectedSupplier.isActive ? colors.destructive : colors.success, fontWeight: "600", fontSize: 14 }}>
+                  {selectedSupplier.isActive ? "Deactivate Supplier" : "Reactivate Supplier"}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Purchase history */}
+              {supplierPurchases.length > 0 && (
+                <View style={[styles.txCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+                  <View style={styles.txCardHeader}>
+                    <Text style={[styles.txCardTitle, { color: colors.foreground }]}>Purchase History</Text>
+                    <Text style={[styles.txCardCount, { color: colors.mutedForeground }]}>{supplierPurchases.length} GRN{supplierPurchases.length !== 1 ? "s" : ""}</Text>
+                  </View>
+                  {supplierPurchases.map((p, idx) => {
+                    const isLast = idx === supplierPurchases.length - 1;
+                    const hasRef = !!p.referenceNumber;
+                    return (
+                      <View key={p.id} style={[styles.txRow, { borderBottomWidth: isLast ? 0 : StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
+                        <View style={[styles.txIcon, { backgroundColor: colors.primary + "18" }]}>
+                          <Feather name="package" size={15} color={colors.primary} />
+                        </View>
+                        <View style={styles.txMiddle}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <Text style={[styles.txType, { color: colors.foreground }]}>Goods Received</Text>
+                            {hasRef && (
+                              <View style={[styles.txBadge, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+                                <Text style={[styles.txBadgeText, { color: colors.mutedForeground }]}>{p.referenceNumber}</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={[styles.txDate, { color: colors.mutedForeground }]}>
+                            {fmtDateTime(p.receivedAt)} · {p.itemCount} item{p.itemCount !== 1 ? "s" : ""}
+                          </Text>
+                          {p.notes ? (
+                            <Text style={[styles.txNote, { color: colors.mutedForeground }]} numberOfLines={1}>{p.notes}</Text>
+                          ) : null}
+                        </View>
+                        <View style={styles.txRight}>
+                          <Text style={[styles.txAmount, { color: colors.foreground }]}>{fmtAmount(p.total)}</Text>
+                          {parseFloat(p.vatAmount) > 0 && (
+                            <Text style={[styles.txVat, { color: colors.mutedForeground }]}>VAT {fmtAmount(p.vatAmount)}</Text>
+                          )}
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              {supplierPurchases.length === 0 && (
+                <View style={[styles.txEmpty, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+                  <Feather name="package" size={28} color={colors.mutedForeground} style={{ opacity: 0.4, marginBottom: 8 }} />
+                  <Text style={[{ color: colors.mutedForeground, fontSize: 13, textAlign: "center" }]}>No purchases recorded yet</Text>
+                </View>
+              )}
+
+              <View style={{ height: 40 }} />
+            </ScrollView>
+          )}
+        </View>
+      </Modal>
+
+      {/* ── Editor Modal ── */}
       <Modal visible={showModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowModal(false)}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <View style={[styles.modalRoot, { backgroundColor: colors.background, paddingTop: insets.top + 16 }]}>
@@ -327,6 +531,16 @@ export default function SuppliersScreen() {
                 placeholderTextColor={colors.mutedForeground}
                 style={[styles.input, { backgroundColor: colors.secondary, borderColor: name.trim() ? colors.primary : colors.border, color: colors.foreground, borderRadius: colors.radius }]}
                 autoFocus={!editingSupplier}
+              />
+
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>TRN (Tax Registration Number)</Text>
+              <TextInput
+                value={trnNumber}
+                onChangeText={setTrnNumber}
+                placeholder="e.g. 100123456700003"
+                placeholderTextColor={colors.mutedForeground}
+                keyboardType="number-pad"
+                style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
               />
 
               <View style={styles.row}>
@@ -486,6 +700,31 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   modalTitle: { fontSize: 17, fontWeight: "700" },
+  detailContent: { padding: 16, paddingBottom: 60 },
+  statCard: { padding: 14, borderWidth: 1, alignItems: "center" },
+  statLabel: { fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
+  statValue: { fontSize: 20, fontWeight: "700" },
+  infoCard: { borderWidth: 1, marginBottom: 12, overflow: "hidden" },
+  infoRow: { flexDirection: "row", alignItems: "flex-start", gap: 12, padding: 12 },
+  infoLabel: { fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 },
+  infoValue: { fontSize: 14 },
+  deactivateBtn: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, padding: 12, justifyContent: "center", marginBottom: 16 },
+  txCard: { borderWidth: 1, overflow: "hidden", marginTop: 4 },
+  txCardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 14, borderBottomWidth: StyleSheet.hairlineWidth },
+  txCardTitle: { fontSize: 14, fontWeight: "700" },
+  txCardCount: { fontSize: 12 },
+  txRow: { flexDirection: "row", alignItems: "flex-start", padding: 12, gap: 10 },
+  txIcon: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", marginTop: 2 },
+  txMiddle: { flex: 1 },
+  txType: { fontSize: 14, fontWeight: "600" },
+  txBadge: { borderWidth: 1, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
+  txBadgeText: { fontSize: 11 },
+  txDate: { fontSize: 11, marginTop: 2 },
+  txNote: { fontSize: 11, marginTop: 2, fontStyle: "italic" },
+  txRight: { alignItems: "flex-end" },
+  txAmount: { fontSize: 14, fontWeight: "700" },
+  txVat: { fontSize: 10, marginTop: 2 },
+  txEmpty: { borderWidth: 1, padding: 24, alignItems: "center", marginTop: 4 },
   form: { padding: 20, gap: 4 },
   label: { fontSize: 12, fontWeight: "600", marginBottom: 4, marginTop: 12 },
   input: {
