@@ -77,6 +77,44 @@ export interface CatalogApplyInput {
   customers?: CatalogApplyEntry[];
 }
 
+/** Full sync_queue row for the queue viewer UI. */
+export interface SyncQueueRow {
+  queueId: string;
+  entityType: SyncEntityType;
+  entityId: string;
+  enqueuedAt: number;
+  attemptCount: number;
+  lastAttemptAt: number | null;
+  lastError: string | null;
+  status: string;
+}
+
+/** Full catalog_outbox row for the queue viewer UI. */
+export interface CatalogOutboxRow {
+  outboxId: string;
+  entityType: CatalogEntityType;
+  entityId: string;
+  deleted: boolean;
+  enqueuedAt: number;
+  updatedAt: number;
+  attemptCount: number;
+  lastAttemptAt: number | null;
+  lastError: string | null;
+}
+
+export type SyncLogKind = "sale_push" | "catalog_push" | "catalog_pull";
+
+/** One row in the persistent sync_log table. */
+export interface SyncLogEntry {
+  id: string;
+  at: number;
+  kind: SyncLogKind;
+  attempted: number;
+  succeeded: number;
+  failed: number;
+  error: string | null;
+}
+
 export interface SaleOptions {
   paymentMethod: string;
   orderType?: OrderType;
@@ -206,6 +244,22 @@ export interface DatabaseContextValue {
    * from the cloud so they shouldn't bounce back.
    */
   applyRemoteCatalog: (input: CatalogApplyInput) => Promise<void>;
+
+  // ---- Sync queue viewer + dismiss ----
+  /** Load all sync_queue rows for display in the queue viewer. */
+  loadSyncQueue: () => Promise<SyncQueueRow[]>;
+  /** Load all catalog_outbox rows for display in the queue viewer. */
+  loadCatalogOutbox: () => Promise<CatalogOutboxRow[]>;
+  /** Hard-delete a single sync_queue row and notify the sync engine. */
+  dismissSyncItem: (queueId: string) => Promise<void>;
+  /** Hard-delete a single catalog_outbox row and notify the sync engine. */
+  dismissCatalogItem: (outboxId: string) => Promise<void>;
+  /** Append a sync event to the ring-buffer log (auto-prunes to 200 rows). */
+  insertSyncLog: (entry: Omit<SyncLogEntry, "id">) => Promise<void>;
+  /** Load the most recent `limit` sync log entries, newest first. */
+  loadSyncLogs: (limit: number) => Promise<SyncLogEntry[]>;
+  /** Truncate the entire sync log. */
+  clearSyncLogs: () => Promise<void>;
 }
 
 export const DatabaseContext = createContext<DatabaseContextValue | null>(null);

@@ -11,7 +11,7 @@ import { computeLineNetVat } from "./CartContext";
 import { generateId, generateInvoiceNumber } from "@/lib/database";
 import { notifySyncQueueChanged } from "@/lib/syncEvents";
 import { clearOwningCompanyId } from "@/lib/saasStorage";
-import { DatabaseContext, type CatalogApplyInput, type CatalogOutboxItem, type CatalogResultUpdate, type SaleOptions, type SyncEntityType, type SyncQueueItem, type SyncResultUpdate } from "./DatabaseCore";
+import { DatabaseContext, type CatalogApplyInput, type CatalogEntityType, type CatalogOutboxItem, type CatalogOutboxRow, type CatalogResultUpdate, type SaleOptions, type SyncEntityType, type SyncLogEntry, type SyncLogKind, type SyncQueueItem, type SyncQueueRow, type SyncResultUpdate } from "./DatabaseCore";
 
 export function NativeDatabaseProvider({ children }: { children: React.ReactNode }) {
   const db = useSQLiteContext();
@@ -1164,6 +1164,98 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     return row?.count ?? 0;
   }, [db]);
 
+  const loadSyncQueue = useCallback(async (): Promise<SyncQueueRow[]> => {
+    const rows = await db.getAllAsync<{
+      id: string; entity_type: string; entity_id: string;
+      enqueued_at: number; attempt_count: number; last_attempt_at: number | null;
+      last_error: string | null; status: string;
+    }>(
+      `SELECT id, entity_type, entity_id, enqueued_at, attempt_count,
+              last_attempt_at, last_error, status
+       FROM sync_queue ORDER BY enqueued_at DESC`
+    );
+    return rows.map((r) => ({
+      queueId: r.id,
+      entityType: r.entity_type as SyncEntityType,
+      entityId: r.entity_id,
+      enqueuedAt: r.enqueued_at,
+      attemptCount: r.attempt_count,
+      lastAttemptAt: r.last_attempt_at ?? null,
+      lastError: r.last_error ?? null,
+      status: r.status,
+    }));
+  }, [db]);
+
+  const loadCatalogOutbox = useCallback(async (): Promise<CatalogOutboxRow[]> => {
+    const rows = await db.getAllAsync<{
+      id: string; entity_type: string; entity_id: string;
+      deleted: number; enqueued_at: number; updated_at: number;
+      attempt_count: number; last_attempt_at: number | null; last_error: string | null;
+    }>(
+      `SELECT id, entity_type, entity_id, deleted, enqueued_at, updated_at,
+              attempt_count, last_attempt_at, last_error
+       FROM catalog_outbox ORDER BY enqueued_at DESC`
+    );
+    return rows.map((r) => ({
+      outboxId: r.id,
+      entityType: r.entity_type as CatalogEntityType,
+      entityId: r.entity_id,
+      deleted: r.deleted === 1,
+      enqueuedAt: r.enqueued_at,
+      updatedAt: r.updated_at,
+      attemptCount: r.attempt_count,
+      lastAttemptAt: r.last_attempt_at ?? null,
+      lastError: r.last_error ?? null,
+    }));
+  }, [db]);
+
+  const dismissSyncItem = useCallback(async (queueId: string): Promise<void> => {
+    await db.runAsync("DELETE FROM sync_queue WHERE id=?", [queueId]);
+    notifySyncQueueChanged();
+  }, [db]);
+
+  const dismissCatalogItem = useCallback(async (outboxId: string): Promise<void> => {
+    await db.runAsync("DELETE FROM catalog_outbox WHERE id=?", [outboxId]);
+    notifySyncQueueChanged();
+  }, [db]);
+
+  const insertSyncLog = useCallback(async (entry: Omit<SyncLogEntry, "id">): Promise<void> => {
+    await db.runAsync(
+      `INSERT INTO sync_log (id, at, kind, attempted, succeeded, failed, error)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [generateId(), entry.at, entry.kind, entry.attempted, entry.succeeded, entry.failed, entry.error ?? null]
+    );
+    await db.runAsync(
+      `DELETE FROM sync_log WHERE id NOT IN (
+         SELECT id FROM sync_log ORDER BY at DESC LIMIT 200
+       )`
+    );
+  }, [db]);
+
+  const loadSyncLogs = useCallback(async (limit: number): Promise<SyncLogEntry[]> => {
+    const rows = await db.getAllAsync<{
+      id: string; at: number; kind: string;
+      attempted: number; succeeded: number; failed: number; error: string | null;
+    }>(
+      `SELECT id, at, kind, attempted, succeeded, failed, error
+       FROM sync_log ORDER BY at DESC LIMIT ?`,
+      [limit]
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      at: r.at,
+      kind: r.kind as SyncLogKind,
+      attempted: r.attempted,
+      succeeded: r.succeeded,
+      failed: r.failed,
+      error: r.error ?? null,
+    }));
+  }, [db]);
+
+  const clearSyncLogs = useCallback(async (): Promise<void> => {
+    await db.runAsync("DELETE FROM sync_log");
+  }, [db]);
+
   const applyRemoteCatalog = useCallback(async (input: CatalogApplyInput): Promise<void> => {
     const products = input.products ?? [];
     const categories = input.categories ?? [];
@@ -1292,6 +1384,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       loadExpenses, createExpense, deleteExpense,
       enqueueSync, reconcilePendingSync, loadSyncBatch, markSyncResults, countPendingSync,
       loadCatalogBatch, markCatalogResults, countPendingCatalog, applyRemoteCatalog,
+      loadSyncQueue, loadCatalogOutbox, dismissSyncItem, dismissCatalogItem,
+      insertSyncLog, loadSyncLogs, clearSyncLogs,
     }}>
       {children}
     </DatabaseContext.Provider>

@@ -279,6 +279,21 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     "ALTER TABLE products ADD COLUMN stock_tracking INTEGER NOT NULL DEFAULT 0",
   ];
 
+  // Sync event log. Append-only ring buffer (capped to 200 rows by the
+  // insertSyncLog helper). Created outside migrations so it is idempotent.
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS sync_log (
+      id TEXT PRIMARY KEY,
+      at INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      attempted INTEGER NOT NULL DEFAULT 0,
+      succeeded INTEGER NOT NULL DEFAULT 0,
+      failed INTEGER NOT NULL DEFAULT 0,
+      error TEXT
+    );
+    CREATE INDEX IF NOT EXISTS sync_log_at_idx ON sync_log(at DESC);
+  `);
+
   // Cash-out / petty-cash log. Created outside the migrations array so it
   // executes via execAsync (CREATE TABLE IF NOT EXISTS is idempotent).
   await db.execAsync(`

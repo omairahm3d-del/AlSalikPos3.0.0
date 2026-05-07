@@ -11,7 +11,7 @@ import { computeLineNetVat } from "./CartContext";
 import { generateId, generateInvoiceNumber } from "@/lib/database";
 import { notifySyncQueueChanged } from "@/lib/syncEvents";
 import { clearOwningCompanyId } from "@/lib/saasStorage";
-import { DatabaseContext, type CatalogApplyInput, type CatalogEntityType, type CatalogOutboxItem, type CatalogResultUpdate, type SaleOptions, type SyncEntityType, type SyncQueueItem, type SyncResultUpdate } from "./DatabaseCore";
+import { DatabaseContext, type CatalogApplyInput, type CatalogEntityType, type CatalogOutboxItem, type CatalogOutboxRow, type CatalogResultUpdate, type SaleOptions, type SyncEntityType, type SyncLogEntry, type SyncLogKind, type SyncQueueItem, type SyncQueueRow, type SyncResultUpdate } from "./DatabaseCore";
 
 const K = {
   products: "@pos_products", sales: "@pos_sales", saleItems: "@pos_sale_items",
@@ -25,6 +25,7 @@ const K = {
   syncQueue: "@pos_sync_queue",
   catalogOutbox: "@pos_catalog_outbox",
   expenses: "@pos_expenses",
+  syncLog: "@pos_sync_log",
 };
 
 interface WebCatalogOutboxRow {
@@ -1093,6 +1094,67 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     return queue.length;
   }, []);
 
+  const loadSyncQueue = useCallback(async (): Promise<SyncQueueRow[]> => {
+    const queue = await getJson<WebSyncQueueRow[]>(K.syncQueue, []);
+    return [...queue]
+      .sort((a, b) => b.enqueuedAt - a.enqueuedAt)
+      .map((q) => ({
+        queueId: q.id,
+        entityType: q.entityType,
+        entityId: q.entityId,
+        enqueuedAt: q.enqueuedAt,
+        attemptCount: q.attemptCount,
+        lastAttemptAt: q.lastAttemptAt,
+        lastError: q.lastError,
+        status: q.status,
+      }));
+  }, []);
+
+  const loadCatalogOutbox = useCallback(async (): Promise<CatalogOutboxRow[]> => {
+    const queue = await getJson<WebCatalogOutboxRow[]>(K.catalogOutbox, []);
+    return [...queue]
+      .sort((a, b) => b.enqueuedAt - a.enqueuedAt)
+      .map((q) => ({
+        outboxId: q.id,
+        entityType: q.entityType,
+        entityId: q.entityId,
+        deleted: q.deleted,
+        enqueuedAt: q.enqueuedAt,
+        updatedAt: q.updatedAt,
+        attemptCount: q.attemptCount,
+        lastAttemptAt: q.lastAttemptAt,
+        lastError: q.lastError,
+      }));
+  }, []);
+
+  const dismissSyncItem = useCallback(async (queueId: string): Promise<void> => {
+    const queue = await getJson<WebSyncQueueRow[]>(K.syncQueue, []);
+    await setJson(K.syncQueue, queue.filter((q) => q.id !== queueId));
+    notifySyncQueueChanged();
+  }, []);
+
+  const dismissCatalogItem = useCallback(async (outboxId: string): Promise<void> => {
+    const outbox = await getJson<WebCatalogOutboxRow[]>(K.catalogOutbox, []);
+    await setJson(K.catalogOutbox, outbox.filter((o) => o.id !== outboxId));
+    notifySyncQueueChanged();
+  }, []);
+
+  const insertSyncLog = useCallback(async (entry: Omit<SyncLogEntry, "id">): Promise<void> => {
+    const log = await getJson<SyncLogEntry[]>(K.syncLog, []);
+    const next: SyncLogEntry = { id: generateId(), ...entry };
+    const pruned = [next, ...log].slice(0, 200);
+    await setJson(K.syncLog, pruned);
+  }, []);
+
+  const loadSyncLogs = useCallback(async (limit: number): Promise<SyncLogEntry[]> => {
+    const log = await getJson<SyncLogEntry[]>(K.syncLog, []);
+    return log.slice(0, limit);
+  }, []);
+
+  const clearSyncLogs = useCallback(async (): Promise<void> => {
+    await setJson(K.syncLog, []);
+  }, []);
+
   const applyRemoteCatalog = useCallback(async (input: CatalogApplyInput): Promise<void> => {
     const incomingProducts = input.products ?? [];
     const incomingCategories = input.categories ?? [];
@@ -1214,6 +1276,8 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       loadExpenses, createExpense, deleteExpense,
       enqueueSync, reconcilePendingSync, loadSyncBatch, markSyncResults, countPendingSync,
       loadCatalogBatch, markCatalogResults, countPendingCatalog, applyRemoteCatalog,
+      loadSyncQueue, loadCatalogOutbox, dismissSyncItem, dismissCatalogItem,
+      insertSyncLog, loadSyncLogs, clearSyncLogs,
     }}>
       {children}
     </DatabaseContext.Provider>

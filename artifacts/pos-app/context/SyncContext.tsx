@@ -39,6 +39,10 @@ interface SyncContextValue {
    * cannot be used to push one tenant's data into another.
    */
   adoptLocalDataForCurrentLicense: () => Promise<{ ok: boolean; error?: string }>;
+  /** Hard-remove a single pending sale from the sync queue. */
+  dismissSyncItem: (queueId: string) => Promise<void>;
+  /** Hard-remove a single pending catalog entry from the outbox. */
+  dismissCatalogItem: (outboxId: string) => Promise<void>;
 }
 
 const SyncContext = createContext<SyncContextValue | null>(null);
@@ -114,6 +118,19 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         return ACTIVE_INTERVAL_MS;
       }
 
+      // Write a sale_push log entry when anything was pushed (fire-and-forget
+      // — don't let a log write failure disrupt the sync loop).
+      if (salesResult.attempted > 0 || salesResult.error) {
+        db.insertSyncLog({
+          at: Date.now(),
+          kind: "sale_push",
+          attempted: salesResult.attempted,
+          succeeded: salesResult.error ? 0 : salesResult.attempted,
+          failed: salesResult.error ? salesResult.attempted : 0,
+          error: salesResult.error ?? null,
+        }).catch(() => {});
+      }
+
       const catalogResult = await catalogSyncOnce(db, token);
       if (verifiedCompanyIdRef.current !== sessionCompanyIdRef.current) {
         return null;
@@ -123,6 +140,29 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         refresh().catch(() => {});
         await refreshCount();
         return ACTIVE_INTERVAL_MS;
+      }
+
+      // Log catalog push activity.
+      if (catalogResult.attempted > 0 || catalogResult.error) {
+        db.insertSyncLog({
+          at: Date.now(),
+          kind: "catalog_push",
+          attempted: catalogResult.attempted,
+          succeeded: catalogResult.error ? 0 : catalogResult.attempted,
+          failed: catalogResult.error ? catalogResult.attempted : 0,
+          error: catalogResult.error ?? null,
+        }).catch(() => {});
+      }
+      // Log catalog pull activity (succeeded counts pulled rows).
+      if (catalogResult.succeeded > 0) {
+        db.insertSyncLog({
+          at: Date.now(),
+          kind: "catalog_pull",
+          attempted: catalogResult.succeeded,
+          succeeded: catalogResult.succeeded,
+          failed: 0,
+          error: null,
+        }).catch(() => {});
       }
 
       const error = salesResult.error ?? catalogResult.error ?? null;
@@ -303,6 +343,16 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     }
   }, [db, drain, refreshCount, session]);
 
+  const dismissSyncItem = useCallback(async (queueId: string): Promise<void> => {
+    await db.dismissSyncItem(queueId);
+    await refreshCount();
+  }, [db, refreshCount]);
+
+  const dismissCatalogItem = useCallback(async (outboxId: string): Promise<void> => {
+    await db.dismissCatalogItem(outboxId);
+    await refreshCount();
+  }, [db, refreshCount]);
+
   return (
     <SyncContext.Provider
       value={{
@@ -313,6 +363,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         lastError,
         syncNow,
         adoptLocalDataForCurrentLicense,
+        dismissSyncItem,
+        dismissCatalogItem,
       }}
     >
       {children}

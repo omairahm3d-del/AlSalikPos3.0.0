@@ -24,6 +24,7 @@ import { BusinessSettingsModal } from "@/components/BusinessSettingsModal";
 import { ProductsScreen } from "./products";
 import { CustomersScreen } from "./customers";
 import { ReportsHub } from "@/components/ReportsHub";
+import { SyncQueueScreen } from "@/components/SyncQueueScreen";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useLicense } from "@/context/LicenseContext";
 import { useStaff } from "@/context/StaffContext";
@@ -82,7 +83,8 @@ type Section =
   | "purchases"
   | "receiveStock"
   | "expenses"
-  | "suppliers";
+  | "suppliers"
+  | "syncQueue";
 
 interface SectionCard {
   id: Section;
@@ -116,6 +118,7 @@ const SECTIONS: SectionCard[] = [
   { id: "business", icon: "briefcase", title: "Business Settings", subtitle: "Company info & loyalty", color: "#6C63FF", permKey: "boBusiness" },
   { id: "emailSettings", icon: "mail", title: "Email Settings", subtitle: "Z-Report email delivery", color: "#3498DB", permKey: "boBusiness" },
   { id: "database", icon: "database", title: "Database", subtitle: "Backup, restore & clear data", color: "#16A085" },
+  { id: "syncQueue", icon: "refresh-cw", title: "Sync Queue", subtitle: "Pending items & sync history", color: "#3B82F6" },
   { id: "permissions", icon: "shield", title: "Permissions", subtitle: "Configure staff access rights", color: "#E74C3C", adminOnly: true },
 ];
 
@@ -278,6 +281,7 @@ export default function BackOfficeScreen() {
     if (sec === "receiveStock") { router.push("/receive-stock"); return; }
     if (sec === "expenses") { router.push("/expenses"); return; }
     if (sec === "suppliers") { router.push("/suppliers"); return; }
+    if (sec === "syncQueue") { setSection("syncQueue"); return; }
     setSection(sec);
     if (sec === "staff") loadStaffList();
     if (sec === "tax") loadTaxList();
@@ -1923,6 +1927,9 @@ export default function BackOfficeScreen() {
       case "permissions": return renderPermissions();
       case "emailSettings": return renderEmailSettings();
       case "database": return renderDatabase();
+      case "syncQueue": return (
+        <SyncQueueScreen onBack={() => setSection("menu")} />
+      );
       case "business": {
         setSection("menu");
         setShowBizSettings(true);
