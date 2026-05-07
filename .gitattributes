@@ -1,1 +1,2 @@
 Al-Salik-POS-Setup-1.0.0.zip filter=lfs diff=lfs merge=lfs -text
+artifacts/admin/public/AlSalikPOS-Setup-1.0.0.exe filter=lfs diff=lfs merge=lfs -text
