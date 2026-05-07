@@ -243,20 +243,7 @@ export default function BackOfficeScreen() {
     setCategories(cats);
   }, [db]);
 
-  const handleDeactivate = useCallback(() => {
-    Alert.alert(
-      "Deactivate Device",
-      "This will sign this device out of its license. You will need to enter a license key again to use the POS.\n\nAll local data (products, sales history) stays on this device.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Deactivate",
-          style: "destructive",
-          onPress: () => deactivate(),
-        },
-      ],
-    );
-  }, [deactivate]);
+  const [confirmingDeactivate, setConfirmingDeactivate] = useState(false);
 
   useEffect(() => {
     loadAllSettings();
@@ -798,11 +785,28 @@ export default function BackOfficeScreen() {
                 {licenseSession.branch ? licenseSession.branch.name + " · " : ""}
                 {licenseSession.license.licenseType === "offline" ? "Offline license" : "Online license"}
               </Text>
+              {confirmingDeactivate && (
+                <Text style={[s.deactivateWarning, { color: colors.mutedForeground }]}>
+                  This device will need a license key to reactivate. Local data stays on device.
+                </Text>
+              )}
             </View>
-            <TouchableOpacity onPress={handleDeactivate} style={s.deactivateBtn}>
-              <Feather name="log-out" size={14} color="#E74C3C" />
-              <Text style={s.deactivateBtnText}>Deactivate</Text>
-            </TouchableOpacity>
+            {confirmingDeactivate ? (
+              <View style={s.deactivateConfirmRow}>
+                <TouchableOpacity onPress={() => setConfirmingDeactivate(false)} style={s.deactivateCancelBtn}>
+                  <Text style={[s.deactivateCancelText, { color: colors.mutedForeground }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => deactivate()} style={s.deactivateConfirmBtn}>
+                  <Feather name="log-out" size={13} color="#fff" />
+                  <Text style={s.deactivateConfirmText}>Confirm</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity onPress={() => setConfirmingDeactivate(true)} style={s.deactivateBtn}>
+                <Feather name="log-out" size={14} color="#E74C3C" />
+                <Text style={s.deactivateBtnText}>Deactivate</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -2202,10 +2206,16 @@ const s = StyleSheet.create({
   removeImageBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1 },
   lowStockBanner: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1 },
   recipeItemRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 0.5, gap: 8 },
-  deactivateCard: { flexDirection: "row", alignItems: "center", padding: 14, borderWidth: 1, marginTop: 12, gap: 12 },
+  deactivateCard: { flexDirection: "row", alignItems: "flex-start", padding: 14, borderWidth: 1, marginTop: 12, gap: 12 },
   deactivateInfo: { flex: 1 },
   deactivateTitle: { fontSize: 13, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
   deactivateSub: { fontSize: 11, marginTop: 2 },
+  deactivateWarning: { fontSize: 11, marginTop: 6, lineHeight: 15 },
   deactivateBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: "rgba(231,76,60,0.10)", borderWidth: 1, borderColor: "rgba(231,76,60,0.25)" },
   deactivateBtnText: { color: "#E74C3C", fontSize: 12, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
+  deactivateConfirmRow: { flexDirection: "column", gap: 6 },
+  deactivateCancelBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, alignItems: "center" },
+  deactivateCancelText: { fontSize: 12, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
+  deactivateConfirmBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: "#E74C3C" },
+  deactivateConfirmText: { color: "#fff", fontSize: 12, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
 });
