@@ -37,6 +37,15 @@
     "web": {
       "favicon": "./assets/images/icon.png"
     },
+    "updates": {
+      "url": "https://u.expo.dev/a4a8e51b-1f0e-415b-940e-7f8772437362",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "plugins": [
       [
         "expo-router",
@@ -44,6 +53,7 @@
           "origin": "https://replit.com/"
         }
       ],
+      "expo-updates",
       "expo-font",
       "expo-web-browser",
       [

@@ -63,6 +63,7 @@
     "expo-mail-composer": "^15.0.8",
     "expo-print": "~15.0.8",
     "expo-sharing": "^14.0.8",
+    "expo-updates": "^55.0.21",
     "qrcode": "^1.5.4"
   }
 }
