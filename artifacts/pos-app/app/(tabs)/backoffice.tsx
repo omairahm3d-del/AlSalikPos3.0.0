@@ -1627,8 +1627,9 @@ export default function BackOfficeScreen() {
       } else {
         Alert.alert("Connection Failed", result.message || "Could not connect to SMTP server.");
       }
-    } catch {
-      Alert.alert("Test Failed", "Could not reach the email server. Check your settings and ensure the API server is running.");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      Alert.alert("Test Failed", `Could not reach the email API.\n\n${msg}`);
     } finally {
       setIsSendingTest(false);
     }

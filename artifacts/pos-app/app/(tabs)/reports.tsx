@@ -166,9 +166,9 @@ export function ReportsScreen({ embedded = false }: { embedded?: boolean }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ to: recipientEmail, subject, html, config: smtp }),
         });
-        const result = await response.json() as { success: boolean; error?: string };
+        const result = await response.json() as { success: boolean; message?: string };
         if (result.success) return { ok: true, via: "smtp" };
-        return { ok: false, via: "smtp", error: result.error || "SMTP send failed" };
+        return { ok: false, via: "smtp", error: result.message || "SMTP send failed" };
       } catch (err: any) {
         return { ok: false, via: "smtp", error: err?.message || "Network error contacting SMTP server" };
       }

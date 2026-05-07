@@ -174,16 +174,13 @@ export function CloseRegisterModal({ visible, onClose, onSuccess }: Props) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ to, subject, html, config: smtp }),
         });
-        const json = await res.json() as { success: boolean; error?: string };
+        const json = await res.json() as { success: boolean; message?: string };
         if (json.success) return true;
-        if (Platform.OS !== "web") {
-          Alert.alert("Email Failed", json.error || "Could not send email. Check your SMTP settings.");
-        }
+        Alert.alert("Email Failed", json.message || "Could not send email. Check your SMTP settings in Back Office → Email.");
       } catch (err: any) {
-        if (Platform.OS !== "web") {
-          Alert.alert("Email Failed", err?.message || "Could not send email. Check your SMTP settings.");
-        }
+        Alert.alert("Email Failed", err?.message || "Could not reach the email server. Check that the API server is reachable.");
       }
+      return false;
     }
     if (Platform.OS === "web") {
       try {
