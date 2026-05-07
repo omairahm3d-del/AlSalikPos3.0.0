@@ -37,8 +37,9 @@ export default function StockScreen() {
   const insets = useSafeAreaInsets();
   const { session } = useLicense();
   const token = session?.token;
+  const isOffline = session?.license.licenseType === "offline";
   const db = useDatabase();
-  const { loadBusinessSettings, saveBusinessSettings, updateStock } = db;
+  const { loadBusinessSettings, saveBusinessSettings, updateStock, loadProducts } = db;
   const { syncNow } = useSync();
 
   const [stock, setStock] = useState<PosStockRow[] | null>(null);
@@ -54,9 +55,31 @@ export default function StockScreen() {
   const load = useCallback(async () => {
     if (!token) return;
     setError(null);
-    // Flush any pending sales first so the cloud stock_movements table
+
+    if (isOffline) {
+      // Offline license: read local product stock — no cloud calls at all.
+      try {
+        const products = await loadProducts();
+        const rows: PosStockRow[] = products
+          .filter((p) => p.stockTracked)
+          .map((p) => ({
+            productClientId: p.id,
+            productName: p.name,
+            sku: p.barcode ?? null,
+            onHand: String(p.stockQuantity ?? 0),
+          }));
+        setStock(rows);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load stock");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Online license: flush pending sales first so cloud stock_movements
     // reflects the latest local sales before we read on-hand figures.
-    try { await syncNow(); } catch { /* offline — proceed with cached cloud data */ }
+    try { await syncNow(); } catch { /* no connection — proceed with cached cloud data */ }
     try {
       const r = await posApi.listStock(token);
       setStock(r.stock);
@@ -65,7 +88,7 @@ export default function StockScreen() {
     } finally {
       setLoading(false);
     }
-  }, [token, syncNow]);
+  }, [token, isOffline, loadProducts, syncNow]);
 
   useEffect(() => {
     load();
@@ -164,13 +187,15 @@ export default function StockScreen() {
                 >
                   {onHand.toLocaleString()}
                 </Text>
-                <TouchableOpacity
-                  onPress={() => setHistoryFor(item)}
-                  hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
-                  style={s.iconBtn}
-                >
-                  <Feather name="clock" size={16} color={colors.mutedForeground} />
-                </TouchableOpacity>
+                {!isOffline && (
+                  <TouchableOpacity
+                    onPress={() => setHistoryFor(item)}
+                    hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+                    style={s.iconBtn}
+                  >
+                    <Feather name="clock" size={16} color={colors.mutedForeground} />
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity
                   onPress={() => setAdjusting(item)}
                   hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
@@ -227,6 +252,7 @@ export default function StockScreen() {
         <AdjustModal
           row={adjusting}
           token={token}
+          isOffline={isOffline}
           onClose={() => setAdjusting(null)}
           onSaved={async (delta) => {
             setAdjusting(null);
@@ -251,11 +277,13 @@ export default function StockScreen() {
 function AdjustModal({
   row,
   token,
+  isOffline,
   onClose,
   onSaved,
 }: {
   row: PosStockRow;
   token: string;
+  isOffline: boolean;
   onClose: () => void;
   onSaved: (delta: number) => void;
 }) {
@@ -273,13 +301,17 @@ function AdjustModal({
     if (delta === 0) return;
     setSaving(true);
     try {
-      await posApi.createAdjustment(token, {
-        productClientId: row.productClientId,
-        productName: row.productName,
-        sku: row.sku,
-        delta,
-        reason: reason.trim() || null,
-      });
+      if (!isOffline) {
+        // Online: persist to cloud stock_movements ledger.
+        await posApi.createAdjustment(token, {
+          productClientId: row.productClientId,
+          productName: row.productName,
+          sku: row.sku,
+          delta,
+          reason: reason.trim() || null,
+        });
+      }
+      // Offline (and online): caller mirrors delta into local product stock.
       onSaved(delta);
     } catch (e) {
       Alert.alert("Failed", e instanceof Error ? e.message : "Could not save adjustment.");

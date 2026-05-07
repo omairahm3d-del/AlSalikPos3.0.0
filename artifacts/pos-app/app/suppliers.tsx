@@ -143,6 +143,7 @@ export default function SuppliersScreen() {
   const insets = useSafeAreaInsets();
   const { session } = useLicense();
   const token = session?.token;
+  const isOffline = session?.license.licenseType === "offline";
 
   const [suppliers, setSuppliers] = useState<PosSupplier[]>([]);
   const [allPurchases, setAllPurchases] = useState<PosPurchaseRow[]>([]);
@@ -383,6 +384,10 @@ export default function SuppliersScreen() {
     );
     await printHtml(html);
   };
+
+  if (isOffline) {
+    return <OfflineLockout colors={colors} insets={insets} onBack={() => router.back()} title="Suppliers" />;
+  }
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -870,3 +875,34 @@ const styles = StyleSheet.create({
   metaCard: { borderWidth: 1, padding: 12, marginTop: 20, gap: 4 },
   metaCardRow: { fontSize: 12 },
 });
+
+function OfflineLockout({
+  colors, insets, onBack, title,
+}: {
+  colors: ReturnType<typeof import("@/hooks/useColors").useColors>;
+  insets: { top: number };
+  onBack: () => void;
+  title: string;
+}) {
+  return (
+    <View style={[styles.root, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+        <TouchableOpacity onPress={onBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Feather name="chevron-left" size={24} color={colors.foreground} />
+        </TouchableOpacity>
+        <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground }}>{title}</Text>
+        <View style={{ width: 24 }} />
+      </View>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <Feather name="wifi-off" size={40} color={colors.mutedForeground} />
+        <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 16, marginTop: 16, textAlign: "center" }}>
+          Not available on offline license
+        </Text>
+        <Text style={{ color: colors.mutedForeground, fontSize: 13, marginTop: 8, textAlign: "center", lineHeight: 20 }}>
+          This feature requires a cloud connection.{"\n"}Upgrade to an online license to access it.
+        </Text>
+      </View>
+    </View>
+  );
+}
