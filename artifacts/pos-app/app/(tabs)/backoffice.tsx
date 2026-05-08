@@ -1270,10 +1270,66 @@ export default function BackOfficeScreen() {
 
         {Platform.OS === "android" && (
           <View style={{ marginBottom: 16, padding: 12, backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}>
-            <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 14, marginBottom: 4 }}>Android Built-in Printer</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 14 }}>Sunmi Built-in Printer</Text>
+              <View style={{ backgroundColor: colors.primary + "20", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                <Text style={{ color: colors.primary, fontSize: 10, fontWeight: "700" }}>RECOMMENDED</Text>
+              </View>
+            </View>
             <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 12, lineHeight: 15 }}>
-              For devices like the FH100-A3-D with an internal 58mm thermal printer.
-              Sends ESC/POS commands directly to the printer device path — no dialog, no extra app.
+              For Sunmi POS devices (V1, V2, T2, P2, etc.) with internal thermal printers.
+              Uses the Sunmi AIDL SDK — no device path needed.
+            </Text>
+            {renderSwitch(
+              "Enable Sunmi printer",
+              !!printerSettings.sunmiEnabled,
+              (v) => setPrinterSettings({ ...printerSettings, sunmiEnabled: v }),
+            )}
+            {printerSettings.sunmiEnabled && (
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                <TouchableOpacity
+                  onPress={async () => {
+                    const { sunmiTestPrint } = await import("@/lib/printBridge");
+                    const ok = await sunmiTestPrint(printerSettings.autoCutPaper !== false);
+                    Alert.alert(
+                      ok ? "Test Sent" : "Test Failed",
+                      ok
+                        ? "ESC/POS bytes sent via Sunmi SDK.\nCheck if the printer printed a test strip."
+                        : "Could not reach the Sunmi printer service.\nMake sure this is a Sunmi device and the app was built with the Sunmi module.",
+                    );
+                  }}
+                  style={[s.chip, { borderColor: colors.success, borderStyle: "dashed", alignSelf: "flex-start", borderRadius: colors.radius, flexDirection: "row", gap: 6 }]}
+                >
+                  <Feather name="printer" size={12} color={colors.success} />
+                  <Text style={{ color: colors.success, fontWeight: "600", fontSize: 12 }}>Send Test Print</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={async () => {
+                    const { isSunmiDevice } = await import("@/lib/printBridge");
+                    const found = await isSunmiDevice();
+                    Alert.alert(
+                      found ? "Sunmi Detected" : "Not a Sunmi Device",
+                      found
+                        ? "Sunmi printer service is available on this device."
+                        : "No Sunmi printer service found.\nIf this is a Sunmi device, try rebuilding the APK with the Sunmi module included.",
+                    );
+                  }}
+                  style={[s.chip, { borderColor: colors.primary, borderStyle: "dashed", alignSelf: "flex-start", borderRadius: colors.radius, flexDirection: "row", gap: 6 }]}
+                >
+                  <Feather name="search" size={12} color={colors.primary} />
+                  <Text style={{ color: colors.primary, fontWeight: "600", fontSize: 12 }}>Detect Sunmi</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+
+        {Platform.OS === "android" && (
+          <View style={{ marginBottom: 16, padding: 12, backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}>
+            <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 14, marginBottom: 4 }}>Android Built-in Printer (Serial / USB)</Text>
+            <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 12, lineHeight: 15 }}>
+              For devices with a printer exposed as a serial or USB device path.
+              Sends ESC/POS commands directly — no dialog, no extra app.
             </Text>
             {renderSwitch(
               "Enable Android built-in printer",

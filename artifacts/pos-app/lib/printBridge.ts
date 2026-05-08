@@ -1,4 +1,4 @@
-import { Platform } from "react-native";
+import { NativeModules, Platform } from "react-native";
 
 type ElectronPrinter = {
   name: string;
@@ -56,7 +56,55 @@ export type PrintOpts = {
   autoCut?: boolean;
   codepage?: "cp437" | "cp1252" | "ascii";
   androidDevicePath?: string;
+  sunmiEnabled?: boolean;
 };
+
+// ─── Sunmi SDK ────────────────────────────────────────────────────────────────
+
+function getSunmiNative(): any | null {
+  try {
+    const { SunmiPrinter } = NativeModules;
+    return SunmiPrinter ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function isSunmiDevice(): Promise<boolean> {
+  if (Platform.OS !== "android") return false;
+  try {
+    const sdk = getSunmiNative();
+    if (!sdk?.hasPrinter) return false;
+    return await sdk.hasPrinter();
+  } catch {
+    return false;
+  }
+}
+
+export async function printWithSunmiSDK(
+  text: string,
+  opts: { autoCut?: boolean } = {},
+): Promise<boolean> {
+  if (Platform.OS !== "android") return false;
+  const sdk = getSunmiNative();
+  if (!sdk) return false;
+  try {
+    sdk.printerInit();
+    // Send as ESC/POS raw data — most reliable across all Sunmi models
+    const payload = buildEscPosBytes(text, opts.autoCut !== false);
+    const b64 = Buffer.from(payload, "binary").toString("base64");
+    sdk.sendRAWData(b64);
+    return true;
+  } catch (e: any) {
+    console.warn("[printBridge] Sunmi SDK print failed:", e?.message ?? e);
+    return false;
+  }
+}
+
+export async function sunmiTestPrint(autoCut = true): Promise<boolean> {
+  const text = `SUNMI PRINTER TEST\n${new Date().toLocaleString("en-GB")}\n--------------------------------\nPrinter is working correctly.\n--------------------------------\n`;
+  return printWithSunmiSDK(text, { autoCut });
+}
 
 function buildEscPosBytes(text: string, autoCut: boolean): string {
   const ESC = "\x1B";
@@ -125,6 +173,12 @@ export async function printRawText(text: string, opts: { deviceName?: string; au
 }
 
 export async function printHtml(html: string, opts: PrintOpts = {}): Promise<boolean> {
+  // Sunmi SDK — highest priority on Android when enabled
+  if (Platform.OS === "android" && opts.sunmiEnabled && opts.rawText) {
+    const ok = await printWithSunmiSDK(opts.rawText, { autoCut: opts.autoCut });
+    if (ok) return true;
+  }
+
   if (Platform.OS === "android" && opts.androidDevicePath && opts.rawText) {
     const ok = await printAndroidDevice(opts.rawText, {
       devicePath: opts.androidDevicePath,

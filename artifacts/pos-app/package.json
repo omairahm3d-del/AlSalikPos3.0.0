@@ -60,6 +60,7 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "@heasy/react-native-sunmi-printer": "^1.8.4",
     "expo-camera": "^17.0.10",
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.22",

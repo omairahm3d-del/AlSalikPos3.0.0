@@ -291,6 +291,7 @@ export interface PrinterSettings {
   rawCodepage?: "cp437" | "cp1252" | "ascii";
   androidPrinterEnabled?: boolean;
   androidPrinterPath?: string;
+  sunmiEnabled?: boolean;
 }
 
 export interface KOTSettings {

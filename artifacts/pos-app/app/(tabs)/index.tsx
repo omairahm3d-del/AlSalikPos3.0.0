@@ -336,12 +336,24 @@ export default function POSScreen() {
       });
       const { printHtml } = await import("@/lib/printBridge");
       const ps = businessSettings?.printerSettings;
+      const needRaw = ps?.rawTextMode || !!ps?.androidPrinterEnabled || !!ps?.sunmiEnabled;
+      let rawText: string | undefined;
+      if (needRaw) {
+        const { generateReceiptText } = await import("@/lib/textReceipt");
+        rawText = generateReceiptText(
+          { ...cartItems[0] } as any,
+          cartItems as any,
+          businessSettings as any,
+        );
+      }
       await printHtml(html, {
         deviceName: ps?.windowsReceiptPrinterName || "",
         paperWidth: ps?.paperWidth || "80mm",
         rawMode: !!ps?.rawTextMode,
+        rawText,
         autoCut: ps?.autoCutPaper !== false,
         codepage: ps?.rawCodepage || "cp1252",
+        sunmiEnabled: !!ps?.sunmiEnabled,
         androidDevicePath: ps?.androidPrinterEnabled ? (ps?.androidPrinterPath || "/dev/prnt") : undefined,
       });
     } catch (e: any) {
