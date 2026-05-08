@@ -7,6 +7,7 @@ import {
   useIssueLicense,
   useRevokeLicense,
   useExtendLicense,
+  useSetDeviceLimit,
   useCompanyBranches,
   useCreateBranch,
   useUpdateBranch,
@@ -27,7 +28,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { format, formatDistanceToNow, parseISO } from "date-fns";
-import { ArrowLeft, CalendarClock, Copy, Eye, EyeOff, KeyRound, MonitorSmartphone, Plus, ShieldAlert, XCircle, CheckCircle2, Building2, Star, UserCog } from "lucide-react";
+import { ArrowLeft, CalendarClock, Copy, Eye, EyeOff, KeyRound, MonitorSmartphone, Plus, ShieldAlert, XCircle, CheckCircle2, Building2, Star, UserCog, Smartphone } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function maskKey(key: string) {
@@ -48,6 +49,7 @@ export function CompanyDetail() {
   const issueLicense = useIssueLicense();
   const revokeLicense = useRevokeLicense();
   const extendLicense = useExtendLicense();
+  const setDeviceLimit = useSetDeviceLimit();
   const createBranch = useCreateBranch(companyId || "");
   const updateBranch = useUpdateBranch(companyId || "");
   const createManager = useCreateManager(companyId || "");
@@ -60,6 +62,8 @@ export function CompanyDetail() {
   const [revokeOpen, setRevokeOpen] = useState<string | null>(null);
   const [extendOpen, setExtendOpen] = useState<string | null>(null);
   const [extendDate, setExtendDate] = useState("");
+  const [deviceLimitOpen, setDeviceLimitOpen] = useState<string | null>(null);
+  const [newDeviceLimit, setNewDeviceLimit] = useState(1);
   const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
 
   const [branchOpen, setBranchOpen] = useState(false);
@@ -295,6 +299,22 @@ export function CompanyDetail() {
     }
   };
 
+  const handleSetDeviceLimit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deviceLimitOpen) return;
+    try {
+      await setDeviceLimit.mutateAsync({
+        companyId: company.id,
+        licenseId: deviceLimitOpen,
+        maxDevices: newDeviceLimit,
+      });
+      toast({ title: "Device limit updated.", description: `New limit: ${newDeviceLimit} device(s).` });
+      setDeviceLimitOpen(null);
+    } catch (err: any) {
+      toast({ title: "Failed to update device limit", description: err.message, variant: "destructive" });
+    }
+  };
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
@@ -525,6 +545,55 @@ export function CompanyDetail() {
                                   <Button variant="outline" type="button" onClick={() => setExtendOpen(null)}>Cancel</Button>
                                   <Button type="submit" disabled={extendLicense.isPending}>
                                     {extendLicense.isPending ? "Saving…" : "Save New Expiry"}
+                                  </Button>
+                                </DialogFooter>
+                              </form>
+                            </DialogContent>
+                          </Dialog>
+                        )}
+                        {license.status !== 'revoked' && (
+                          <Dialog open={deviceLimitOpen === license.id} onOpenChange={(open) => {
+                            if (open) {
+                              setNewDeviceLimit(license.maxDevices);
+                              setDeviceLimitOpen(license.id);
+                            } else {
+                              setDeviceLimitOpen(null);
+                            }
+                          }}>
+                            <DialogTrigger asChild>
+                              <Button variant="outline" size="sm">
+                                <Smartphone className="mr-2 h-4 w-4" /> Devices
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <form onSubmit={handleSetDeviceLimit}>
+                                <DialogHeader>
+                                  <DialogTitle className="flex items-center gap-2">
+                                    <Smartphone className="h-5 w-5 text-primary" /> Set Device Limit
+                                  </DialogTitle>
+                                  <DialogDescription>
+                                    Change the maximum number of devices that can activate with this license key. Currently {devices.filter(d => d.licenseId === license.id).length} device(s) are active.
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <div className="py-4 space-y-4">
+                                  <code className="font-mono text-center block bg-muted p-2 rounded text-sm">{license.key}</code>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="newDeviceLimit">Max Devices</Label>
+                                    <Input
+                                      id="newDeviceLimit"
+                                      type="number"
+                                      min={1}
+                                      max={1000}
+                                      value={newDeviceLimit}
+                                      onChange={(e) => setNewDeviceLimit(Number(e.target.value))}
+                                    />
+                                    <p className="text-xs text-muted-foreground">Must be at least 1. Setting it lower than the current active device count will prevent new activations but won't disconnect existing devices.</p>
+                                  </div>
+                                </div>
+                                <DialogFooter>
+                                  <Button variant="outline" type="button" onClick={() => setDeviceLimitOpen(null)}>Cancel</Button>
+                                  <Button type="submit" disabled={setDeviceLimit.isPending}>
+                                    {setDeviceLimit.isPending ? "Saving…" : "Save Device Limit"}
                                   </Button>
                                 </DialogFooter>
                               </form>

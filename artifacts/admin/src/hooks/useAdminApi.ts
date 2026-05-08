@@ -192,3 +192,15 @@ export function useExtendLicense() {
     },
   });
 }
+
+export function useSetDeviceLimit() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ companyId, licenseId, maxDevices }: { companyId: string; licenseId: string; maxDevices: number }) =>
+      adminApi.setDeviceLimit(companyId, licenseId, maxDevices),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "company", variables.companyId, "licenses"] });
+    },
+  });
+}

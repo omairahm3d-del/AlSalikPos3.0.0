@@ -48,4 +48,17 @@ export const licenseRepo = {
       .returning();
     return row;
   },
+
+  async setMaxDevices(
+    id: string,
+    companyId: string,
+    maxDevices: number,
+  ): Promise<License | undefined> {
+    const [row] = await saasDb
+      .update(licensesTable)
+      .set({ maxDevices })
+      .where(and(eq(licensesTable.id, id), eq(licensesTable.companyId, companyId)))
+      .returning();
+    return row;
+  },
 };

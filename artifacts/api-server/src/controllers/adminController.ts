@@ -43,6 +43,10 @@ const revokeLicenseParams = z.object({
   licenseId: z.string().uuid(),
 });
 
+const setDeviceLimitBody = z.object({
+  maxDevices: z.number().int().min(1).max(1000),
+});
+
 const extendLicenseBody = z.object({
   expiresAt: isoDate.nullable(),
 });
@@ -101,6 +105,15 @@ export const adminController = {
     const license = await licenseRepo.extend(licenseId, companyId, expiresAt);
     if (!license) throw notFound("license_not_found", "License not found");
     req.log.info({ licenseId, expiresAt }, "License extended");
+    res.json({ license });
+  },
+
+  async setDeviceLimit(req: Request, res: Response) {
+    const { companyId, licenseId } = revokeLicenseParams.parse(req.params);
+    const { maxDevices } = setDeviceLimitBody.parse(req.body);
+    const license = await licenseRepo.setMaxDevices(licenseId, companyId, maxDevices);
+    if (!license) throw notFound("license_not_found", "License not found");
+    req.log.info({ licenseId, maxDevices }, "License device limit updated");
     res.json({ license });
   },
 

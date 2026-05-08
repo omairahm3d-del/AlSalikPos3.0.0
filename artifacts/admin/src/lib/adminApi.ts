@@ -200,6 +200,16 @@ export const adminApi = {
       body: JSON.stringify(input),
     });
   },
+  setDeviceLimit(
+    companyId: string,
+    licenseId: string,
+    maxDevices: number,
+  ): Promise<{ license: License }> {
+    return request(`/companies/${companyId}/licenses/${licenseId}/devices`, {
+      method: "PATCH",
+      body: JSON.stringify({ maxDevices }),
+    });
+  },
   listBranches(companyId: string): Promise<{ branches: Branch[] }> {
     return request(`/companies/${companyId}/branches`);
   },

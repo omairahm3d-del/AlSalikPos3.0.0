@@ -28,6 +28,10 @@ router.patch(
   "/admin/companies/:companyId/licenses/:licenseId/extend",
   asyncHandler(adminController.extendLicense),
 );
+router.patch(
+  "/admin/companies/:companyId/licenses/:licenseId/devices",
+  asyncHandler(adminController.setDeviceLimit),
+);
 
 router.get(
   "/admin/companies/:companyId/branches",
