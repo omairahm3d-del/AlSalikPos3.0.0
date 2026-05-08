@@ -58,7 +58,7 @@ export function generateReceiptHTML(
     .map(
       (item) => `
       <tr>
-        <td style="padding:4px 0;text-align:left;">${item.productName}</td>
+        <td style="padding:4px 0;text-align:left;">${item.productName}${item.stylistName ? `<br/><small style="color:#555;font-size:${fs.body - 2}px;">✂ ${item.stylistName}</small>` : ""}</td>
         <td style="padding:4px 8px;text-align:center;">${Math.abs(item.quantity)}</td>
         <td style="padding:4px 8px;text-align:right;">${fmt(item.productPrice)}</td>
         <td style="padding:4px 0;text-align:right;">${fmt(item.lineTotal)}${(item.discountAmount ?? 0) > 0 ? `<br/><small style="color:#000;">-${fmt(item.discountAmount!)}</small>` : ""}</td>

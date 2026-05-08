@@ -26,7 +26,7 @@ export function generateBillHTML(
   const itemsHTML = items.map((item) => {
     const lineTotal = item.product.price * item.quantity - (item.discountAmount ?? 0);
     return `<tr>
-      <td style="padding:4px 0">${item.product.name}</td>
+      <td style="padding:4px 0">${item.product.name}${item.stylistName ? `<br/><span style="font-size:10px;color:#888;">✂ ${item.stylistName}</span>` : ""}</td>
       <td style="text-align:center;padding:4px 0">${item.quantity}</td>
       <td style="text-align:right;padding:4px 0">${formatCurrency(item.product.price)}</td>
       <td style="text-align:right;padding:4px 0">${formatCurrency(lineTotal)}</td>

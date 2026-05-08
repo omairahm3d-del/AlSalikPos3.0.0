@@ -54,7 +54,7 @@ export default function POSScreen() {
   const insets = useSafeAreaInsets();
   const isTablet = width >= 768;
 
-  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder } = useDatabase();
+  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder, loadStaff } = useDatabase();
   const { currentStaff } = useStaff();
   const { isSaloon } = useWorkMode();
   const {
@@ -81,6 +81,7 @@ export default function POSScreen() {
   const [products, setProducts] = useState<Product[]>([]);
   const [tables, setTables] = useState<PosTable[]>([]);
   const [riders, setRiders] = useState<Rider[]>([]);
+  const [allStaff, setAllStaff] = useState<import("@/types").Staff[]>([]);
   const [taxGroupMap, setTaxGroupMap] = useState<Record<string, number>>({});
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [dynamicCategories, setDynamicCategories] = useState<string[]>(["All"]);
@@ -165,10 +166,11 @@ export default function POSScreen() {
   const splitRemaining = finalTotal - splitEntries.reduce((s, e) => s + e.amount, 0);
 
   const fetchData = useCallback(async () => {
-    const [prods, tbls, biz, tgs, cats, rdrs] = await Promise.all([loadProducts(), loadTables(), loadBusinessSettings(), loadTaxGroups(), loadCategories(), loadRiders()]);
+    const [prods, tbls, biz, tgs, cats, rdrs, staff] = await Promise.all([loadProducts(), loadTables(), loadBusinessSettings(), loadTaxGroups(), loadCategories(), loadRiders(), loadStaff()]);
     setProducts(prods);
     setTables(tbls);
     setRiders(rdrs.filter((r: Rider) => r.active));
+    setAllStaff(staff.filter((s) => s.active));
     setLoyaltyRate(biz.loyaltyRedemptionRate || 0.01);
     setKotSettings(biz.kotSettings ?? DEFAULT_KOT_SETTINGS);
     setBusinessSettings(biz);
@@ -178,7 +180,7 @@ export default function POSScreen() {
     const catNames = cats.length > 0 ? ["All", ...cats.map((c: Category) => c.name)] : ["All"];
     setDynamicCategories(catNames);
     setLoading(false);
-  }, [loadProducts, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, loadRiders]);
+  }, [loadProducts, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, loadRiders, loadStaff]);
 
   // Fetches on first focus AND every time the Register tab regains focus,
   // so newly added/edited products, categories, tables, riders and business
@@ -550,6 +552,16 @@ export default function POSScreen() {
   const renderCartItem = useCallback(({ item }: { item: import("@/types").CartItem }) => (
     <View>
       <CartItemRow item={item} onUpdateQuantity={updateQuantity} onRemoveItem={removeItem} />
+      {isSaloon && (
+        <TouchableOpacity
+          onPress={() => setShowStylistPicker(item.product.id)}
+          style={{ paddingHorizontal: 12, paddingBottom: 2 }}
+        >
+          <Text style={{ fontSize: 11, color: item.stylistName ? "#E91E8C" : colors.mutedForeground }}>
+            {item.stylistName ? `✂ ${item.stylistName}` : "✂ Assign stylist…"}
+          </Text>
+        </TouchableOpacity>
+      )}
       {item.discountAmount && item.discountAmount > 0 ? (
         <View style={styles.itemDiscRow}>
           <Text style={{ color: colors.success, fontSize: 11 }}>
@@ -587,7 +599,7 @@ export default function POSScreen() {
         )}
       </View>
     </View>
-  ), [colors, setItemDiscount, updateQuantity, removeItem, setItemPrice]);
+  ), [colors, isSaloon, setItemDiscount, updateQuantity, removeItem, setItemPrice, setShowStylistPicker]);
 
   const cartKeyExtractor = useCallback((item: import("@/types").CartItem) => item.product.id, []);
 
@@ -1399,38 +1411,50 @@ export default function POSScreen() {
           <View style={[styles.paymentSheet, { backgroundColor: colors.card, borderRadius: colors.radius }]}>
             <Text style={[styles.paymentTitle, { color: colors.foreground }]}>Assign Stylist</Text>
             <Text style={[styles.paymentLabel, { color: colors.mutedForeground, marginBottom: 12 }]}>
-              Choose the stylist for this service (optional)
+              Choose the stylist for this service
             </Text>
-            <TouchableOpacity
-              onPress={() => setShowStylistPicker(null)}
-              style={[styles.cancelBtn, { borderColor: colors.border, borderRadius: colors.radius, marginBottom: 8 }]}
-            >
-              <Text style={{ color: colors.mutedForeground, fontWeight: "600" }}>Skip</Text>
-            </TouchableOpacity>
-            <ScrollView style={{ maxHeight: 280 }}>
-              {cartItems
-                .filter((ci) => ci.product.id === showStylistPicker)
-                .slice(-1)
-                .map((ci) => (
-                  <View key={ci.product.id}>
-                    {([] as Array<{ id: string; name: string }>)
-                      .concat(
-                        currentStaff ? [{ id: currentStaff.id, name: currentStaff.name }] : []
-                      )
-                      .map((s) => (
-                        <TouchableOpacity
-                          key={s.id}
-                          onPress={() => {
-                            setItemStylist(ci.product.id, s.id, s.name);
-                            setShowStylistPicker(null);
-                          }}
-                          style={[styles.customerPickerBtn, { borderColor: colors.border, borderRadius: colors.radius, marginBottom: 6 }]}
-                        >
-                          <Text style={{ color: colors.foreground, fontWeight: "600" }}>{s.name}</Text>
-                        </TouchableOpacity>
-                      ))}
-                  </View>
-                ))}
+            <ScrollView style={{ maxHeight: 320 }}>
+              {/* "None" option to clear */}
+              <TouchableOpacity
+                onPress={() => {
+                  if (showStylistPicker) setItemStylist(showStylistPicker, undefined, undefined);
+                  setShowStylistPicker(null);
+                }}
+                style={[styles.customerPickerBtn, { borderColor: colors.border, borderRadius: colors.radius, marginBottom: 6 }]}
+              >
+                <Text style={{ color: colors.mutedForeground, fontWeight: "600" }}>— None / Skip</Text>
+              </TouchableOpacity>
+              {allStaff.map((s) => {
+                const isCurrentItem = cartItems.find((ci) => ci.product.id === showStylistPicker);
+                const isAssigned = isCurrentItem?.stylistId === s.id;
+                return (
+                  <TouchableOpacity
+                    key={s.id}
+                    onPress={() => {
+                      if (showStylistPicker) setItemStylist(showStylistPicker, s.id, s.name);
+                      setShowStylistPicker(null);
+                    }}
+                    style={[
+                      styles.customerPickerBtn,
+                      {
+                        borderColor: isAssigned ? "#E91E8C" : colors.border,
+                        borderRadius: colors.radius,
+                        marginBottom: 6,
+                        backgroundColor: isAssigned ? "#E91E8C18" : "transparent",
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: isAssigned ? "#E91E8C" : colors.foreground, fontWeight: "600" }}>
+                      {s.name}{isAssigned ? " ✓" : ""}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+              {allStaff.length === 0 && (
+                <Text style={{ color: colors.mutedForeground, fontSize: 13, textAlign: "center", padding: 16 }}>
+                  No active staff found. Add staff in the Staff tab.
+                </Text>
+              )}
             </ScrollView>
           </View>
         </View>
