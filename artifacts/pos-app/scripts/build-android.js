@@ -8,23 +8,51 @@
  *   node scripts/build-android.js --release                      # same as above
  *
  * Profile selection (highest priority wins):
- *   1. --release CLI flag  → "production" (AAB)
- *   2. EAS_PROFILE env var → whatever value you set
- *   3. default             → "preview"   (APK)
+ *   1. --release CLI flag  -> "production" (AAB)
+ *   2. EAS_PROFILE env var -> whatever value you set
+ *   3. default             -> "preview"   (APK)
  *
  * Required env:
- *   EXPO_TOKEN        – Expo account token with EAS build access
+ *   EXPO_TOKEN        - Expo account token with EAS build access
  *
  * Optional env:
- *   EAS_PROFILE       – EAS build profile to use (default: "preview")
+ *   EAS_PROFILE       - EAS build profile to use (default: "preview")
  *                       "preview" produces an APK; "production" produces an AAB.
- *   EAS_NO_DOWNLOAD   – Set to "1" to skip the automatic APK download and only
+ *   EAS_NO_DOWNLOAD   - Set to "1" to skip the automatic APK download and only
  *                       print the direct link.
- *   BUILD_WEBHOOK_URL – Webhook URL to POST a notification when the build
- *                       finishes or fails. Payload is Slack-compatible, so a
+ *   BUILD_WEBHOOK_URL - Shared team webhook URL to POST a notification when the
+ *                       build finishes or fails. Payload is Slack-compatible, so a
  *                       Slack incoming-webhook URL works out of the box. Also
  *                       works with Discord and any generic JSON webhook.
  *                       Store this value as a Replit secret named BUILD_WEBHOOK_URL.
+ *                       Individual developers can override this (and more) via the
+ *                       per-developer config file described below.
+ *
+ * Per-developer notification config (.build-notify.json):
+ *   Each developer can create a file named `.build-notify.json` in the
+ *   `artifacts/pos-app/` directory to customise where build notifications are
+ *   sent.  This file is git-ignored so personal URLs never end up in source
+ *   control.  Supported fields:
+ *
+ *   {
+ *     "webhookUrl": "https://hooks.slack.com/services/YOUR/PERSONAL/WEBHOOK",
+ *     "channel":    "#my-personal-channel",
+ *     "mute":       false
+ *   }
+ *
+ *   Field reference:
+ *     webhookUrl  (string)  Personal webhook URL. Overrides BUILD_WEBHOOK_URL.
+ *                           Must be an HTTPS URL. Works with Slack incoming
+ *                           webhooks, Discord, and any JSON-accepting endpoint.
+ *     channel     (string)  Optional Slack channel name (e.g. "#builds").
+ *                           Included in the notification payload when provided.
+ *     mute        (boolean) When true, suppresses all notifications regardless
+ *                           of whether BUILD_WEBHOOK_URL is also set.
+ *
+ *   Resolution order (highest priority first):
+ *     1. .build-notify.json  webhookUrl  (personal override)
+ *     2. BUILD_WEBHOOK_URL   env var     (shared team secret / Replit secret)
+ *     3. No notifications    (neither source provides a URL)
  */
 
 const { spawn } = require("child_process");
@@ -34,7 +62,7 @@ const path = require("path");
 
 const projectRoot = path.resolve(__dirname, "..");
 
-// --release flag overrides everything → always "production".
+// --release flag overrides everything -> always "production".
 const hasReleaseFlag = process.argv.includes("--release");
 const profile = hasReleaseFlag
   ? "production"
@@ -43,12 +71,88 @@ const profile = hasReleaseFlag
 const skipDownload = process.env.EAS_NO_DOWNLOAD === "1";
 
 /**
+ * Load the optional per-developer notification config from `.build-notify.json`.
+ * Returns an object with { webhookUrl, channel, mute } — all fields optional.
+ * Returns an empty object if the file does not exist or cannot be parsed.
+ *
+ * The result is cached after the first call so the file is read at most once
+ * per process and any parse-error warnings appear exactly once.
+ *
+ * @returns {{ webhookUrl?: string, channel?: string, mute?: boolean }}
+ */
+let _notifyConfigCache = null;
+function loadNotifyConfig() {
+  if (_notifyConfigCache !== null) return _notifyConfigCache;
+  const configPath = path.join(projectRoot, ".build-notify.json");
+  if (!fs.existsSync(configPath)) {
+    _notifyConfigCache = {};
+    return _notifyConfigCache;
+  }
+  try {
+    const raw = fs.readFileSync(configPath, "utf8");
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      console.warn("  [notify] .build-notify.json must be a JSON object — ignoring.");
+      _notifyConfigCache = {};
+      return _notifyConfigCache;
+    }
+    _notifyConfigCache = {
+      webhookUrl: typeof parsed.webhookUrl === "string" ? parsed.webhookUrl : undefined,
+      channel:    typeof parsed.channel    === "string" ? parsed.channel    : undefined,
+      mute:       parsed.mute === true,
+    };
+    return _notifyConfigCache;
+  } catch (err) {
+    console.warn(`  [notify] Failed to read .build-notify.json: ${err.message} — ignoring.`);
+    _notifyConfigCache = {};
+    return _notifyConfigCache;
+  }
+}
+
+/**
+ * Resolve the webhook URL and mute flag from the per-developer config file
+ * and the BUILD_WEBHOOK_URL environment variable.
+ *
+ * Resolution order (highest priority first):
+ *   1. .build-notify.json webhookUrl
+ *   2. BUILD_WEBHOOK_URL env var
+ *
+ * If mute is true in .build-notify.json, returns { webhookUrl: null, mute: true }.
+ *
+ * Also returns `urlSource` ("local-config" | "env-var" | null) so callers can
+ * accurately report which source provided the webhook URL.
+ *
+ * @returns {{ webhookUrl: string|null, channel: string|null, mute: boolean, urlSource: string|null }}
+ */
+function resolveNotifySettings() {
+  const config = loadNotifyConfig();
+  if (config.mute) {
+    return { webhookUrl: null, channel: null, mute: true, urlSource: null };
+  }
+  if (config.webhookUrl) {
+    return {
+      webhookUrl: config.webhookUrl,
+      channel: config.channel || null,
+      mute: false,
+      urlSource: "local-config",
+    };
+  }
+  const envUrl = process.env.BUILD_WEBHOOK_URL || null;
+  return {
+    webhookUrl: envUrl,
+    channel: null,
+    mute: false,
+    urlSource: envUrl ? "env-var" : null,
+  };
+}
+
+/**
  * Send a build notification to the configured webhook URL.
  *
- * Set BUILD_WEBHOOK_URL in your Replit secrets to enable notifications.
- * The payload is Slack-compatible (works with Slack incoming webhooks,
- * Discord webhook URLs, and any service that accepts JSON POST requests).
- * Only HTTPS webhook URLs are supported.
+ * The webhook URL is resolved from .build-notify.json first, then the
+ * BUILD_WEBHOOK_URL environment variable. The payload is Slack-compatible
+ * (works with Slack incoming webhooks, Discord webhook URLs, and any service
+ * that accepts JSON POST requests). Only HTTPS webhook URLs are supported.
  *
  * @param {"success"|"failure"|"cancelled"|"timeout"} outcome
  * @param {string|null} buildUrl  EAS dashboard URL
@@ -57,20 +161,26 @@ const skipDownload = process.env.EAS_NO_DOWNLOAD === "1";
  * @returns {Promise<void>}
  */
 async function sendWebhookNotification(outcome, buildUrl, artifactUrl, errorMessage = null) {
-  const webhookUrl = process.env.BUILD_WEBHOOK_URL;
+  const { webhookUrl, channel, mute } = resolveNotifySettings();
+
+  if (mute) {
+    console.log("  [notify] Notifications muted via .build-notify.json — skipping.");
+    return;
+  }
+
   if (!webhookUrl) return;
 
   let parsed;
   try {
     parsed = new URL(webhookUrl);
   } catch {
-    console.warn("  [notify] BUILD_WEBHOOK_URL is not a valid URL — skipping notification.");
+    console.warn("  [notify] Webhook URL is not valid — skipping notification.");
     return;
   }
 
   if (parsed.protocol !== "https:") {
     console.warn(
-      `  [notify] BUILD_WEBHOOK_URL uses protocol "${parsed.protocol}" — only HTTPS is supported. Skipping notification.`
+      `  [notify] Webhook URL uses protocol "${parsed.protocol}" — only HTTPS is supported. Skipping notification.`
     );
     return;
   }
@@ -98,7 +208,7 @@ async function sendWebhookNotification(outcome, buildUrl, artifactUrl, errorMess
     fields.push({ title: "Download", value: artifactUrl, short: false });
   }
 
-  const payload = JSON.stringify({
+  const payloadObj = {
     text: `${emoji} *Al Salik Android build — ${statusLabel}*`,
     attachments: [
       {
@@ -108,7 +218,13 @@ async function sendWebhookNotification(outcome, buildUrl, artifactUrl, errorMess
         ts: Math.floor(Date.now() / 1000),
       },
     ],
-  });
+  };
+
+  if (channel) {
+    payloadObj.channel = channel;
+  }
+
+  const payload = JSON.stringify(payloadObj);
 
   return new Promise((resolve) => {
     const options = {
@@ -354,7 +470,7 @@ async function pollBuildStatus(buildId) {
       // Permanent errors (auth, not-found) should abort immediately.
       const isPermanent = /HTTP 40[134]/.test(err.message);
       if (isPermanent) throw err;
-      console.warn(`  [poll #${attempt}] API request failed: ${err.message} — retrying…`);
+      console.warn(`  [poll #${attempt}] API request failed: ${err.message} — retrying...`);
       await sleep(POLL_INTERVAL_MS);
       continue;
     }
@@ -388,7 +504,7 @@ async function pollBuildStatus(buildId) {
 
 /**
  * Infer the file extension for a downloaded build artifact.
- * Priority: extension embedded in the artifact URL → profile heuristic.
+ * Priority: extension embedded in the artifact URL -> profile heuristic.
  *
  * EAS "preview" profiles emit APKs; "production" profiles emit AABs.
  *
@@ -402,7 +518,7 @@ function inferArtifactExtension(artifactUrl, buildProfile) {
     if (urlPath.endsWith(".apk")) return ".apk";
     if (urlPath.endsWith(".aab")) return ".aab";
   }
-  // Fall back to profile heuristic: "production" → AAB, everything else → APK.
+  // Fall back to profile heuristic: "production" -> AAB, everything else -> APK.
   return buildProfile === "production" ? ".aab" : ".apk";
 }
 
@@ -455,7 +571,7 @@ function downloadFile(url, destPath) {
           received += chunk.length;
           if (total > 0) {
             const pct = ((received / total) * 100).toFixed(1);
-            process.stdout.write(`\r  Downloading… ${pct}% (${(received / 1024 / 1024).toFixed(1)} MB)`);
+            process.stdout.write(`\r  Downloading... ${pct}% (${(received / 1024 / 1024).toFixed(1)} MB)`);
           }
         });
         res.pipe(file);
@@ -489,11 +605,20 @@ async function main() {
   printBanner();
   checkToken();
 
-  if (!process.env.BUILD_WEBHOOK_URL) {
+  const { webhookUrl, channel, mute, urlSource } = resolveNotifySettings();
+  if (mute) {
+    console.log("  [notify] Notifications muted via .build-notify.json.\n");
+  } else if (!webhookUrl) {
     console.log(
-      "  [notify] BUILD_WEBHOOK_URL is not set — notifications are disabled.\n" +
-      "           Add it as a Replit secret to receive Slack/webhook alerts."
+      "  [notify] No webhook URL configured — notifications are disabled.\n" +
+      "           Set BUILD_WEBHOOK_URL as a Replit secret, or create\n" +
+      "           artifacts/pos-app/.build-notify.json with a \"webhookUrl\" field."
     );
+  } else {
+    const sourceLabel = urlSource === "local-config"
+      ? `.build-notify.json${channel ? ` (channel: ${channel})` : ""}`
+      : "BUILD_WEBHOOK_URL secret";
+    console.log(`  [notify] Notifications enabled via ${sourceLabel}.\n`);
   }
 
   // Track the build URL so the centralised catch can include it in failure
