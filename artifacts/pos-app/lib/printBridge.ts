@@ -55,7 +55,36 @@ export type PrintOpts = {
   rawMode?: boolean;
   autoCut?: boolean;
   codepage?: "cp437" | "cp1252" | "ascii";
+  androidDevicePath?: string;
 };
+
+function buildEscPosBytes(text: string, autoCut: boolean): string {
+  const ESC = "\x1B";
+  const GS = "\x1D";
+  const init = ESC + "@";
+  const leftAlign = ESC + "a\x00";
+  const feeds = "\n\n\n";
+  const cut = autoCut ? GS + "V\x00" : "\n\n\n";
+  return init + leftAlign + text + feeds + cut;
+}
+
+export async function printAndroidDevice(
+  text: string,
+  opts: { devicePath?: string; autoCut?: boolean } = {}
+): Promise<boolean> {
+  if (Platform.OS !== "android") return false;
+  const path = opts.devicePath?.trim() || "/dev/prnt";
+  try {
+    const RNFS = require("react-native-fs");
+    const payload = buildEscPosBytes(text, opts.autoCut !== false);
+    const b64 = Buffer.from(payload, "binary").toString("base64");
+    await RNFS.writeFile(path, b64, "base64");
+    return true;
+  } catch (e: any) {
+    console.warn("[printBridge] Android device print failed:", e?.message ?? e);
+    return false;
+  }
+}
 
 export async function printRawText(text: string, opts: { deviceName?: string; autoCut?: boolean; codepage?: "cp437" | "cp1252" | "ascii" } = {}): Promise<boolean> {
   const api = getElectronAPI();
@@ -65,6 +94,14 @@ export async function printRawText(text: string, opts: { deviceName?: string; au
 }
 
 export async function printHtml(html: string, opts: PrintOpts = {}): Promise<boolean> {
+  if (Platform.OS === "android" && opts.androidDevicePath && opts.rawText) {
+    const ok = await printAndroidDevice(opts.rawText, {
+      devicePath: opts.androidDevicePath,
+      autoCut: opts.autoCut,
+    });
+    if (ok) return true;
+  }
+
   const api = getElectronAPI();
   if (api && opts.rawMode && opts.rawText && api.silentPrintRaw && opts.deviceName) {
     const r = await api.silentPrintRaw(opts.rawText, { deviceName: opts.deviceName, autoCut: opts.autoCut, codepage: opts.codepage });

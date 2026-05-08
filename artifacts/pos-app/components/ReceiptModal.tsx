@@ -61,8 +61,9 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
       const html = generateReceiptHTML(sale, items, business);
       const { printHtml } = await import("@/lib/printBridge");
       const ps = business.printerSettings;
+      const needRawText = ps?.rawTextMode || !!ps?.androidPrinterEnabled;
       let rawText: string | undefined;
-      if (ps?.rawTextMode) {
+      if (needRawText) {
         const { generateReceiptText } = await import("@/lib/textReceipt");
         rawText = generateReceiptText(sale, items, business);
       }
@@ -73,6 +74,7 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
         rawText,
         autoCut: ps?.autoCutPaper !== false,
         codepage: ps?.rawCodepage || "cp1252",
+        androidDevicePath: ps?.androidPrinterEnabled ? (ps?.androidPrinterPath || "/dev/prnt") : undefined,
       });
     } catch {
     }

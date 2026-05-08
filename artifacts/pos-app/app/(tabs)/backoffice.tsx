@@ -1268,6 +1268,57 @@ export default function BackOfficeScreen() {
           </View>
         )}
 
+        {Platform.OS === "android" && (
+          <View style={{ marginBottom: 16, padding: 12, backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}>
+            <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 14, marginBottom: 4 }}>Android Built-in Printer</Text>
+            <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 12, lineHeight: 15 }}>
+              For devices like the FH100-A3-D with an internal 58mm thermal printer.
+              Sends ESC/POS commands directly to the printer device path — no dialog, no extra app.
+            </Text>
+            {renderSwitch(
+              "Enable Android built-in printer",
+              !!printerSettings.androidPrinterEnabled,
+              (v) => setPrinterSettings({ ...printerSettings, androidPrinterEnabled: v }),
+            )}
+            {printerSettings.androidPrinterEnabled && (
+              <>
+                {renderField(
+                  "Printer device path",
+                  printerSettings.androidPrinterPath || "",
+                  (v) => setPrinterSettings({ ...printerSettings, androidPrinterPath: v }),
+                  "/dev/prnt",
+                )}
+                <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 10, lineHeight: 15 }}>
+                  Common paths: /dev/prnt · /dev/ttyS1 · /dev/ttyS2 · /dev/printer{"\n"}
+                  Leave blank to use /dev/prnt (default for FH100-A3-D).
+                </Text>
+                {renderSwitch("Auto-cut paper after print", printerSettings.autoCutPaper !== false, (v) => setPrinterSettings({ ...printerSettings, autoCutPaper: v }))}
+                <TouchableOpacity
+                  onPress={async () => {
+                    const { printAndroidDevice } = await import("@/lib/printBridge");
+                    const devPath = printerSettings.androidPrinterPath || "/dev/prnt";
+                    const testText = `AL SALIK POS\nTest Print\n${new Date().toLocaleString("en-GB")}\n--------------------------------\nIf this prints clearly,\nyour printer is configured.\n--------------------------------\n`;
+                    const ok = await printAndroidDevice(testText, {
+                      devicePath: devPath,
+                      autoCut: printerSettings.autoCutPaper !== false,
+                    });
+                    Alert.alert(
+                      ok ? "Test Sent" : "Test Failed",
+                      ok
+                        ? `ESC/POS bytes sent to ${devPath}.\nCheck if the printer printed a test strip.`
+                        : `Could not write to ${devPath}.\nTry a different device path.`,
+                    );
+                  }}
+                  style={[s.chip, { borderColor: colors.success, borderStyle: "dashed", alignSelf: "flex-start", marginTop: 8, borderRadius: colors.radius, flexDirection: "row", gap: 6 }]}
+                >
+                  <Feather name="printer" size={12} color={colors.success} />
+                  <Text style={{ color: colors.success, fontWeight: "600", fontSize: 12 }}>Send Test Print</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
+
         <Text style={[s.fieldLabel, { color: colors.mutedForeground }]}>Paper Width</Text>
         <View style={s.chipRow}>
           {(["58mm", "80mm"] as const).map((pw) => (

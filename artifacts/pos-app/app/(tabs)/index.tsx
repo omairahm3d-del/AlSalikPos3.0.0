@@ -342,6 +342,7 @@ export default function POSScreen() {
         rawMode: !!ps?.rawTextMode,
         autoCut: ps?.autoCutPaper !== false,
         codepage: ps?.rawCodepage || "cp1252",
+        androidDevicePath: ps?.androidPrinterEnabled ? (ps?.androidPrinterPath || "/dev/prnt") : undefined,
       });
     } catch (e: any) {
       Alert.alert("Print Error", e.message || "Could not print bill");

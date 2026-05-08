@@ -289,6 +289,8 @@ export interface PrinterSettings {
   rawTextMode?: boolean;
   autoCutPaper?: boolean;
   rawCodepage?: "cp437" | "cp1252" | "ascii";
+  androidPrinterEnabled?: boolean;
+  androidPrinterPath?: string;
 }
 
 export interface KOTSettings {
