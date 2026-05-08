@@ -6,6 +6,18 @@ uri = "file://artifacts/pos-app/assets/images/icon.png"
 type = "image"
 title = "pos app icon"
 
+[[generated]]
+id = "4qIWy6k5L0wO6-P61x0cr"
+uri = "file://artifacts/al-salik-demo-video/public/images/bg-uae-luxury.png"
+type = "image"
+title = "UAE luxury tech background"
+
+[[generated]]
+id = "1OrqwKVE09_q6AcJHRy5M"
+uri = "file://artifacts/al-salik-demo-video/public/images/bg-tech-abstract.png"
+type = "image"
+title = "Abstract tech particles"
+
 [[outputs]]
 id = "ac2cruQ1vTpPmBUTFt5gd"
 uri = "file://Al-Salik-POS-Windows-Installer.zip"
