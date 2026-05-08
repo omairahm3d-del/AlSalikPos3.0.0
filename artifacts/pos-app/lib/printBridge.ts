@@ -71,6 +71,7 @@ function buildEscPosBytes(text: string, autoCut: boolean): string {
 export const ANDROID_PRINTER_PATHS = [
   "/dev/prnt",
   "/dev/usb/lp0",
+  "/dev/ttyS0",
   "/dev/ttyS1",
   "/dev/ttyS2",
   "/dev/ttyS3",

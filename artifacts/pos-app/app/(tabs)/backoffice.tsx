@@ -1292,7 +1292,7 @@ export default function BackOfficeScreen() {
                   Tap a common path to select it, or type your own above.
                 </Text>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
-                  {["/dev/prnt", "/dev/usb/lp0", "/dev/ttyS1", "/dev/ttyS2", "/dev/ttyS3", "/dev/printer", "/dev/bprint", "/dev/ttyUSB0"].map((p) => {
+                  {["/dev/prnt", "/dev/usb/lp0", "/dev/ttyS0", "/dev/ttyS1", "/dev/ttyS2", "/dev/ttyS3", "/dev/printer", "/dev/bprint", "/dev/ttyUSB0"].map((p) => {
                     const active = (printerSettings.androidPrinterPath || "/dev/prnt") === p;
                     return (
                       <TouchableOpacity
