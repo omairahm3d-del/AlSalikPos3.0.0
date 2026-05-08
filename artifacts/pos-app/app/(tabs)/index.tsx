@@ -761,21 +761,23 @@ export default function POSScreen() {
               </Text>
             </View>
           )}
-          <View style={styles.orderTypeRow}>
-            {ORDER_TYPES.map((ot) => {
-              const active = orderType === ot.key;
-              return (
-                <TouchableOpacity
-                  key={ot.key}
-                  onPress={() => { if (!heldOrderInfo) setOrderType(ot.key); }}
-                  style={[styles.orderTypeChip, { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary + "18" : "transparent", borderRadius: colors.radius, opacity: heldOrderInfo && !active ? 0.4 : 1 }]}
-                >
-                  <Feather name={ot.icon as any} size={12} color={active ? colors.primary : colors.mutedForeground} />
-                  <Text style={{ color: active ? colors.primary : colors.mutedForeground, fontSize: 11, fontWeight: "600", marginLeft: 4 }}>{ot.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          {!isSaloon && (
+            <View style={styles.orderTypeRow}>
+              {ORDER_TYPES.map((ot) => {
+                const active = orderType === ot.key;
+                return (
+                  <TouchableOpacity
+                    key={ot.key}
+                    onPress={() => { if (!heldOrderInfo) setOrderType(ot.key); }}
+                    style={[styles.orderTypeChip, { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary + "18" : "transparent", borderRadius: colors.radius, opacity: heldOrderInfo && !active ? 0.4 : 1 }]}
+                  >
+                    <Feather name={ot.icon as any} size={12} color={active ? colors.primary : colors.mutedForeground} />
+                    <Text style={{ color: active ? colors.primary : colors.mutedForeground, fontSize: 11, fontWeight: "600", marginLeft: 4 }}>{ot.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
         </View>
       </View>
 

@@ -28,6 +28,7 @@ import { SyncQueueScreen } from "@/components/SyncQueueScreen";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useLicense } from "@/context/LicenseContext";
 import { useStaff } from "@/context/StaffContext";
+import { useWorkMode } from "@/context/WorkModeContext";
 import { useColors } from "@/hooks/useColors";
 import { generateReceiptHTML } from "@/lib/receiptTemplate";
 import { generateKitchenTicketHTML } from "@/lib/kitchenTicketTemplate";
@@ -129,6 +130,7 @@ export default function BackOfficeScreen() {
   const { session: licenseSession, deactivate } = useLicense();
   const isOffline = licenseSession?.license.licenseType === "offline";
   const { currentStaff, refreshStaffCheck, logout } = useStaff();
+  const { isSaloon, productLabel, productLabelSingular, orderTicketLabel } = useWorkMode();
   const [section, setSection] = useState<Section>("menu");
 
   useFocusEffect(useCallback(() => {
@@ -855,10 +857,22 @@ export default function BackOfficeScreen() {
       );
     }
 
+    const LABEL_OVERRIDES: Partial<Record<string, { title: string; subtitle: string }>> = isSaloon
+      ? {
+          products: { title: productLabel, subtitle: `Manage ${productLabel.toLowerCase()}, pricing & stock` },
+          categories: { title: "Service Categories", subtitle: "Manage service categories" },
+          kot: { title: `${orderTicketLabel} Settings`, subtitle: "Stylist ticket routing" },
+          riders: { title: "Walk-in Stations", subtitle: "Manage walk-in station profiles" },
+        }
+      : {};
+
     const visibleSections = SECTIONS.filter((sec) => {
       if (sec.adminOnly) return !currentStaff || currentStaff.role === "admin";
       if (!sec.permKey) return true;
       return permissions[sec.permKey] as boolean;
+    }).map((sec) => {
+      const override = LABEL_OVERRIDES[sec.id];
+      return override ? { ...sec, ...override } : sec;
     });
 
     return (

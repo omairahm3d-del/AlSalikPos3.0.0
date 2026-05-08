@@ -22,18 +22,22 @@ type Tab =
   | "products"
   | "customers";
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "reports", label: "Reports" },
-  { id: "stock", label: "Stock" },
-  { id: "purchases", label: "Purchases" },
-  { id: "suppliers", label: "Suppliers" },
-  { id: "products", label: "Products" },
-  { id: "customers", label: "Customers" },
-];
+function buildTabs(isSaloon: boolean): { id: Tab; label: string }[] {
+  return [
+    { id: "reports", label: "Reports" },
+    { id: "stock", label: "Stock" },
+    { id: "purchases", label: "Purchases" },
+    { id: "suppliers", label: "Suppliers" },
+    { id: "products", label: isSaloon ? "Services" : "Products" },
+    { id: "customers", label: "Customers" },
+  ];
+}
 
 export default function Dashboard({ session, onSession, onLogout }: Props) {
   const [tab, setTab] = useState<Tab>("reports");
   const branchId = session.branchId ?? session.branches[0]?.id ?? null;
+  const isSaloon = session.workMode === "saloon";
+  const TABS = buildTabs(isSaloon);
 
   function setBranch(id: string) {
     onSession({ ...session, branchId: id });
