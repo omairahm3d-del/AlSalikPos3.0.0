@@ -388,7 +388,7 @@ export function CompanyDetail() {
         </div>
         
         <TabsContent value="licenses" className="mt-6 space-y-4">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-xl font-semibold">Licenses</h2>
             <Dialog open={issueOpen} onOpenChange={setIssueOpen}>
               <DialogTrigger asChild>
@@ -721,7 +721,7 @@ export function CompanyDetail() {
         </TabsContent>
 
         <TabsContent value="branches" className="mt-6 space-y-4">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-xl font-semibold">Branches</h2>
             <Dialog open={branchOpen} onOpenChange={setBranchOpen}>
               <DialogTrigger asChild>
@@ -784,10 +784,11 @@ export function CompanyDetail() {
             <div className="grid gap-4">
               {branches.map((branch) => (
                 <Card key={branch.id} className={!branch.isActive ? "opacity-70 bg-muted/50" : ""}>
-                  <CardHeader className="pb-2 flex flex-row items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                  <CardHeader className="pb-2">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <Building2 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                         <span className="text-lg font-semibold">{branch.name}</span>
                         {branch.isDefault && (
                           <Badge variant="default" className="gap-1">
@@ -805,7 +806,7 @@ export function CompanyDetail() {
                         Created {format(parseISO(branch.createdAt), "PPP")}
                       </p>
                     </div>
-                    <div className="flex flex-col gap-2 items-end">
+                    <div className="flex flex-row sm:flex-col gap-2 sm:items-end flex-shrink-0">
                       <Button variant="outline" size="sm" onClick={() => openEditBranch(branch)}>
                         Edit
                       </Button>
@@ -830,6 +831,7 @@ export function CompanyDetail() {
                         </Button>
                       )}
                     </div>
+                    </div>
                   </CardHeader>
                   <CardContent className="pt-2 text-sm text-muted-foreground">
                     {devices.filter((d) => (d as any).branchId === branch.id).length} device(s) bound to this branch
@@ -841,7 +843,7 @@ export function CompanyDetail() {
         </TabsContent>
 
         <TabsContent value="managers" className="mt-6 space-y-4">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-xl font-semibold">Back Office Managers</h2>
             <Dialog open={managerOpen} onOpenChange={setManagerOpen}>
               <DialogTrigger asChild>
@@ -922,44 +924,46 @@ export function CompanyDetail() {
             <div className="grid gap-4">
               {managers.map((m) => (
                 <Card key={m.id} className={!m.isActive ? "opacity-70 bg-muted/50" : ""}>
-                  <CardHeader className="pb-2 flex flex-row items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <UserCog className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-lg font-semibold">{m.name}</span>
-                        <Badge variant={m.isActive ? "default" : "secondary"}>
-                          {m.isActive ? "Active" : "Inactive"}
-                        </Badge>
-                        <Badge variant="outline">{m.role}</Badge>
+                  <CardHeader className="pb-2">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <UserCog className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <span className="text-lg font-semibold">{m.name}</span>
+                          <Badge variant={m.isActive ? "default" : "secondary"}>
+                            {m.isActive ? "Active" : "Inactive"}
+                          </Badge>
+                          <Badge variant="outline">{m.role}</Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{m.email}</p>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Created {format(parseISO(m.createdAt), "PPP")}
+                          {" · "}
+                          {m.lastLoginAt
+                            ? `Last login ${formatDistanceToNow(parseISO(m.lastLoginAt), { addSuffix: true })}`
+                            : "Never signed in"}
+                        </p>
                       </div>
-                      <p className="text-sm text-muted-foreground">{m.email}</p>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Created {format(parseISO(m.createdAt), "PPP")}
-                        {" · "}
-                        {m.lastLoginAt
-                          ? `Last login ${formatDistanceToNow(parseISO(m.lastLoginAt), { addSuffix: true })}`
-                          : "Never signed in"}
-                      </p>
-                    </div>
-                    <div className="flex flex-col gap-2 items-end">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setResetPwOpen(m);
-                          setNewPassword("");
-                        }}
-                      >
-                        <KeyRound className="mr-2 h-4 w-4" /> Reset password
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleToggleManagerActive(m)}
-                        disabled={setManagerActive.isPending}
-                      >
-                        {m.isActive ? "Deactivate" : "Activate"}
-                      </Button>
+                      <div className="flex flex-row sm:flex-col gap-2 sm:items-end flex-shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setResetPwOpen(m);
+                            setNewPassword("");
+                          }}
+                        >
+                          <KeyRound className="mr-2 h-4 w-4" /> Reset password
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleToggleManagerActive(m)}
+                          disabled={setManagerActive.isPending}
+                        >
+                          {m.isActive ? "Deactivate" : "Activate"}
+                        </Button>
+                      </div>
                     </div>
                   </CardHeader>
                 </Card>
