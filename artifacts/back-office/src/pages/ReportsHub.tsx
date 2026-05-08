@@ -85,12 +85,13 @@ const BASE_HUB_ITEMS: {
   sub: string;
   color: string;
   saloonOnly?: boolean;
+  saloonHide?: boolean;
 }[] = [
   { key: "daily", title: "Daily Sales (Z-style)", sub: "End-of-day roll-up: net sales, VAT, transactions per day", color: "#E74C3C" },
   { key: "payment", title: "Payment Method Report", sub: "Revenue breakdown by cash, card & credit", color: "#4F8EF7" },
   { key: "staff", title: "Staff Sales Report", sub: "Performance per staff member", color: "#2ECC71" },
-  { key: "stylist", title: "Stylist Report", sub: "Revenue and service count per stylist (saloon mode)", color: "#E91E8C", saloonOnly: true },
-  { key: "rider", title: "Rider Delivery Report", sub: "Deliveries and revenue per rider", color: "#3498DB" },
+  { key: "stylist", title: "Stylist Report", sub: "Revenue and service count per stylist", color: "#E91E8C", saloonOnly: true },
+  { key: "rider", title: "Rider Delivery Report", sub: "Deliveries and revenue per rider", color: "#3498DB", saloonHide: true },
   { key: "customer", title: "Customer Transactions", sub: "Transaction history per customer", color: "#9B59B6" },
   { key: "items", title: "Daily Item Detail", sub: "Full transaction & line-item breakdown", color: "#F39C12" },
 ];
@@ -106,7 +107,11 @@ export default function ReportsHub({
 }) {
   const isSaloon = workMode === "saloon";
   const [view, setView] = useState<View>(null);
-  const HUB_ITEMS = BASE_HUB_ITEMS.filter((it) => !it.saloonOnly || isSaloon);
+  const HUB_ITEMS = BASE_HUB_ITEMS.filter((it) => {
+    if (it.saloonOnly && !isSaloon) return false;
+    if (it.saloonHide && isSaloon) return false;
+    return true;
+  });
 
   if (view === null) {
     return (

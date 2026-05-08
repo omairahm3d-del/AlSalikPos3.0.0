@@ -19,7 +19,7 @@ import { buildCsv, downloadCsv } from "@/lib/csvExport";
 import { generateZReportHTML } from "@/lib/receiptTemplate";
 import { printHtml } from "@/lib/printBridge";
 
-type ReportView = null | "zhistory" | "payment" | "staff" | "rider" | "customer" | "items";
+type ReportView = null | "zhistory" | "payment" | "staff" | "stylist" | "rider" | "customer" | "items";
 type DatePreset = "today" | "yesterday" | "last7" | "last30" | "thismonth";
 
 const PRESETS: { key: DatePreset; label: string }[] = [
@@ -66,7 +66,8 @@ function fmtTime(ms: number) {
   return new Date(ms).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
-export function ReportsHub({ onBack }: { onBack: () => void }) {
+export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?: "standard" | "saloon" }) {
+  const isSaloon = workMode === "saloon";
   const colors = useColors();
   const db = useDatabase();
   const [view, setView] = useState<ReportView>(null);
@@ -216,6 +217,22 @@ export function ReportsHub({ onBack }: { onBack: () => void }) {
       const ex = map.get(name);
       if (ex) { ex.count++; ex.amount += s.total; } else map.set(name, { count: 1, amount: s.total });
     });
+    return Array.from(map.entries())
+      .map(([name, v]) => ({ name, ...v, avg: v.count > 0 ? v.amount / v.count : 0 }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [validSales]);
+
+  const stylistStats = useMemo(() => {
+    const map = new Map<string, { count: number; amount: number }>();
+    for (const sale of validSales) {
+      const items: Array<{ stylistName?: string; lineTotal?: number }> = (sale as any).items ?? [];
+      for (const it of items) {
+        const name = it.stylistName || "Unassigned";
+        const amt = typeof it.lineTotal === "number" ? it.lineTotal : 0;
+        const ex = map.get(name);
+        if (ex) { ex.count++; ex.amount += amt; } else map.set(name, { count: 1, amount: amt });
+      }
+    }
     return Array.from(map.entries())
       .map(([name, v]) => ({ name, ...v, avg: v.count > 0 ? v.amount / v.count : 0 }))
       .sort((a, b) => b.amount - a.amount);
@@ -715,22 +732,78 @@ export function ReportsHub({ onBack }: { onBack: () => void }) {
     );
   };
 
+  // ─── Stylist Report (saloon mode) ──────────────────────────────────────────
+  const renderStylist = () => {
+    const total = stylistStats.reduce((s, x) => s + x.amount, 0);
+    return (
+      <View style={[st.root, { backgroundColor: colors.background }]}>
+        {renderHdr("Stylist Report", () => setView(null), () => handleExport("stylist-report", stylistStats.map(s => ({
+          Stylist: s.name, Services: s.count, TotalRevenue: s.amount.toFixed(2), AvgOrder: s.avg.toFixed(2),
+        }))))}
+        <ScrollView contentContainerStyle={st.scroll}>
+          {renderPresets((p) => loadRangeData(p))}
+          {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} /> :
+            !loaded ? null :
+            stylistStats.length === 0 ? (
+              <View style={st.empty}>
+                <Feather name="scissors" size={40} color={colors.mutedForeground} style={{ opacity: 0.35 }} />
+                <Text style={[st.emptyTitle, { color: colors.mutedForeground }]}>No stylist data in {rangeLabel}</Text>
+                <Text style={[st.emptySub, { color: colors.mutedForeground }]}>Assign stylists when adding services to see data here</Text>
+              </View>
+            ) : (
+              <>
+                <View style={[st.summaryBox, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+                  {row("Period", rangeLabel)}
+                  {row("Total Revenue", formatCurrency(total), colors.success)}
+                  {row("Active Stylists", String(stylistStats.filter(s => s.name !== "Unassigned").length))}
+                </View>
+                {stylistStats.map((s, i) => (
+                  <View key={s.name} style={[st.card, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+                    <View style={st.cardRow}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                        <View style={[st.badge, { backgroundColor: i === 0 && s.name !== "Unassigned" ? "#E91E8C" : colors.secondary }]}>
+                          <Text style={{ color: i === 0 && s.name !== "Unassigned" ? "#fff" : colors.mutedForeground, fontSize: 11, fontWeight: "700" }}>#{i + 1}</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[st.cardTitle, { color: colors.foreground }]}>{s.name}</Text>
+                          <Text style={[st.cardSub, { color: colors.mutedForeground }]}>{s.count} service{s.count !== 1 ? "s" : ""} · Avg {formatCurrency(s.avg)}</Text>
+                        </View>
+                      </View>
+                      <Text style={[st.cardAmt, { color: colors.foreground }]}>{formatCurrency(s.amount)}</Text>
+                    </View>
+                    {progressBar(total > 0 ? s.amount / total * 100 : 0)}
+                  </View>
+                ))}
+              </>
+            )}
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </View>
+    );
+  };
+
   // ─── Hub Menu ──────────────────────────────────────────────────────────────
-  const HUB_ITEMS = [
-    { key: "zhistory" as ReportView, icon: "archive", title: "Z-Report History", sub: "View all previous end-of-day reports", color: "#E74C3C" },
-    { key: "payment" as ReportView, icon: "credit-card", title: "Payment Method Report", sub: "Revenue breakdown by cash, card & credit", color: "#4F8EF7" },
-    { key: "staff" as ReportView, icon: "user-check", title: "Staff Sales Report", sub: "Performance per staff member", color: "#2ECC71" },
-    { key: "rider" as ReportView, icon: "truck", title: "Rider Delivery Report", sub: "Deliveries and revenue per rider", color: "#3498DB" },
-    { key: "customer" as ReportView, icon: "users", title: "Customer Transactions", sub: "Transaction history per customer", color: "#9B59B6" },
-    { key: "items" as ReportView, icon: "list", title: "Daily Item Detail", sub: "Full transaction & line-item breakdown", color: "#F39C12" },
-  ] as const;
+  const ALL_HUB_ITEMS: { key: ReportView; icon: string; title: string; sub: string; color: string; saloonOnly?: boolean; saloonHide?: boolean }[] = [
+    { key: "zhistory", icon: "archive", title: "Z-Report History", sub: "View all previous end-of-day reports", color: "#E74C3C" },
+    { key: "payment", icon: "credit-card", title: "Payment Method Report", sub: "Revenue breakdown by cash, card & credit", color: "#4F8EF7" },
+    { key: "staff", icon: "user-check", title: "Staff Sales Report", sub: "Performance per staff member", color: "#2ECC71" },
+    { key: "stylist", icon: "scissors", title: "Stylist Report", sub: "Revenue and service count per stylist", color: "#E91E8C", saloonOnly: true },
+    { key: "rider", icon: "truck", title: "Rider Delivery Report", sub: "Deliveries and revenue per rider", color: "#3498DB", saloonHide: true },
+    { key: "customer", icon: "users", title: "Customer Transactions", sub: "Transaction history per customer", color: "#9B59B6" },
+    { key: "items", icon: "list", title: "Daily Item Detail", sub: "Full transaction & line-item breakdown", color: "#F39C12" },
+  ];
+  const HUB_ITEMS = ALL_HUB_ITEMS.filter(it => {
+    if (it.saloonOnly && !isSaloon) return false;
+    if (it.saloonHide && isSaloon) return false;
+    return true;
+  });
 
   const renderHub = () => (
     <View style={[st.root, { backgroundColor: colors.background }]}>
       {renderHdr("Reports", onBack)}
       <ScrollView contentContainerStyle={st.scroll}>
         {HUB_ITEMS.map(item => (
-          <TouchableOpacity key={item.key} onPress={() => setView(item.key)}
+          <TouchableOpacity key={String(item.key)} onPress={() => setView(item.key)}
             style={[st.hubCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
             <View style={[st.hubIcon, { backgroundColor: item.color + "22" }]}>
               <Feather name={item.icon as any} size={22} color={item.color} />
@@ -751,6 +824,7 @@ export function ReportsHub({ onBack }: { onBack: () => void }) {
     case "zhistory": return renderZHistory();
     case "payment": return renderPayment();
     case "staff": return renderStaff();
+    case "stylist": return renderStylist();
     case "rider": return renderRider();
     case "customer": return renderCustomer();
     case "items": return renderItems();

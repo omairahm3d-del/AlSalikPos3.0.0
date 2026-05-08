@@ -95,6 +95,7 @@ interface SectionCard {
   color: string;
   permKey?: keyof StaffPermissions;
   adminOnly?: boolean;
+  saloonHide?: boolean;
 }
 
 const SECTIONS: SectionCard[] = [
@@ -107,12 +108,12 @@ const SECTIONS: SectionCard[] = [
   { id: "customers", icon: "users", title: "Customers", subtitle: "Manage customer profiles", color: "#1ABC9C", permKey: "boCustomers" },
   { id: "reports", icon: "bar-chart-2", title: "Reports", subtitle: "View sales summaries", color: "#F39C12", permKey: "boReports" },
   { id: "categories", icon: "layers", title: "Categories", subtitle: "Manage product categories", color: "#4F8EF7", permKey: "boCategories" },
-  { id: "riders", icon: "truck", title: "Delivery Riders", subtitle: "Manage delivery riders", color: "#3498DB", permKey: "boRiders" },
-  { id: "ingredients", icon: "package", title: "Ingredients", subtitle: "Inventory & stock levels", color: "#16A085", permKey: "boIngredients" },
-  { id: "recipes", icon: "book-open", title: "Recipes", subtitle: "Link products to ingredients", color: "#8E44AD", permKey: "boRecipes" },
+  { id: "riders", icon: "truck", title: "Delivery Riders", subtitle: "Manage delivery riders", color: "#3498DB", permKey: "boRiders", saloonHide: true },
+  { id: "ingredients", icon: "package", title: "Ingredients", subtitle: "Inventory & stock levels", color: "#16A085", permKey: "boIngredients", saloonHide: true },
+  { id: "recipes", icon: "book-open", title: "Recipes", subtitle: "Link products to ingredients", color: "#8E44AD", permKey: "boRecipes", saloonHide: true },
   { id: "receipt", icon: "file-text", title: "Receipt Designer", subtitle: "Customize receipt layout", color: "#2ECC71", permKey: "boReceipt" },
   { id: "printer", icon: "printer", title: "Printer Settings", subtitle: "Paper size & auto-print", color: "#9B59B6", permKey: "boPrinter" },
-  { id: "kot", icon: "clipboard", title: "KOT Settings", subtitle: "Kitchen ticket routing", color: "#E67E22", permKey: "boKOT" },
+  { id: "kot", icon: "clipboard", title: "KOT Settings", subtitle: "Kitchen ticket routing", color: "#E67E22", permKey: "boKOT", saloonHide: true },
   { id: "display", icon: "monitor", title: "Customer Display", subtitle: "Customer-facing screen", color: "#1ABC9C", permKey: "boDisplay" },
   { id: "staff", icon: "user-check", title: "Staff Management", subtitle: "Manage cashiers & admins", color: "#E74C3C", permKey: "boStaff" },
   { id: "tax", icon: "percent", title: "Tax Groups", subtitle: "VAT rates & tax groups", color: "#F39C12", permKey: "boTax" },
@@ -861,12 +862,11 @@ export default function BackOfficeScreen() {
       ? {
           products: { title: productLabel, subtitle: `Manage ${productLabel.toLowerCase()}, pricing & stock` },
           categories: { title: "Service Categories", subtitle: "Manage service categories" },
-          kot: { title: `${orderTicketLabel} Settings`, subtitle: "Stylist ticket routing" },
-          riders: { title: "Walk-in Stations", subtitle: "Manage walk-in station profiles" },
         }
       : {};
 
     const visibleSections = SECTIONS.filter((sec) => {
+      if (isSaloon && sec.saloonHide) return false;
       if (sec.adminOnly) return !currentStaff || currentStaff.role === "admin";
       if (!sec.permKey) return true;
       return permissions[sec.permKey] as boolean;
@@ -2075,7 +2075,7 @@ export default function BackOfficeScreen() {
         </View>
       );
       case "customers": return <View style={s.sectionContent}>{renderHeader("Customers")}<CustomersScreen embedded /></View>;
-      case "reports": return <ReportsHub onBack={() => setSection("menu")} />;
+      case "reports": return <ReportsHub onBack={() => setSection("menu")} workMode={licenseSession?.workMode ?? "standard"} />;
       case "categories": return renderCategories();
       case "receipt": return renderReceiptDesigner();
       case "printer": return renderPrinterSettings();
