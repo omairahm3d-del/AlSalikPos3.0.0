@@ -157,10 +157,11 @@ function resolveNotifySettings() {
  * @param {"success"|"failure"|"cancelled"|"timeout"} outcome
  * @param {string|null} buildUrl  EAS dashboard URL
  * @param {string|null} artifactUrl  Direct download URL (success only)
+ * @param {string|null} [installUrl]  One-click install URL for internal distribution builds
  * @param {string|null} [errorMessage]  Short error description for failure payloads
  * @returns {Promise<void>}
  */
-async function sendWebhookNotification(outcome, buildUrl, artifactUrl, errorMessage = null) {
+async function sendWebhookNotification(outcome, buildUrl, artifactUrl, installUrl = null, errorMessage = null) {
   const { webhookUrl, channel, mute } = resolveNotifySettings();
 
   if (mute) {
@@ -206,6 +207,9 @@ async function sendWebhookNotification(outcome, buildUrl, artifactUrl, errorMess
   }
   if (artifactUrl) {
     fields.push({ title: "Download", value: artifactUrl, short: false });
+  }
+  if (installUrl) {
+    fields.push({ title: "Install on device", value: installUrl, short: false });
   }
 
   const payloadObj = {
@@ -479,6 +483,7 @@ async function pollBuildStatus(buildId) {
     const status = build && build.status;
     const artifacts = build && build.artifacts;
     const artifactUrl = artifacts && (artifacts.buildUrl || artifacts.applicationArchiveUrl) || null;
+    const installUrl = artifacts && (artifacts.installUrl || artifacts.distributionUrl) || null;
 
     process.stdout.write(`  [poll #${attempt}] status = ${status || "unknown"}\n`);
 
@@ -488,7 +493,7 @@ async function pollBuildStatus(buildId) {
     }
 
     if (status === "FINISHED") {
-      return { status, artifactUrl };
+      return { status, artifactUrl, installUrl };
     }
 
     if (["ERRORED", "CANCELLED", "EXPIRED"].includes(status)) {
@@ -583,7 +588,7 @@ function downloadFile(url, destPath) {
   });
 }
 
-function printFooter(buildUrl, artifactUrl, localPath) {
+function printFooter(buildUrl, artifactUrl, installUrl, localPath) {
   console.log("\n" + "=".repeat(60));
   console.log("  Build complete!");
   if (buildUrl) {
@@ -593,6 +598,10 @@ function printFooter(buildUrl, artifactUrl, localPath) {
   if (artifactUrl) {
     console.log("  Direct download link:");
     console.log(`    ${artifactUrl}`);
+  }
+  if (installUrl) {
+    console.log("  Install on device:");
+    console.log(`    ${installUrl}`);
   }
   if (localPath) {
     console.log("  Downloaded to:");
@@ -639,7 +648,7 @@ async function main() {
       return;
     }
 
-    const { status, artifactUrl } = await pollBuildStatus(buildId);
+    const { status, artifactUrl, installUrl } = await pollBuildStatus(buildId);
 
     if (status === "TIMEOUT") {
       console.log("\nPolling timed out. Check the build dashboard for the final status:");
@@ -683,13 +692,13 @@ async function main() {
       console.warn("\nWarning: build finished but no artifact URL was returned by the API.");
     }
 
-    await sendWebhookNotification("success", buildUrl, artifactUrl);
-    printFooter(buildUrl, artifactUrl, localPath);
+    await sendWebhookNotification("success", buildUrl, artifactUrl, installUrl);
+    printFooter(buildUrl, artifactUrl, installUrl, localPath);
   } catch (err) {
     // Centralised failure handler: catches EAS CLI errors, permanent Expo API
     // errors from pollBuildStatus, and any other unexpected exceptions so a
     // notification is always sent before the process exits.
-    await sendWebhookNotification("failure", buildUrl, null, err.message);
+    await sendWebhookNotification("failure", buildUrl, null, null, err.message);
     throw err;
   }
 }
