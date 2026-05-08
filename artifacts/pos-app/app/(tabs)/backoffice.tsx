@@ -15,6 +15,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -211,6 +212,8 @@ export default function BackOfficeScreen() {
   const [smtpFromName, setSmtpFromName] = useState("");
   const [isSendingTest, setIsSendingTest] = useState(false);
 
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 768;
   const topPadding = Platform.OS === "web" ? insets.top + 8 : 0;
 
   const permissions = useMemo<StaffPermissions>(() => {
@@ -885,7 +888,7 @@ export default function BackOfficeScreen() {
             <TouchableOpacity
               key={sec.id}
               onPress={() => openSection(sec.id)}
-              style={[s.sectionCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
+              style={[s.sectionCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, width: isTablet ? "30.5%" : "47%" }]}
             >
               <View style={[s.cardIconWrap, { backgroundColor: sec.color + "18" }]}>
                 <Feather name={sec.icon as any} size={22} color={sec.color} />
@@ -2245,7 +2248,7 @@ export default function BackOfficeScreen() {
       {renderContent()}
 
       <Modal visible={showCatModal} animationType="slide" presentationStyle="pageSheet">
-        <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={[s.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={() => setShowCatModal(false)}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
             <Text style={[s.modalTitle, { color: colors.foreground }]}>{editingCat ? "Edit Category" : "New Category"}</Text>
@@ -2288,7 +2291,7 @@ export default function BackOfficeScreen() {
       </Modal>
 
       <Modal visible={showStaffModal} animationType="slide" presentationStyle="pageSheet">
-        <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={[s.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={() => setShowStaffModal(false)}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
             <Text style={[s.modalTitle, { color: colors.foreground }]}>{editingStaff ? "Edit Staff" : "New Staff"}</Text>
@@ -2311,7 +2314,7 @@ export default function BackOfficeScreen() {
       </Modal>
 
       <Modal visible={showTaxModal} animationType="slide" presentationStyle="pageSheet">
-        <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={[s.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={() => setShowTaxModal(false)}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
             <Text style={[s.modalTitle, { color: colors.foreground }]}>{editingTax ? "Edit Tax Group" : "New Tax Group"}</Text>
@@ -2325,7 +2328,7 @@ export default function BackOfficeScreen() {
       </Modal>
 
       <Modal visible={showRiderModal} animationType="slide" presentationStyle="pageSheet">
-        <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={[s.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={() => setShowRiderModal(false)}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
             <Text style={[s.modalTitle, { color: colors.foreground }]}>{editingRider ? "Edit Rider" : "New Rider"}</Text>
@@ -2339,7 +2342,7 @@ export default function BackOfficeScreen() {
       </Modal>
 
       <Modal visible={showIngModal} animationType="slide" presentationStyle="pageSheet">
-        <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={[s.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={() => setShowIngModal(false)}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
             <Text style={[s.modalTitle, { color: colors.foreground }]}>{editingIngredient ? "Edit Ingredient" : "New Ingredient"}</Text>
@@ -2356,7 +2359,7 @@ export default function BackOfficeScreen() {
       </Modal>
 
       <Modal visible={showRecipeModal} animationType="slide" presentationStyle="pageSheet">
-        <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={[s.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={() => setShowRecipeModal(false)}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
             <Text style={[s.modalTitle, { color: colors.foreground }]}>Recipe</Text>
@@ -2422,7 +2425,7 @@ export default function BackOfficeScreen() {
       </Modal>
 
       <Modal visible={showPrinterModal} animationType="slide" presentationStyle="pageSheet">
-        <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={[s.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={() => setShowPrinterModal(false)}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
             <Text style={[s.modalTitle, { color: colors.foreground }]}>{editingPrinter ? "Edit Printer" : "New Printer"}</Text>

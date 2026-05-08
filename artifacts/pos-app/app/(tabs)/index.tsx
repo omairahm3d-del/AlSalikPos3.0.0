@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -50,9 +51,12 @@ const ORDER_TYPES: { key: OrderType; label: string; icon: string }[] = [
 
 export default function POSScreen() {
   const colors = useColors();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const isTablet = width >= 768;
+  const isLandscape = width > height;
+  const phoneColumns = isLandscape ? 3 : 2;
+  const cartPaneWidth = Math.max(260, Math.min(Math.floor(width * 0.36), 380));
 
   const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder, loadStaff } = useDatabase();
   const { currentStaff } = useStaff();
@@ -819,8 +823,8 @@ export default function POSScreen() {
           </View>
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <View style={[styles.totalsRow, styles.grandTotal]}>
-            <Text style={[styles.grandTotalLabel, { color: colors.foreground }]}>Total</Text>
-            <Text style={[styles.grandTotalValue, { color: colors.foreground }]}>{formatCurrency(total)}</Text>
+            <Text style={[styles.grandTotalLabel, { color: colors.foreground }]} allowFontScaling={false}>Total</Text>
+            <Text style={[styles.grandTotalValue, { color: colors.foreground }]} allowFontScaling={false}>{formatCurrency(total)}</Text>
           </View>
           <View style={styles.cartBtnRow}>
             <TouchableOpacity
@@ -851,7 +855,7 @@ export default function POSScreen() {
                 style={[styles.chargeBtn, { backgroundColor: colors.success, borderRadius: colors.radius, flex: 1 }]}
               >
                 <Feather name="credit-card" size={18} color="#fff" />
-                <Text style={styles.chargeBtnText}>Charge {formatCurrency(total)}</Text>
+                <Text style={styles.chargeBtnText} allowFontScaling={false}>Charge {formatCurrency(total)}</Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
@@ -904,7 +908,7 @@ export default function POSScreen() {
               />
             )}
           </View>
-          <View style={[styles.cartPane, { borderLeftColor: colors.border }]}>{CartContent}</View>
+          <View style={[styles.cartPane, { borderLeftColor: colors.border, width: cartPaneWidth }]}>{CartContent}</View>
         </View>
       ) : (
         <>
@@ -924,8 +928,8 @@ export default function POSScreen() {
                 data={filteredProducts}
                 renderItem={renderProductItem}
                 keyExtractor={productKeyExtractor}
-                numColumns={2}
-                key="2"
+                numColumns={phoneColumns}
+                key={String(phoneColumns)}
                 contentContainerStyle={styles.grid}
                 showsVerticalScrollIndicator={false}
                 initialNumToRender={8}
@@ -962,8 +966,9 @@ export default function POSScreen() {
       )}
 
       <Modal visible={showPayment} animationType="fade" transparent>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <View style={styles.paymentOverlay}>
-          <ScrollView contentContainerStyle={styles.paymentScrollContent}>
+          <ScrollView contentContainerStyle={styles.paymentScrollContent} keyboardShouldPersistTaps="handled">
             <View style={[styles.paymentSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2 }]}>
               <Text style={[styles.paymentTitle, { color: colors.foreground }]}>Payment</Text>
 
@@ -1225,6 +1230,7 @@ export default function POSScreen() {
             </View>
           </ScrollView>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={!!showPriceEdit} animationType="fade" transparent>
@@ -1483,7 +1489,7 @@ const styles = StyleSheet.create({
   splitRow: { flex: 1, flexDirection: "row" },
   catalogPane: { flex: 3 },
   catalogHeader: { flexDirection: "row", alignItems: "center", borderBottomWidth: 1, paddingRight: 12 },
-  cartPane: { width: 350, borderLeftWidth: 1 },
+  cartPane: { borderLeftWidth: 1 },
   mobileContent: { flex: 1 },
   grid: { padding: 10, paddingTop: 4 },
   loader: { flex: 1 },
