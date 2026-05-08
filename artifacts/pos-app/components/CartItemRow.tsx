@@ -113,9 +113,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   qtyBtn: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
   },

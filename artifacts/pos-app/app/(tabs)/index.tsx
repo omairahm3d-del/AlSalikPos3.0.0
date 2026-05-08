@@ -640,7 +640,7 @@ export default function POSScreen() {
   const ScanButton = useMemo(() => (
     <TouchableOpacity
       onPress={openScanner}
-      style={[styles.scanBtn, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}
+      style={[styles.iconBtn, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}
     >
       <Feather name="maximize" size={18} color={colors.primary} />
     </TouchableOpacity>
@@ -677,12 +677,12 @@ export default function POSScreen() {
   const OpenDrawerButton = useMemo(() => (
     <TouchableOpacity
       onPress={handleOpenCashDrawer}
-      style={[styles.endOfDayBtn, { backgroundColor: "#16A085" + "18", borderColor: "#16A085" + "40", borderRadius: colors.radius }]}
+      style={[isTablet ? styles.endOfDayBtn : styles.iconBtn, { backgroundColor: "#16A085" + "18", borderColor: "#16A085" + "40", borderRadius: colors.radius }]}
     >
       <Feather name="inbox" size={15} color="#16A085" />
-      <Text style={[styles.endOfDayText, { color: "#16A085" }]}>Open Drawer</Text>
+      {isTablet && <Text style={[styles.endOfDayText, { color: "#16A085" }]} allowFontScaling={false}>Open Drawer</Text>}
     </TouchableOpacity>
-  ), [colors, handleOpenCashDrawer]);
+  ), [colors, handleOpenCashDrawer, isTablet]);
 
   const registerOpen = businessSettings?.registerOpen !== false;
 
@@ -690,31 +690,31 @@ export default function POSScreen() {
     registerOpen ? (
       <TouchableOpacity
         onPress={() => setShowCloseRegister(true)}
-        style={[styles.endOfDayBtn, { backgroundColor: colors.destructive + "18", borderColor: colors.destructive + "40", borderRadius: colors.radius }]}
+        style={[isTablet ? styles.endOfDayBtn : styles.iconBtn, { backgroundColor: colors.destructive + "18", borderColor: colors.destructive + "40", borderRadius: colors.radius }]}
       >
         <Feather name="moon" size={15} color={colors.destructive} />
-        <Text style={[styles.endOfDayText, { color: colors.destructive }]}>End of Day</Text>
+        {isTablet && <Text style={[styles.endOfDayText, { color: colors.destructive }]} allowFontScaling={false}>End of Day</Text>}
       </TouchableOpacity>
     ) : (
       <TouchableOpacity
         onPress={() => setShowOpenRegister(true)}
-        style={[styles.endOfDayBtn, { backgroundColor: colors.primary + "18", borderColor: colors.primary + "40", borderRadius: colors.radius }]}
+        style={[isTablet ? styles.endOfDayBtn : styles.iconBtn, { backgroundColor: colors.primary + "18", borderColor: colors.primary + "40", borderRadius: colors.radius }]}
       >
         <Feather name="unlock" size={15} color={colors.primary} />
-        <Text style={[styles.endOfDayText, { color: colors.primary }]}>Open Register</Text>
+        {isTablet && <Text style={[styles.endOfDayText, { color: colors.primary }]} allowFontScaling={false}>Open Register</Text>}
       </TouchableOpacity>
     )
-  ), [colors, registerOpen]);
+  ), [colors, registerOpen, isTablet]);
 
   const CollectCreditButton = useMemo(() => (
     <TouchableOpacity
       onPress={() => setShowCreditCollection(true)}
-      style={[styles.endOfDayBtn, { backgroundColor: colors.primary + "15", borderColor: colors.primary + "35", borderRadius: colors.radius }]}
+      style={[isTablet ? styles.endOfDayBtn : styles.iconBtn, { backgroundColor: colors.primary + "15", borderColor: colors.primary + "35", borderRadius: colors.radius }]}
     >
       <Feather name="dollar-sign" size={15} color={colors.primary} />
-      <Text style={[styles.endOfDayText, { color: colors.primary }]}>Collect</Text>
+      {isTablet && <Text style={[styles.endOfDayText, { color: colors.primary }]} allowFontScaling={false}>Collect</Text>}
     </TouchableOpacity>
-  ), [colors]);
+  ), [colors, isTablet]);
 
   const CartContent = (
     <View style={styles.cartInner}>
@@ -871,7 +871,7 @@ export default function POSScreen() {
   );
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background, paddingTop: insets.top + (Platform.OS === "web" ? 8 : 0) }]}>
+    <View style={[styles.root, { backgroundColor: colors.background, paddingTop: insets.top + (Platform.OS === "web" ? 8 : 0), paddingLeft: insets.left, paddingRight: insets.right }]}>
       {isTablet ? (
         <View style={styles.splitRow}>
           <View style={styles.catalogPane}>
@@ -1495,7 +1495,7 @@ const styles = StyleSheet.create({
   splitRow: { flex: 1, flexDirection: "row" },
   catalogPane: { flex: 3 },
   catalogHeader: { flexDirection: "column", borderBottomWidth: 1 },
-  catalogBtnRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingTop: 6, paddingBottom: 2 },
+  catalogBtnRow: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", paddingHorizontal: 10, paddingVertical: 6, gap: 6 },
   catalogFilterRow: { flexShrink: 0 },
   cartPane: { borderLeftWidth: 1 },
   mobileContent: { flex: 1 },
@@ -1504,7 +1504,8 @@ const styles = StyleSheet.create({
   searchWrap: { flexDirection: "row", alignItems: "center", marginHorizontal: 12, marginTop: 8, marginBottom: 4, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, gap: 8 },
   searchInput: { flex: 1, fontSize: 14, paddingVertical: 2 },
   scanBtn: { padding: 10, marginLeft: 4 },
-  endOfDayBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, marginLeft: 4, gap: 5 },
+  iconBtn: { width: 38, height: 38, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  endOfDayBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, gap: 5 },
   endOfDayText: { fontSize: 12, fontWeight: "700" },
   cartInner: { flex: 1 },
   cartHeader: { paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1 },
