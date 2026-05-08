@@ -6,13 +6,18 @@
  *   pnpm --filter @workspace/pos-app run build:android
  *
  * Required env:
- *   EXPO_TOKEN  – Expo account token with EAS build access
+ *   EXPO_TOKEN        – Expo account token with EAS build access
  *
  * Optional env:
- *   EAS_PROFILE      – EAS build profile to use (default: "preview")
- *                      "preview" produces an APK; "production" produces an AAB.
- *   EAS_NO_DOWNLOAD  – Set to "1" to skip the automatic APK download and only
- *                      print the direct link.
+ *   EAS_PROFILE       – EAS build profile to use (default: "preview")
+ *                       "preview" produces an APK; "production" produces an AAB.
+ *   EAS_NO_DOWNLOAD   – Set to "1" to skip the automatic APK download and only
+ *                       print the direct link.
+ *   BUILD_WEBHOOK_URL – Webhook URL to POST a notification when the build
+ *                       finishes or fails. Payload is Slack-compatible, so a
+ *                       Slack incoming-webhook URL works out of the box. Also
+ *                       works with Discord and any generic JSON webhook.
+ *                       Store this value as a Replit secret named BUILD_WEBHOOK_URL.
  */
 
 const { spawn } = require("child_process");
@@ -23,6 +28,112 @@ const path = require("path");
 const projectRoot = path.resolve(__dirname, "..");
 const profile = process.env.EAS_PROFILE || "preview";
 const skipDownload = process.env.EAS_NO_DOWNLOAD === "1";
+
+/**
+ * Send a build notification to the configured webhook URL.
+ *
+ * Set BUILD_WEBHOOK_URL in your Replit secrets to enable notifications.
+ * The payload is Slack-compatible (works with Slack incoming webhooks,
+ * Discord webhook URLs, and any service that accepts JSON POST requests).
+ * Only HTTPS webhook URLs are supported.
+ *
+ * @param {"success"|"failure"|"cancelled"|"timeout"} outcome
+ * @param {string|null} buildUrl  EAS dashboard URL
+ * @param {string|null} artifactUrl  Direct download URL (success only)
+ * @param {string|null} [errorMessage]  Short error description for failure payloads
+ * @returns {Promise<void>}
+ */
+async function sendWebhookNotification(outcome, buildUrl, artifactUrl, errorMessage = null) {
+  const webhookUrl = process.env.BUILD_WEBHOOK_URL;
+  if (!webhookUrl) return;
+
+  let parsed;
+  try {
+    parsed = new URL(webhookUrl);
+  } catch {
+    console.warn("  [notify] BUILD_WEBHOOK_URL is not a valid URL — skipping notification.");
+    return;
+  }
+
+  if (parsed.protocol !== "https:") {
+    console.warn(
+      `  [notify] BUILD_WEBHOOK_URL uses protocol "${parsed.protocol}" — only HTTPS is supported. Skipping notification.`
+    );
+    return;
+  }
+
+  const isSuccess = outcome === "success";
+  const color = isSuccess ? "#2eb886" : "#e01e5a";
+  const emoji = isSuccess ? ":white_check_mark:" : ":x:";
+  const statusLabel =
+    outcome === "success"   ? "FINISHED — build succeeded" :
+    outcome === "cancelled" ? "CANCELLED" :
+    outcome === "timeout"   ? "TIMED OUT (check dashboard)" :
+    "FAILED";
+
+  const fields = [
+    { title: "Profile", value: profile, short: true },
+    { title: "Outcome", value: statusLabel, short: true },
+  ];
+  if (errorMessage) {
+    fields.push({ title: "Error", value: errorMessage, short: false });
+  }
+  if (buildUrl) {
+    fields.push({ title: "Dashboard", value: buildUrl, short: false });
+  }
+  if (artifactUrl) {
+    fields.push({ title: "Download", value: artifactUrl, short: false });
+  }
+
+  const payload = JSON.stringify({
+    text: `${emoji} *Al Salik Android build — ${statusLabel}*`,
+    attachments: [
+      {
+        color,
+        fields,
+        footer: `EAS build · profile: ${profile}`,
+        ts: Math.floor(Date.now() / 1000),
+      },
+    ],
+  });
+
+  return new Promise((resolve) => {
+    const options = {
+      hostname: parsed.hostname,
+      port: parsed.port || 443,
+      path: parsed.pathname + parsed.search,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(payload),
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      res.resume();
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        console.log(`  [notify] Webhook delivered (HTTP ${res.statusCode}).`);
+      } else {
+        console.warn(`  [notify] Webhook returned HTTP ${res.statusCode} — notification may not have been received.`);
+      }
+      resolve();
+    });
+
+    req.on("error", (err) => {
+      console.warn(`  [notify] Webhook request failed: ${err.message}`);
+      resolve();
+    });
+
+    req.setTimeout(10_000, () => {
+      console.warn("  [notify] Webhook request timed out — skipping.");
+      req.destroy();
+      resolve();
+    });
+
+    req.write(payload);
+    req.end();
+  });
+}
 
 const EXPO_API_BASE = "https://api.expo.dev";
 /** How long to wait between status polls (ms). */
@@ -364,53 +475,84 @@ async function main() {
   printBanner();
   checkToken();
 
-  const buildUrl = await runEasBuild();
-
-  const buildId = extractBuildId(buildUrl);
-  if (!buildId) {
-    // Couldn't extract an ID — fall back to the original footer and exit.
-    console.log("\nCould not extract build ID from EAS output.");
-    console.log("Track your build at: https://expo.dev/builds");
-    if (buildUrl) console.log(`Build URL: ${buildUrl}`);
-    return;
+  if (!process.env.BUILD_WEBHOOK_URL) {
+    console.log(
+      "  [notify] BUILD_WEBHOOK_URL is not set — notifications are disabled.\n" +
+      "           Add it as a Replit secret to receive Slack/webhook alerts."
+    );
   }
 
-  const { status, artifactUrl } = await pollBuildStatus(buildId);
+  // Track the build URL so the centralised catch can include it in failure
+  // notifications even when an unexpected error escapes a named code path.
+  let buildUrl = null;
 
-  if (status === "TIMEOUT") {
-    console.log("\nPolling timed out. Check the build dashboard for the final status:");
-    if (buildUrl) console.log(`  ${buildUrl}`);
-    return;
-  }
+  try {
+    buildUrl = await runEasBuild();
 
-  if (status !== "FINISHED") {
-    console.log(`\nBuild ended with status: ${status}`);
-    if (buildUrl) console.log(`  Dashboard: ${buildUrl}`);
-    process.exit(1);
-  }
-
-  // Build finished successfully.
-  let localPath = null;
-  if (artifactUrl && !skipDownload) {
-    const ext = inferArtifactExtension(artifactUrl, profile);
-    const fileName = `al-salik-pos-${profile}-${buildId.slice(0, 8)}${ext}`;
-    localPath = path.join(projectRoot, "dist", fileName);
-    console.log(`\nDownloading artifact (${ext}) to: ${localPath}`);
-    try {
-      await downloadFile(artifactUrl, localPath);
-      console.log("  Download complete.");
-    } catch (err) {
-      console.warn(`  Download failed: ${err.message}`);
-      console.warn("  You can still download manually from the link below.");
-      localPath = null;
+    const buildId = extractBuildId(buildUrl);
+    if (!buildId) {
+      // Couldn't extract an ID — fall back to the original footer and exit.
+      console.log("\nCould not extract build ID from EAS output.");
+      console.log("Track your build at: https://expo.dev/builds");
+      if (buildUrl) console.log(`Build URL: ${buildUrl}`);
+      // Notify as failure since we can't confirm success.
+      await sendWebhookNotification("failure", buildUrl, null);
+      return;
     }
-  } else if (artifactUrl && skipDownload) {
-    console.log("\nEAS_NO_DOWNLOAD=1 — skipping automatic download.");
-  } else {
-    console.warn("\nWarning: build finished but no artifact URL was returned by the API.");
-  }
 
-  printFooter(buildUrl, artifactUrl, localPath);
+    const { status, artifactUrl } = await pollBuildStatus(buildId);
+
+    if (status === "TIMEOUT") {
+      console.log("\nPolling timed out. Check the build dashboard for the final status:");
+      if (buildUrl) console.log(`  ${buildUrl}`);
+      await sendWebhookNotification("timeout", buildUrl, null);
+      return;
+    }
+
+    if (status === "CANCELLED") {
+      console.log(`\nBuild was cancelled.`);
+      if (buildUrl) console.log(`  Dashboard: ${buildUrl}`);
+      await sendWebhookNotification("cancelled", buildUrl, null);
+      process.exit(1);
+    }
+
+    if (status !== "FINISHED") {
+      console.log(`\nBuild ended with status: ${status}`);
+      if (buildUrl) console.log(`  Dashboard: ${buildUrl}`);
+      await sendWebhookNotification("failure", buildUrl, null);
+      process.exit(1);
+    }
+
+    // Build finished successfully.
+    let localPath = null;
+    if (artifactUrl && !skipDownload) {
+      const ext = inferArtifactExtension(artifactUrl, profile);
+      const fileName = `al-salik-pos-${profile}-${buildId.slice(0, 8)}${ext}`;
+      localPath = path.join(projectRoot, "dist", fileName);
+      console.log(`\nDownloading artifact (${ext}) to: ${localPath}`);
+      try {
+        await downloadFile(artifactUrl, localPath);
+        console.log("  Download complete.");
+      } catch (err) {
+        console.warn(`  Download failed: ${err.message}`);
+        console.warn("  You can still download manually from the link below.");
+        localPath = null;
+      }
+    } else if (artifactUrl && skipDownload) {
+      console.log("\nEAS_NO_DOWNLOAD=1 — skipping automatic download.");
+    } else {
+      console.warn("\nWarning: build finished but no artifact URL was returned by the API.");
+    }
+
+    await sendWebhookNotification("success", buildUrl, artifactUrl);
+    printFooter(buildUrl, artifactUrl, localPath);
+  } catch (err) {
+    // Centralised failure handler: catches EAS CLI errors, permanent Expo API
+    // errors from pollBuildStatus, and any other unexpected exceptions so a
+    // notification is always sent before the process exits.
+    await sendWebhookNotification("failure", buildUrl, null, err.message);
+    throw err;
+  }
 }
 
 main().catch((err) => {
