@@ -1,0 +1,24 @@
+I want to implement a 'Work Mode' configuration to Al Salik POS based on the License Type. When a license is activated, the app should configure itself as either 'Standard/Restaurant' or 'Saloon/Beauty'.
+1. Database & State Changes:
+• Add a work_mode field to the global settings state (Options: standard, saloon).
+• For saloon mode, rename 'Products' to 'Services' in the UI where applicable.
+• Add a 'Duration' field (minutes) to products/services when work_mode is saloon.
+2. Saloon Module Features:
+• Staff/Stylist Assignment: Allow assigning a specific staff member (Stylist) to individual line items in a sale, not just the whole bill.
+• Appointment Calendar: Add a new 'Bookings' tab. I need a simple calendar view to see scheduled services.
+• Chair/Station Management: In saloon mode, rename 'Tables' (Dine-in) to 'Chairs' or 'Stations'.
+3. UI/UX Logic:
+• Create a 'Business Type' selector in the initial Setup/License activation screen.
+• Modify the Register: If work_mode == saloon, show a 'Stylist' picker after selecting a service.
+• Update the Receipt: Print the Stylist's name next to the service performed.
+Please update the core provider/state management and the UI components to react to this work_mode variable."
+Key Technical Considerations for your Module
+Since you are building a cross-platform app (Expo/Electron), keep these three points in mind:
+• Service vs. Product Logic: Unlike a burger, a "Haircut" doesn't have physical stock. Ensure that when work_mode is Saloon, the "Real-time stock tracking" for services is disabled by default, but remains enabled for retail items (like Shampoos).
+• The "Commission" Factor: Saloons usually require reporting on how much each stylist earned. Your Reporting & Analytics module will need a new report: "Sales by Stylist/Provider."
+• The Switcher: In your Back Office Web App, ensure the License Management section has a dropdown to set the work_mode so that when the device syncs and receives the JWT token, it automatically knows which UI to render.
+Next Steps for Implementation
+1.	Define the Schema: If you are using SQLite (offline-first), you’ll need to run a migration to add stylist_id to your sales_items table.
+2.	UI Branding: You can use conditional rendering in Flutter/React Native:
+• {workMode === 'saloon' ? <SaloonIcons/> : <RestaurantIcons/>}
+3.	KOT vs. SOT: In a restaurant, you have a Kitchen Order Ticket. In a saloon, you might want a Service Order Ticket that prints at the stylist's station.
