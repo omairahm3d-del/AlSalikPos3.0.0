@@ -598,7 +598,8 @@ export default function POSScreen() {
           }}
           style={[styles.itemDiscBtn, { borderColor: colors.primary + "60" }]}
         >
-          <Feather name="percent" size={10} color={colors.primary} />
+          <Feather name="percent" size={13} color={colors.primary} />
+          <Text style={{ fontSize: 12, color: colors.primary, fontWeight: "700" }}>Disc</Text>
         </TouchableOpacity>
         {item.product.priceChangeAllowed && (
           <TouchableOpacity
@@ -606,12 +607,10 @@ export default function POSScreen() {
               setShowPriceEdit(item.product.id);
               setPriceEditInput(String(item.product.price));
             }}
-            style={[styles.itemDiscBtn, { marginLeft: 4, borderColor: "#F39C12" + "60" }]}
+            style={[styles.itemDiscBtn, { borderColor: "#F39C12" + "80" }]}
           >
-            <Feather name="edit-2" size={10} color="#F39C12" />
-            <Text style={{ fontSize: 10, color: "#F39C12", marginLeft: 3, fontWeight: "600" }}>
-              Price
-            </Text>
+            <Feather name="edit-2" size={13} color="#F39C12" />
+            <Text style={{ fontSize: 12, color: "#F39C12", fontWeight: "700" }}>Price</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -788,8 +787,8 @@ export default function POSScreen() {
                     onPress={() => { if (!heldOrderInfo) setOrderType(ot.key); }}
                     style={[styles.orderTypeChip, { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary + "18" : "transparent", borderRadius: colors.radius, opacity: heldOrderInfo && !active ? 0.4 : 1 }]}
                   >
-                    <Feather name={ot.icon as any} size={12} color={active ? colors.primary : colors.mutedForeground} />
-                    <Text style={{ color: active ? colors.primary : colors.mutedForeground, fontSize: 11, fontWeight: "600", marginLeft: 4 }}>{ot.label}</Text>
+                    <Feather name={ot.icon as any} size={14} color={active ? colors.primary : colors.mutedForeground} />
+                    <Text style={{ color: active ? colors.primary : colors.mutedForeground, fontSize: 13, fontWeight: "700", marginLeft: 5 }}>{ot.label}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -873,16 +872,20 @@ export default function POSScreen() {
   );
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background, paddingTop: Platform.OS === "web" ? insets.top + 8 : 0 }]}>
+    <View style={[styles.root, { backgroundColor: colors.background, paddingTop: insets.top + (Platform.OS === "web" ? 8 : 0) }]}>
       {isTablet ? (
         <View style={styles.splitRow}>
           <View style={styles.catalogPane}>
             <View style={[styles.catalogHeader, { borderBottomColor: colors.border }]}>
-              <CategoryFilter categories={dynamicCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
-              {CollectCreditButton}
-              {OpenDrawerButton}
-              {EndOfDayButton}
-              {ScanButton}
+              <View style={styles.catalogFilterRow}>
+                <CategoryFilter categories={dynamicCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
+              </View>
+              <View style={styles.catalogBtnRow}>
+                {CollectCreditButton}
+                {OpenDrawerButton}
+                {EndOfDayButton}
+                {ScanButton}
+              </View>
             </View>
             {SearchBar}
             {loading ? (
@@ -914,11 +917,15 @@ export default function POSScreen() {
         <>
           <View style={styles.mobileContent}>
             <View style={[styles.catalogHeader, { borderBottomColor: colors.border }]}>
-              <CategoryFilter categories={dynamicCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
-              {CollectCreditButton}
-              {OpenDrawerButton}
-              {EndOfDayButton}
-              {ScanButton}
+              <View style={styles.catalogBtnRow}>
+                {CollectCreditButton}
+                {OpenDrawerButton}
+                {EndOfDayButton}
+                {ScanButton}
+              </View>
+              <View style={styles.catalogFilterRow}>
+                <CategoryFilter categories={dynamicCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
+              </View>
             </View>
             {SearchBar}
             {loading ? (
@@ -1488,7 +1495,9 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   splitRow: { flex: 1, flexDirection: "row" },
   catalogPane: { flex: 3 },
-  catalogHeader: { flexDirection: "row", alignItems: "center", borderBottomWidth: 1, paddingRight: 12 },
+  catalogHeader: { flexDirection: "column", borderBottomWidth: 1 },
+  catalogBtnRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingTop: 6, paddingBottom: 2 },
+  catalogFilterRow: { flexShrink: 0 },
   cartPane: { borderLeftWidth: 1 },
   mobileContent: { flex: 1 },
   grid: { padding: 10, paddingTop: 4 },
@@ -1504,8 +1513,8 @@ const styles = StyleSheet.create({
   cartHeaderRight: { flexDirection: "row", gap: 12, alignItems: "center" },
   cartTitle: { fontSize: 17, fontWeight: "700", fontFamily: "Inter_700Bold" },
   heldBadge: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginTop: 6, alignSelf: "flex-start" },
-  orderTypeRow: { flexDirection: "row", gap: 6, marginTop: 8 },
-  orderTypeChip: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1 },
+  orderTypeRow: { flexDirection: "row", gap: 6, marginTop: 10 },
+  orderTypeChip: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingHorizontal: 8, paddingVertical: 10, borderWidth: 1.5 },
   staffLabel: { fontSize: 11 },
   cartList: { flex: 1 },
   cartFooter: { padding: 16, borderTopWidth: 1 },
@@ -1534,8 +1543,8 @@ const styles = StyleSheet.create({
   modalTopBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1 },
   modalTitle: { fontSize: 20, fontWeight: "700", fontFamily: "Inter_700Bold" },
   paymentOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "center", alignItems: "center" },
-  paymentScrollContent: { alignItems: "center", justifyContent: "center", flexGrow: 1, padding: 24 },
-  paymentSheet: { width: "100%", maxWidth: 460, padding: 24 },
+  paymentScrollContent: { alignItems: "center", justifyContent: "center", flexGrow: 1, padding: 12 },
+  paymentSheet: { width: "100%", maxWidth: 460, padding: 20, paddingHorizontal: 16 },
   paymentTitle: { fontSize: 22, fontWeight: "700", fontFamily: "Inter_700Bold", marginBottom: 20 },
   paymentLabel: { fontSize: 12, marginBottom: 8, textTransform: "uppercase" },
   paymentMethods: { flexDirection: "row", gap: 8, marginBottom: 12, flexWrap: "wrap" },
@@ -1577,7 +1586,7 @@ const styles = StyleSheet.create({
   splitInput: { flex: 1, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, borderWidth: 1 },
   splitAddBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
   itemDiscRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingBottom: 4 },
-  itemActionRow: { position: "absolute", right: 8, top: 2, flexDirection: "row", alignItems: "center", gap: 4 },
-  itemDiscBtn: { flexDirection: "row", alignItems: "center", padding: 4, borderWidth: 1, borderRadius: 6 },
+  itemActionRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
+  itemDiscBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderRadius: 6, gap: 4 },
   itemDiscSheet: { width: "100%", maxWidth: 360, padding: 24 },
 });
