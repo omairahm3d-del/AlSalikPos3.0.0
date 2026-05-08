@@ -9,15 +9,26 @@
  *   EXPO_TOKEN  – Expo account token with EAS build access
  *
  * Optional env:
- *   EAS_PROFILE – EAS build profile to use (default: "preview")
- *                 "preview" produces an APK; "production" produces an AAB.
+ *   EAS_PROFILE      – EAS build profile to use (default: "preview")
+ *                      "preview" produces an APK; "production" produces an AAB.
+ *   EAS_NO_DOWNLOAD  – Set to "1" to skip the automatic APK download and only
+ *                      print the direct link.
  */
 
 const { spawn } = require("child_process");
+const https = require("https");
+const fs = require("fs");
 const path = require("path");
 
 const projectRoot = path.resolve(__dirname, "..");
 const profile = process.env.EAS_PROFILE || "preview";
+const skipDownload = process.env.EAS_NO_DOWNLOAD === "1";
+
+const EXPO_API_BASE = "https://api.expo.dev";
+/** How long to wait between status polls (ms). */
+const POLL_INTERVAL_MS = 30_000;
+/** Give up polling after this many minutes. EAS builds rarely exceed 40 min. */
+const POLL_TIMEOUT_MS = 50 * 60 * 1000;
 
 function fail(message) {
   console.error(`\nERROR: ${message}\n`);
@@ -118,15 +129,233 @@ function runEasBuild() {
   });
 }
 
-function printFooter(buildUrl) {
+/**
+ * Extract the build UUID from an EAS dashboard URL.
+ * URL shape: https://expo.dev/accounts/<acct>/projects/<slug>/builds/<uuid>
+ *
+ * @param {string|null} buildUrl
+ * @returns {string|null}
+ */
+function extractBuildId(buildUrl) {
+  if (!buildUrl) return null;
+  const match = buildUrl.match(/\/builds\/([0-9a-f-]{36})/i);
+  return match ? match[1] : null;
+}
+
+/**
+ * Perform a single HTTPS GET and resolve with the parsed JSON body.
+ * Rejects immediately on permanent HTTP errors (4xx) to avoid burning the
+ * entire polling timeout on auth or routing problems.
+ *
+ * @param {string} url
+ * @param {Record<string,string>} headers
+ * @returns {Promise<unknown>}
+ */
+function fetchJson(url, headers) {
+  return new Promise((resolve, reject) => {
+    const options = { headers };
+    https.get(url, options, (res) => {
+      let body = "";
+      res.on("data", (chunk) => { body += chunk; });
+      res.on("end", () => {
+        // Fail fast on permanent client errors — retrying won't help.
+        if (res.statusCode === 401 || res.statusCode === 403) {
+          reject(new Error(
+            `Expo API returned HTTP ${res.statusCode}. ` +
+            "Check that EXPO_TOKEN is valid and has EAS build access."
+          ));
+          return;
+        }
+        if (res.statusCode === 404) {
+          reject(new Error(
+            `Expo API returned HTTP 404 for build. ` +
+            "The build ID may be incorrect or the build was deleted."
+          ));
+          return;
+        }
+        // For other non-2xx codes (5xx, etc.) surface but let caller retry.
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          reject(new Error(`Expo API returned HTTP ${res.statusCode}: ${body.slice(0, 200)}`));
+          return;
+        }
+        try {
+          resolve(JSON.parse(body));
+        } catch {
+          reject(new Error(`Failed to parse API response: ${body.slice(0, 200)}`));
+        }
+      });
+    }).on("error", reject);
+  });
+}
+
+/**
+ * Sleep for `ms` milliseconds.
+ *
+ * @param {number} ms
+ * @returns {Promise<void>}
+ */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Poll the Expo API until the build reaches a terminal state.
+ *
+ * Terminal states: FINISHED, ERRORED, CANCELLED, EXPIRED.
+ * In-progress states: NEW, IN_QUEUE, IN_PROGRESS.
+ *
+ * @param {string} buildId
+ * @returns {Promise<{status: string, apkUrl: string|null}>}
+ */
+async function pollBuildStatus(buildId) {
+  const apiUrl = `${EXPO_API_BASE}/v2/builds/${buildId}`;
+  const headers = {
+    Authorization: `Bearer ${process.env.EXPO_TOKEN}`,
+    "Content-Type": "application/json",
+  };
+
+  const deadline = Date.now() + POLL_TIMEOUT_MS;
+  let attempt = 0;
+
+  console.log(`\nPolling build status for ID: ${buildId}`);
+  console.log(`(checking every ${POLL_INTERVAL_MS / 1000}s, timeout ${POLL_TIMEOUT_MS / 60000} min)\n`);
+
+  while (Date.now() < deadline) {
+    attempt += 1;
+    let json;
+    try {
+      json = await fetchJson(apiUrl, headers);
+    } catch (err) {
+      // Permanent errors (auth, not-found) should abort immediately.
+      const isPermanent = /HTTP 40[134]/.test(err.message);
+      if (isPermanent) throw err;
+      console.warn(`  [poll #${attempt}] API request failed: ${err.message} — retrying…`);
+      await sleep(POLL_INTERVAL_MS);
+      continue;
+    }
+
+    const build = json && (json.data || json);
+    const status = build && build.status;
+    const artifacts = build && build.artifacts;
+    const artifactUrl = artifacts && (artifacts.buildUrl || artifacts.applicationArchiveUrl) || null;
+
+    process.stdout.write(`  [poll #${attempt}] status = ${status || "unknown"}\n`);
+
+    if (!status) {
+      await sleep(POLL_INTERVAL_MS);
+      continue;
+    }
+
+    if (status === "FINISHED") {
+      return { status, artifactUrl };
+    }
+
+    if (["ERRORED", "CANCELLED", "EXPIRED"].includes(status)) {
+      return { status, artifactUrl: null };
+    }
+
+    // Still running — wait before next poll.
+    await sleep(POLL_INTERVAL_MS);
+  }
+
+  return { status: "TIMEOUT", artifactUrl: null };
+}
+
+/**
+ * Infer the file extension for a downloaded build artifact.
+ * Priority: extension embedded in the artifact URL → profile heuristic.
+ *
+ * EAS "preview" profiles emit APKs; "production" profiles emit AABs.
+ *
+ * @param {string|null} artifactUrl
+ * @param {string} buildProfile
+ * @returns {string} e.g. ".apk" or ".aab"
+ */
+function inferArtifactExtension(artifactUrl, buildProfile) {
+  if (artifactUrl) {
+    const urlPath = new URL(artifactUrl).pathname.toLowerCase();
+    if (urlPath.endsWith(".apk")) return ".apk";
+    if (urlPath.endsWith(".aab")) return ".aab";
+  }
+  // Fall back to profile heuristic: "production" → AAB, everything else → APK.
+  return buildProfile === "production" ? ".aab" : ".apk";
+}
+
+/**
+ * Download a file from `url` to `destPath`, streaming to disk.
+ *
+ * @param {string} url
+ * @param {string} destPath
+ * @returns {Promise<void>}
+ */
+function downloadFile(url, destPath) {
+  return new Promise((resolve, reject) => {
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    const file = fs.createWriteStream(destPath);
+    let settled = false;
+
+    function done(err) {
+      if (settled) return;
+      settled = true;
+      file.close();
+      if (err) {
+        fs.unlink(destPath, () => {});
+        reject(err);
+      } else {
+        process.stdout.write("\n");
+        resolve();
+      }
+    }
+
+    // Handle filesystem write errors (e.g. disk full, permission denied).
+    file.on("error", (err) => done(new Error(`Filesystem write error: ${err.message}`)));
+
+    function get(targetUrl, redirectCount = 0) {
+      if (redirectCount > 5) {
+        done(new Error("Too many redirects while downloading artifact."));
+        return;
+      }
+      https.get(targetUrl, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          get(res.headers.location, redirectCount + 1);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          done(new Error(`Download failed with HTTP ${res.statusCode}`));
+          return;
+        }
+        const total = parseInt(res.headers["content-length"] || "0", 10);
+        let received = 0;
+        res.on("data", (chunk) => {
+          received += chunk.length;
+          if (total > 0) {
+            const pct = ((received / total) * 100).toFixed(1);
+            process.stdout.write(`\r  Downloading… ${pct}% (${(received / 1024 / 1024).toFixed(1)} MB)`);
+          }
+        });
+        res.pipe(file);
+        file.on("finish", () => done(null));
+      }).on("error", (err) => done(err));
+    }
+
+    get(url);
+  });
+}
+
+function printFooter(buildUrl, artifactUrl, localPath) {
   console.log("\n" + "=".repeat(60));
-  console.log("  Build submitted successfully!");
+  console.log("  Build complete!");
   if (buildUrl) {
-    console.log("  Build URL / download link:");
-    console.log(`  ${buildUrl}`);
-  } else {
-    console.log("  Track your build at:");
-    console.log("  https://expo.dev/builds");
+    console.log("  Dashboard:");
+    console.log(`    ${buildUrl}`);
+  }
+  if (artifactUrl) {
+    console.log("  Direct download link:");
+    console.log(`    ${artifactUrl}`);
+  }
+  if (localPath) {
+    console.log("  Downloaded to:");
+    console.log(`    ${localPath}`);
   }
   console.log("=".repeat(60) + "\n");
 }
@@ -134,8 +363,54 @@ function printFooter(buildUrl) {
 async function main() {
   printBanner();
   checkToken();
+
   const buildUrl = await runEasBuild();
-  printFooter(buildUrl);
+
+  const buildId = extractBuildId(buildUrl);
+  if (!buildId) {
+    // Couldn't extract an ID — fall back to the original footer and exit.
+    console.log("\nCould not extract build ID from EAS output.");
+    console.log("Track your build at: https://expo.dev/builds");
+    if (buildUrl) console.log(`Build URL: ${buildUrl}`);
+    return;
+  }
+
+  const { status, artifactUrl } = await pollBuildStatus(buildId);
+
+  if (status === "TIMEOUT") {
+    console.log("\nPolling timed out. Check the build dashboard for the final status:");
+    if (buildUrl) console.log(`  ${buildUrl}`);
+    return;
+  }
+
+  if (status !== "FINISHED") {
+    console.log(`\nBuild ended with status: ${status}`);
+    if (buildUrl) console.log(`  Dashboard: ${buildUrl}`);
+    process.exit(1);
+  }
+
+  // Build finished successfully.
+  let localPath = null;
+  if (artifactUrl && !skipDownload) {
+    const ext = inferArtifactExtension(artifactUrl, profile);
+    const fileName = `al-salik-pos-${profile}-${buildId.slice(0, 8)}${ext}`;
+    localPath = path.join(projectRoot, "dist", fileName);
+    console.log(`\nDownloading artifact (${ext}) to: ${localPath}`);
+    try {
+      await downloadFile(artifactUrl, localPath);
+      console.log("  Download complete.");
+    } catch (err) {
+      console.warn(`  Download failed: ${err.message}`);
+      console.warn("  You can still download manually from the link below.");
+      localPath = null;
+    }
+  } else if (artifactUrl && skipDownload) {
+    console.log("\nEAS_NO_DOWNLOAD=1 — skipping automatic download.");
+  } else {
+    console.warn("\nWarning: build finished but no artifact URL was returned by the API.");
+  }
+
+  printFooter(buildUrl, artifactUrl, localPath);
 }
 
 main().catch((err) => {
