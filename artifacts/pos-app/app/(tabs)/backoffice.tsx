@@ -1268,7 +1268,7 @@ export default function BackOfficeScreen() {
           </View>
         )}
 
-        {Platform.OS === "android" && (
+        {Platform.OS === "android" && !isElectron() && (
           <View style={{ marginBottom: 16, padding: 12, backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
               <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 14 }}>Sunmi Built-in Printer</Text>
@@ -1324,7 +1324,7 @@ export default function BackOfficeScreen() {
           </View>
         )}
 
-        {Platform.OS === "android" && (
+        {Platform.OS === "android" && !isElectron() && (
           <View style={{ marginBottom: 16, padding: 12, backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}>
             <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 14, marginBottom: 4 }}>Android Built-in Printer (Serial / USB)</Text>
             <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 12, lineHeight: 15 }}>
