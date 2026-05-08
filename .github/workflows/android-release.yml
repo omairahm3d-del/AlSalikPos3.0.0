@@ -56,6 +56,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # ── Pre-flight checks ────────────────────────────────────────────────────
+      # TypeScript is checked before any cloud resources are consumed.
+      # A type error here cancels the job in seconds and preserves EAS credits.
+      - name: TypeScript check
+        run: pnpm --filter @workspace/pos-app run typecheck
+
       # ── Version bump ────────────────────────────────────────────────────────
       # Fires only for tags matching vX.Y.Z (e.g. v1.2.3).
       #
