@@ -119,18 +119,29 @@ function buildEscPosBytes(text: string, autoCut: boolean): string {
 export const ANDROID_PRINTER_PATHS = [
   "/dev/prnt",
   "/dev/usb/lp0",
+  // Dukkantek / SmartPos (MediaTek-based Android POS terminals, UAE market)
+  "/dev/ttyHSL0",
+  "/dev/ttyHSL1",
+  "/dev/ttyMT0",
+  "/dev/ttyMT1",
+  "/dev/ttyACM0",
+  "/dev/ttyACM1",
+  // Standard serial ports
   "/dev/ttyS0",
   "/dev/ttyS1",
   "/dev/ttyS2",
   "/dev/ttyS3",
   "/dev/ttyS4",
   "/dev/ttyS5",
+  // Rockchip / Sunmy
   "/dev/ttyXR0",
   "/dev/ttyXR1",
   "/dev/ttyAMA0",
   "/dev/ttyAML1",
+  // USB serial
   "/dev/ttyUSB0",
   "/dev/ttyUSB1",
+  // Generic names
   "/dev/thermal_printer",
   "/dev/tp",
   "/dev/printer",

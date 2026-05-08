@@ -1330,10 +1330,16 @@ export default function BackOfficeScreen() {
         {Platform.OS === "android" && !isElectron() && (
           <View style={{ marginBottom: 16, padding: 12, backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}>
             <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 14, marginBottom: 4 }}>Android Built-in Printer (Serial / USB)</Text>
-            <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 12, lineHeight: 15 }}>
-              For devices with a printer exposed as a serial or USB device path.
+            <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 6, lineHeight: 15 }}>
+              For devices with a built-in thermal printer accessible via a serial or USB device path.
               Sends ESC/POS commands directly — no dialog, no extra app.
             </Text>
+            <View style={{ backgroundColor: colors.primary + "12", borderRadius: 6, padding: 8, marginBottom: 10 }}>
+              <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 11, marginBottom: 2 }}>Dukkantek / SmartPos devices</Text>
+              <Text style={{ color: colors.mutedForeground, fontSize: 11, lineHeight: 15 }}>
+                Try tapping <Text style={{ fontFamily: "monospace", color: colors.foreground }}>/dev/ttyHSL0</Text> or <Text style={{ fontFamily: "monospace", color: colors.foreground }}>/dev/ttyMT0</Text> first, then press "Send Test Print". Use "Auto-detect" to scan all paths automatically.
+              </Text>
+            </View>
             {renderSwitch(
               "Enable Android built-in printer",
               !!printerSettings.androidPrinterEnabled,
@@ -1351,7 +1357,7 @@ export default function BackOfficeScreen() {
                   Tap a common path to select it, or type your own above.
                 </Text>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
-                  {["/dev/prnt", "/dev/usb/lp0", "/dev/ttyS0", "/dev/ttyS1", "/dev/ttyS2", "/dev/ttyS3", "/dev/ttyS4", "/dev/ttyS5", "/dev/ttyXR0", "/dev/ttyXR1", "/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/thermal_printer", "/dev/tp", "/dev/printer", "/dev/bprint"].map((p) => {
+                  {["/dev/ttyHSL0", "/dev/ttyHSL1", "/dev/ttyMT0", "/dev/ttyMT1", "/dev/ttyACM0", "/dev/ttyACM1", "/dev/prnt", "/dev/usb/lp0", "/dev/ttyS0", "/dev/ttyS1", "/dev/ttyS2", "/dev/ttyS3", "/dev/ttyS4", "/dev/ttyS5", "/dev/ttyXR0", "/dev/ttyXR1", "/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/thermal_printer", "/dev/tp", "/dev/printer", "/dev/bprint"].map((p) => {
                     const active = (printerSettings.androidPrinterPath || "/dev/prnt") === p;
                     return (
                       <TouchableOpacity
