@@ -1288,32 +1288,64 @@ export default function BackOfficeScreen() {
                   (v) => setPrinterSettings({ ...printerSettings, androidPrinterPath: v }),
                   "/dev/prnt",
                 )}
-                <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 10, lineHeight: 15 }}>
-                  Common paths: /dev/prnt · /dev/ttyS1 · /dev/ttyS2 · /dev/printer{"\n"}
-                  Leave blank to use /dev/prnt (default for FH100-A3-D).
+                <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 8, lineHeight: 15 }}>
+                  Tap a common path to select it, or type your own above.
                 </Text>
-                {renderSwitch("Auto-cut paper after print", printerSettings.autoCutPaper !== false, (v) => setPrinterSettings({ ...printerSettings, autoCutPaper: v }))}
-                <TouchableOpacity
-                  onPress={async () => {
-                    const { printAndroidDevice } = await import("@/lib/printBridge");
-                    const devPath = printerSettings.androidPrinterPath || "/dev/prnt";
-                    const testText = `AL SALIK POS\nTest Print\n${new Date().toLocaleString("en-GB")}\n--------------------------------\nIf this prints clearly,\nyour printer is configured.\n--------------------------------\n`;
-                    const ok = await printAndroidDevice(testText, {
-                      devicePath: devPath,
-                      autoCut: printerSettings.autoCutPaper !== false,
-                    });
-                    Alert.alert(
-                      ok ? "Test Sent" : "Test Failed",
-                      ok
-                        ? `ESC/POS bytes sent to ${devPath}.\nCheck if the printer printed a test strip.`
-                        : `Could not write to ${devPath}.\nTry a different device path.`,
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                  {["/dev/prnt", "/dev/usb/lp0", "/dev/ttyS1", "/dev/ttyS2", "/dev/ttyS3", "/dev/printer", "/dev/bprint", "/dev/ttyUSB0"].map((p) => {
+                    const active = (printerSettings.androidPrinterPath || "/dev/prnt") === p;
+                    return (
+                      <TouchableOpacity
+                        key={p}
+                        onPress={() => setPrinterSettings({ ...printerSettings, androidPrinterPath: p })}
+                        style={[s.chip, { backgroundColor: active ? colors.primary : colors.secondary, borderColor: active ? colors.primary : colors.border, borderRadius: colors.radius, paddingVertical: 3 }]}
+                      >
+                        <Text style={{ color: active ? "#fff" : colors.mutedForeground, fontSize: 11, fontFamily: "monospace" }}>{p}</Text>
+                      </TouchableOpacity>
                     );
-                  }}
-                  style={[s.chip, { borderColor: colors.success, borderStyle: "dashed", alignSelf: "flex-start", marginTop: 8, borderRadius: colors.radius, flexDirection: "row", gap: 6 }]}
-                >
-                  <Feather name="printer" size={12} color={colors.success} />
-                  <Text style={{ color: colors.success, fontWeight: "600", fontSize: 12 }}>Send Test Print</Text>
-                </TouchableOpacity>
+                  })}
+                </View>
+                {renderSwitch("Auto-cut paper after print", printerSettings.autoCutPaper !== false, (v) => setPrinterSettings({ ...printerSettings, autoCutPaper: v }))}
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                  <TouchableOpacity
+                    onPress={async () => {
+                      const { printAndroidDevice } = await import("@/lib/printBridge");
+                      const devPath = printerSettings.androidPrinterPath || "/dev/prnt";
+                      const testText = `AL SALIK POS\nTest Print\n${new Date().toLocaleString("en-GB")}\n--------------------------------\nIf this prints clearly,\nyour printer is configured.\n--------------------------------\n`;
+                      const ok = await printAndroidDevice(testText, {
+                        devicePath: devPath,
+                        autoCut: printerSettings.autoCutPaper !== false,
+                      });
+                      Alert.alert(
+                        ok ? "Test Sent" : "Test Failed",
+                        ok
+                          ? `ESC/POS bytes sent to ${devPath}.\nCheck if the printer printed a test strip.`
+                          : `Could not write to ${devPath}.\n\nTap "Auto-detect" to find the correct path for your device automatically.`,
+                      );
+                    }}
+                    style={[s.chip, { borderColor: colors.success, borderStyle: "dashed", alignSelf: "flex-start", borderRadius: colors.radius, flexDirection: "row", gap: 6 }]}
+                  >
+                    <Feather name="printer" size={12} color={colors.success} />
+                    <Text style={{ color: colors.success, fontWeight: "600", fontSize: 12 }}>Send Test Print</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={async () => {
+                      const { detectAndroidPrinterPath } = await import("@/lib/printBridge");
+                      Alert.alert("Auto-detecting…", "Trying common printer paths. The printer will print a test strip when found.");
+                      const found = await detectAndroidPrinterPath(printerSettings.autoCutPaper !== false);
+                      if (found) {
+                        setPrinterSettings({ ...printerSettings, androidPrinterPath: found });
+                        Alert.alert("Printer Found", `Working path: ${found}\n\nIt has been set as your device path automatically.`);
+                      } else {
+                        Alert.alert("Not Found", "Could not write to any common printer path.\n\nMake sure the printer is connected and the app has storage permissions.");
+                      }
+                    }}
+                    style={[s.chip, { borderColor: colors.primary, borderStyle: "dashed", alignSelf: "flex-start", borderRadius: colors.radius, flexDirection: "row", gap: 6 }]}
+                  >
+                    <Feather name="search" size={12} color={colors.primary} />
+                    <Text style={{ color: colors.primary, fontWeight: "600", fontSize: 12 }}>Auto-detect</Text>
+                  </TouchableOpacity>
+                </View>
               </>
             )}
           </View>

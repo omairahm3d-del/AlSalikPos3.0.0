@@ -68,6 +68,17 @@ function buildEscPosBytes(text: string, autoCut: boolean): string {
   return init + leftAlign + text + feeds + cut;
 }
 
+export const ANDROID_PRINTER_PATHS = [
+  "/dev/prnt",
+  "/dev/usb/lp0",
+  "/dev/ttyS1",
+  "/dev/ttyS2",
+  "/dev/ttyS3",
+  "/dev/printer",
+  "/dev/bprint",
+  "/dev/ttyUSB0",
+];
+
 export async function printAndroidDevice(
   text: string,
   opts: { devicePath?: string; autoCut?: boolean } = {}
@@ -84,6 +95,25 @@ export async function printAndroidDevice(
     console.warn("[printBridge] Android device print failed:", e?.message ?? e);
     return false;
   }
+}
+
+export async function detectAndroidPrinterPath(
+  autoCut = true,
+): Promise<string | null> {
+  if (Platform.OS !== "android") return null;
+  const RNFS = require("react-native-fs");
+  const testText = `AL SALIK POS\nPrinter detected!\n${new Date().toLocaleString("en-GB")}\n`;
+  for (const path of ANDROID_PRINTER_PATHS) {
+    try {
+      const payload = buildEscPosBytes(testText, autoCut);
+      const b64 = Buffer.from(payload, "binary").toString("base64");
+      await RNFS.writeFile(path, b64, "base64");
+      return path;
+    } catch {
+      // try next
+    }
+  }
+  return null;
 }
 
 export async function printRawText(text: string, opts: { deviceName?: string; autoCut?: boolean; codepage?: "cp437" | "cp1252" | "ascii" } = {}): Promise<boolean> {
