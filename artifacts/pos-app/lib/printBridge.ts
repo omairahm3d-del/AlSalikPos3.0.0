@@ -57,6 +57,9 @@ export type PrintOpts = {
   codepage?: "cp437" | "cp1252" | "ascii";
   androidDevicePath?: string;
   sunmiEnabled?: boolean;
+  networkPrinterIp?: string;
+  networkPrinterPort?: number;
+  bluetoothAddress?: string;
 };
 
 // ─── Sunmi SDK ────────────────────────────────────────────────────────────────
@@ -192,6 +195,96 @@ export async function detectAndroidPrinterPath(
   return null;
 }
 
+// ─── Network / WiFi Printer (raw TCP port 9100) ───────────────────────────────
+
+export async function printNetworkPrinter(
+  text: string,
+  ip: string,
+  port = 9100,
+  autoCut = true,
+): Promise<boolean> {
+  if (!ip?.trim()) return false;
+  try {
+    const TcpSocket = require("react-native-tcp-socket");
+    const payload = buildEscPosBytes(text, autoCut);
+    const bytes = Buffer.from(payload, "binary");
+    return await new Promise<boolean>((resolve) => {
+      let done = false;
+      const timer = setTimeout(() => { if (!done) { done = true; try { client.destroy(); } catch {} resolve(false); } }, 6000);
+      const client = TcpSocket.createConnection({ host: ip.trim(), port }, () => {
+        client.write(bytes);
+        setTimeout(() => { try { client.destroy(); } catch {} }, 300);
+        if (!done) { done = true; clearTimeout(timer); resolve(true); }
+      });
+      client.on("error", () => { if (!done) { done = true; clearTimeout(timer); resolve(false); } });
+    });
+  } catch (e: any) {
+    console.warn("[printBridge] Network print failed:", e?.message ?? e);
+    return false;
+  }
+}
+
+export async function testNetworkPrinter(ip: string, port = 9100, autoCut = true): Promise<boolean> {
+  const text = `AL SALIK POS\nNetwork Printer Test\n${new Date().toLocaleString("en-GB")}\n--------------------------------\nPrinter connected!\n--------------------------------\n`;
+  return printNetworkPrinter(text, ip, port, autoCut);
+}
+
+// ─── Bluetooth Printer (ESC/POS) ──────────────────────────────────────────────
+
+export type BluetoothDevice = { name: string; address: string };
+
+export async function listBluetoothDevices(): Promise<BluetoothDevice[]> {
+  if (Platform.OS !== "android" && Platform.OS !== "ios") return [];
+  try {
+    const { BluetoothManager } = require("react-native-bluetooth-escpos-printer");
+    const raw = await BluetoothManager.enableBluetooth();
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((d: any) => {
+        try { return typeof d === "string" ? JSON.parse(d) : d; } catch { return null; }
+      })
+      .filter((d: any) => d?.address)
+      .map((d: any) => ({ name: d.name || d.address, address: d.address }));
+  } catch (e: any) {
+    console.warn("[printBridge] BT list failed:", e?.message ?? e);
+    return [];
+  }
+}
+
+export async function connectBluetoothPrinter(address: string): Promise<boolean> {
+  try {
+    const { BluetoothManager } = require("react-native-bluetooth-escpos-printer");
+    await BluetoothManager.connect(address);
+    return true;
+  } catch (e: any) {
+    console.warn("[printBridge] BT connect failed:", e?.message ?? e);
+    return false;
+  }
+}
+
+export async function printBluetoothPrinter(
+  text: string,
+  address: string,
+  autoCut = true,
+): Promise<boolean> {
+  if (!address?.trim()) return false;
+  try {
+    const { BluetoothEscposPrinter, BluetoothManager } = require("react-native-bluetooth-escpos-printer");
+    await BluetoothManager.connect(address);
+    const payload = buildEscPosBytes(text, autoCut);
+    await BluetoothEscposPrinter.printRaw(payload);
+    return true;
+  } catch (e: any) {
+    console.warn("[printBridge] BT print failed:", e?.message ?? e);
+    return false;
+  }
+}
+
+export async function testBluetoothPrinter(address: string, autoCut = true): Promise<boolean> {
+  const text = `AL SALIK POS\nBluetooth Printer Test\n${new Date().toLocaleString("en-GB")}\n--------------------------------\nPrinter connected!\n--------------------------------\n`;
+  return printBluetoothPrinter(text, address, autoCut);
+}
+
 export async function printRawText(text: string, opts: { deviceName?: string; autoCut?: boolean; codepage?: "cp437" | "cp1252" | "ascii" } = {}): Promise<boolean> {
   const api = getElectronAPI();
   if (!api || !api.silentPrintRaw || !opts.deviceName) return false;
@@ -206,11 +299,24 @@ export async function printHtml(html: string, opts: PrintOpts = {}): Promise<boo
     if (ok) return true;
   }
 
+  // Android built-in serial/USB device path
   if (Platform.OS === "android" && opts.androidDevicePath && opts.rawText) {
     const ok = await printAndroidDevice(opts.rawText, {
       devicePath: opts.androidDevicePath,
       autoCut: opts.autoCut,
     });
+    if (ok) return true;
+  }
+
+  // Network / WiFi printer (TCP raw port 9100)
+  if (opts.networkPrinterIp && opts.rawText) {
+    const ok = await printNetworkPrinter(opts.rawText, opts.networkPrinterIp, opts.networkPrinterPort ?? 9100, opts.autoCut ?? true);
+    if (ok) return true;
+  }
+
+  // Bluetooth printer
+  if (opts.bluetoothAddress && opts.rawText) {
+    const ok = await printBluetoothPrinter(opts.rawText, opts.bluetoothAddress, opts.autoCut ?? true);
     if (ok) return true;
   }
 

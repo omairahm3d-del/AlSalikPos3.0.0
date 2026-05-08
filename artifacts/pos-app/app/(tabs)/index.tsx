@@ -340,7 +340,7 @@ export default function POSScreen() {
       });
       const { printHtml } = await import("@/lib/printBridge");
       const ps = businessSettings?.printerSettings;
-      const needRaw = ps?.rawTextMode || !!ps?.androidPrinterEnabled || !!ps?.sunmiEnabled;
+      const needRaw = ps?.rawTextMode || !!ps?.androidPrinterEnabled || !!ps?.sunmiEnabled || !!ps?.networkPrinterEnabled || !!ps?.bluetoothPrinterEnabled;
       let rawText: string | undefined;
       if (needRaw) {
         const { generateReceiptText } = await import("@/lib/textReceipt");
@@ -359,6 +359,9 @@ export default function POSScreen() {
         codepage: ps?.rawCodepage || "cp1252",
         sunmiEnabled: !!ps?.sunmiEnabled,
         androidDevicePath: ps?.androidPrinterEnabled ? (ps?.androidPrinterPath || "/dev/prnt") : undefined,
+        networkPrinterIp: ps?.networkPrinterEnabled ? ps?.networkPrinterIp : undefined,
+        networkPrinterPort: ps?.networkPrinterPort,
+        bluetoothAddress: ps?.bluetoothPrinterEnabled ? ps?.bluetoothPrinterAddress : undefined,
       });
     } catch (e: any) {
       Alert.alert("Print Error", e.message || "Could not print bill");

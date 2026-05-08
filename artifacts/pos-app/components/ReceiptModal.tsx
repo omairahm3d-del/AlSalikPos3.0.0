@@ -61,7 +61,7 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
       const html = generateReceiptHTML(sale, items, business);
       const { printHtml } = await import("@/lib/printBridge");
       const ps = business.printerSettings;
-      const needRawText = ps?.rawTextMode || !!ps?.androidPrinterEnabled || !!ps?.sunmiEnabled;
+      const needRawText = ps?.rawTextMode || !!ps?.androidPrinterEnabled || !!ps?.sunmiEnabled || !!ps?.networkPrinterEnabled || !!ps?.bluetoothPrinterEnabled;
       let rawText: string | undefined;
       if (needRawText) {
         const { generateReceiptText } = await import("@/lib/textReceipt");
@@ -76,6 +76,9 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
         codepage: ps?.rawCodepage || "cp1252",
         sunmiEnabled: !!ps?.sunmiEnabled,
         androidDevicePath: ps?.androidPrinterEnabled ? (ps?.androidPrinterPath || "/dev/prnt") : undefined,
+        networkPrinterIp: ps?.networkPrinterEnabled ? ps?.networkPrinterIp : undefined,
+        networkPrinterPort: ps?.networkPrinterPort,
+        bluetoothAddress: ps?.bluetoothPrinterEnabled ? ps?.bluetoothPrinterAddress : undefined,
       });
     } catch {
     }

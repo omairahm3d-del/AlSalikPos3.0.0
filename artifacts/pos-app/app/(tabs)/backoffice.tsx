@@ -150,6 +150,10 @@ export default function BackOfficeScreen() {
   const [receiptDesign, setReceiptDesign] = useState<ReceiptDesignSettings>({ ...DEFAULT_RECEIPT_DESIGN });
   const [printerSettings, setPrinterSettings] = useState<PrinterSettings>({ ...DEFAULT_PRINTER_SETTINGS });
   const [windowsPrinters, setWindowsPrinters] = useState<{ name: string; displayName: string; isDefault: boolean }[]>([]);
+  const [btDevices, setBtDevices] = useState<{ name: string; address: string }[]>([]);
+  const [btScanning, setBtScanning] = useState(false);
+  const [networkTestState, setNetworkTestState] = useState<"idle" | "testing" | "ok" | "fail">("idle");
+  const [btTestState, setBtTestState] = useState<"idle" | "testing" | "ok" | "fail">("idle");
   const refreshWindowsPrinters = useCallback(async () => {
     if (!isElectron()) return;
     const list = await listWindowsPrinters();
@@ -1414,6 +1418,186 @@ export default function BackOfficeScreen() {
                     <Text style={{ color: colors.primary, fontWeight: "600", fontSize: 12 }}>Auto-detect</Text>
                   </TouchableOpacity>
                 </View>
+              </>
+            )}
+          </View>
+        )}
+
+        {/* ── Wi-Fi / Network Printer ─────────────────────────────────── */}
+        <View style={{ marginBottom: 16, padding: 12, backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <Feather name="wifi" size={15} color={colors.foreground} />
+            <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 14 }}>Wi-Fi / Network Printer</Text>
+          </View>
+          <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 12, lineHeight: 15 }}>
+            Connects to any ESC/POS network thermal printer on your Wi-Fi. Uses raw TCP port 9100 (standard for Epson, Star, Xprinter, Bixolon, etc.).
+          </Text>
+          {renderSwitch(
+            "Enable Wi-Fi printer",
+            !!printerSettings.networkPrinterEnabled,
+            (v) => setPrinterSettings({ ...printerSettings, networkPrinterEnabled: v }),
+          )}
+          {printerSettings.networkPrinterEnabled && (
+            <>
+              {renderField(
+                "Printer IP Address",
+                printerSettings.networkPrinterIp || "",
+                (v) => setPrinterSettings({ ...printerSettings, networkPrinterIp: v }),
+                "192.168.1.100",
+              )}
+              {renderField(
+                "Port (default 9100)",
+                String(printerSettings.networkPrinterPort || 9100),
+                (v) => setPrinterSettings({ ...printerSettings, networkPrinterPort: parseInt(v, 10) || 9100 }),
+                "9100",
+              )}
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                <TouchableOpacity
+                  onPress={async () => {
+                    const ip = printerSettings.networkPrinterIp?.trim();
+                    if (!ip) { Alert.alert("No IP", "Enter the printer IP address first."); return; }
+                    setNetworkTestState("testing");
+                    const { testNetworkPrinter } = await import("@/lib/printBridge");
+                    const ok = await testNetworkPrinter(ip, printerSettings.networkPrinterPort || 9100, printerSettings.autoCutPaper !== false);
+                    setNetworkTestState(ok ? "ok" : "fail");
+                    setTimeout(() => setNetworkTestState("idle"), 3000);
+                    if (!ok) Alert.alert("Connection Failed", `Could not reach printer at ${ip}:${printerSettings.networkPrinterPort || 9100}.\n\nCheck that:\n• The printer is on the same Wi-Fi\n• The IP address is correct\n• Port 9100 is open on the printer`);
+                  }}
+                  style={[s.chip, {
+                    borderColor: networkTestState === "ok" ? colors.success : networkTestState === "fail" ? "#E74C3C" : colors.primary,
+                    borderStyle: "dashed", alignSelf: "flex-start", borderRadius: colors.radius, flexDirection: "row", gap: 6
+                  }]}
+                >
+                  <Feather
+                    name={networkTestState === "testing" ? "loader" : networkTestState === "ok" ? "check-circle" : networkTestState === "fail" ? "x-circle" : "printer"}
+                    size={12}
+                    color={networkTestState === "ok" ? colors.success : networkTestState === "fail" ? "#E74C3C" : colors.primary}
+                  />
+                  <Text style={{ color: networkTestState === "ok" ? colors.success : networkTestState === "fail" ? "#E74C3C" : colors.primary, fontWeight: "600", fontSize: 12 }}>
+                    {networkTestState === "testing" ? "Testing..." : networkTestState === "ok" ? "Connected!" : networkTestState === "fail" ? "Failed" : "Test Print"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+        </View>
+
+        {/* ── Bluetooth Printer ────────────────────────────────────────── */}
+        {Platform.OS !== "web" && !isElectron() && (
+          <View style={{ marginBottom: 16, padding: 12, backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <Feather name="bluetooth" size={15} color={colors.foreground} />
+              <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 14 }}>Bluetooth Printer</Text>
+            </View>
+            <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 12, lineHeight: 15 }}>
+              Connect a Bluetooth ESC/POS thermal printer. Pair the printer in your device's Bluetooth settings first, then scan here to find it.
+            </Text>
+            {renderSwitch(
+              "Enable Bluetooth printer",
+              !!printerSettings.bluetoothPrinterEnabled,
+              (v) => setPrinterSettings({ ...printerSettings, bluetoothPrinterEnabled: v }),
+            )}
+            {printerSettings.bluetoothPrinterEnabled && (
+              <>
+                {printerSettings.bluetoothPrinterAddress ? (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.success + "15", borderRadius: colors.radius, padding: 10, marginBottom: 8 }}>
+                    <Feather name="bluetooth" size={14} color={colors.success} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: colors.foreground, fontWeight: "600", fontSize: 13 }}>{printerSettings.bluetoothPrinterName || printerSettings.bluetoothPrinterAddress}</Text>
+                      <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{printerSettings.bluetoothPrinterAddress}</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => setPrinterSettings({ ...printerSettings, bluetoothPrinterAddress: undefined, bluetoothPrinterName: undefined })}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Feather name="x" size={16} color={colors.mutedForeground} />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <Text style={{ color: colors.mutedForeground, fontSize: 12, marginBottom: 8 }}>No printer selected. Scan to find paired devices.</Text>
+                )}
+
+                <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                  <TouchableOpacity
+                    onPress={async () => {
+                      setBtScanning(true);
+                      setBtDevices([]);
+                      try {
+                        const { listBluetoothDevices } = await import("@/lib/printBridge");
+                        const devices = await listBluetoothDevices();
+                        setBtDevices(devices);
+                        if (devices.length === 0) Alert.alert("No Devices Found", "No paired Bluetooth devices found.\n\nMake sure you have:\n1. Paired the printer in your device Settings > Bluetooth\n2. Bluetooth is turned on\n3. The printer is powered on");
+                      } catch {
+                        Alert.alert("Bluetooth Error", "Could not scan for devices. Make sure Bluetooth is enabled and the app has Bluetooth permissions.");
+                      } finally {
+                        setBtScanning(false);
+                      }
+                    }}
+                    style={[s.chip, { borderColor: colors.primary, borderStyle: "dashed", alignSelf: "flex-start", borderRadius: colors.radius, flexDirection: "row", gap: 6 }]}
+                  >
+                    <Feather name={btScanning ? "loader" : "search"} size={12} color={colors.primary} />
+                    <Text style={{ color: colors.primary, fontWeight: "600", fontSize: 12 }}>{btScanning ? "Scanning..." : "Scan for Devices"}</Text>
+                  </TouchableOpacity>
+
+                  {printerSettings.bluetoothPrinterAddress && (
+                    <TouchableOpacity
+                      onPress={async () => {
+                        const addr = printerSettings.bluetoothPrinterAddress;
+                        if (!addr) return;
+                        setBtTestState("testing");
+                        const { testBluetoothPrinter } = await import("@/lib/printBridge");
+                        const ok = await testBluetoothPrinter(addr, printerSettings.autoCutPaper !== false);
+                        setBtTestState(ok ? "ok" : "fail");
+                        setTimeout(() => setBtTestState("idle"), 3000);
+                        if (!ok) Alert.alert("Print Failed", `Could not send to ${printerSettings.bluetoothPrinterName || addr}.\n\nCheck that:\n• The printer is powered on and in range\n• Bluetooth is enabled\n• The printer is paired in Settings`);
+                      }}
+                      style={[s.chip, {
+                        borderColor: btTestState === "ok" ? colors.success : btTestState === "fail" ? "#E74C3C" : colors.success,
+                        borderStyle: "dashed", alignSelf: "flex-start", borderRadius: colors.radius, flexDirection: "row", gap: 6
+                      }]}
+                    >
+                      <Feather
+                        name={btTestState === "testing" ? "loader" : btTestState === "ok" ? "check-circle" : btTestState === "fail" ? "x-circle" : "printer"}
+                        size={12}
+                        color={btTestState === "ok" ? colors.success : btTestState === "fail" ? "#E74C3C" : colors.success}
+                      />
+                      <Text style={{ color: btTestState === "ok" ? colors.success : btTestState === "fail" ? "#E74C3C" : colors.success, fontWeight: "600", fontSize: 12 }}>
+                        {btTestState === "testing" ? "Sending..." : btTestState === "ok" ? "Printed!" : btTestState === "fail" ? "Failed" : "Test Print"}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {btDevices.length > 0 && (
+                  <View style={{ marginTop: 4 }}>
+                    <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 6 }}>Tap a device to select it as your printer:</Text>
+                    {btDevices.map((d) => (
+                      <TouchableOpacity
+                        key={d.address}
+                        onPress={() => {
+                          setPrinterSettings({ ...printerSettings, bluetoothPrinterAddress: d.address, bluetoothPrinterName: d.name });
+                          setBtDevices([]);
+                        }}
+                        style={{
+                          flexDirection: "row", alignItems: "center", gap: 10, padding: 10,
+                          backgroundColor: printerSettings.bluetoothPrinterAddress === d.address ? colors.primary + "15" : colors.background,
+                          borderRadius: colors.radius, borderWidth: 1,
+                          borderColor: printerSettings.bluetoothPrinterAddress === d.address ? colors.primary : colors.border,
+                          marginBottom: 6,
+                        }}
+                      >
+                        <Feather name="bluetooth" size={14} color={printerSettings.bluetoothPrinterAddress === d.address ? colors.primary : colors.mutedForeground} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: colors.foreground, fontWeight: "600", fontSize: 13 }}>{d.name}</Text>
+                          <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{d.address}</Text>
+                        </View>
+                        {printerSettings.bluetoothPrinterAddress === d.address && (
+                          <Feather name="check" size={14} color={colors.primary} />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
               </>
             )}
           </View>

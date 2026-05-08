@@ -292,6 +292,12 @@ export interface PrinterSettings {
   androidPrinterEnabled?: boolean;
   androidPrinterPath?: string;
   sunmiEnabled?: boolean;
+  networkPrinterEnabled?: boolean;
+  networkPrinterIp?: string;
+  networkPrinterPort?: number;
+  bluetoothPrinterEnabled?: boolean;
+  bluetoothPrinterAddress?: string;
+  bluetoothPrinterName?: string;
 }
 
 export interface KOTSettings {
