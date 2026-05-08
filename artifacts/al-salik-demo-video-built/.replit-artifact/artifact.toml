@@ -1,0 +1,9 @@
+id = "artifacts/al-salik-demo-video"
+kind = "web"
+title = "Al Salik Demo Video"
+
+[[services]]
+name = "web"
+localPort = 5174
+command = "pnpm --filter al-salik-demo-video run dev --port $PORT --host 0.0.0.0"
+paths = ["/al-salik-demo-video"]

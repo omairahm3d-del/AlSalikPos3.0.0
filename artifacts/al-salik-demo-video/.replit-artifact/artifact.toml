@@ -1,0 +1,31 @@
+kind = "video"
+previewPath = "/al-salik-demo-video/"
+title = "Al Salik Demo Video"
+version = "1.0.0"
+id = "artifacts/al-salik-demo-video"
+router = "path"
+
+[[integratedSkills]]
+name = "video-js"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/al-salik-demo-video/" ]
+localPort = 19359
+
+[services.development]
+run = "pnpm --filter @workspace/al-salik-demo-video run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/al-salik-demo-video", "run", "build" ]
+publicDir = "artifacts/al-salik-demo-video/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19359"
+BASE_PATH = "/al-salik-demo-video/"

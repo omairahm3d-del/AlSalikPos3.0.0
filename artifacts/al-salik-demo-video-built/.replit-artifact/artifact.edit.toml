@@ -1,0 +1,22 @@
+kind = "web"
+previewPath = "/al-salik-demo-video/"
+title = "Al Salik Demo Video"
+version = "1.0.0"
+id = "artifacts/al-salik-demo-video"
+router = "path"
+
+[[integratedSkills]]
+name = "video-js"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/al-salik-demo-video/" ]
+localPort = 5174
+
+[services.development]
+run = "pnpm --filter @workspace/al-salik-demo-video run dev"
+
+[services.env]
+PORT = "5174"
+BASE_PATH = "/al-salik-demo-video/"
