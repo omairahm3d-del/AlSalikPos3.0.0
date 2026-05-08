@@ -186,6 +186,9 @@ export default function BackOfficeScreen() {
   const [editingIngredient, setEditingIngredient] = useState<Ingredient | null>(null);
   const [showIngModal, setShowIngModal] = useState(false);
 
+  const [productCsvBusy, setProductCsvBusy] = useState(false);
+  const [productCsvMsg, setProductCsvMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
   const [productsList, setProductsList] = useState<Product[]>([]);
   const [recipeProductId, setRecipeProductId] = useState<string | null>(null);
   const [recipeItems, setRecipeItems] = useState<{ ingredientId: string; ingredientName: string; quantity: number }[]>([]);
@@ -573,6 +576,79 @@ export default function BackOfficeScreen() {
       notify("Restore Failed", e?.message || String(e));
     } finally {
       setDbBusy(false);
+    }
+  }, [db]);
+
+  const onProductExport = useCallback(async () => {
+    try {
+      setProductCsvBusy(true);
+      setProductCsvMsg(null);
+      const products = await db.loadProducts();
+      const { exportProductsCsv } = await import("@/lib/productCsv");
+      const res = await exportProductsCsv(products);
+      if (!res.ok && res.error) setProductCsvMsg({ ok: false, text: res.error });
+    } catch (e: any) {
+      setProductCsvMsg({ ok: false, text: e?.message || "Export failed." });
+    } finally {
+      setProductCsvBusy(false);
+    }
+  }, [db]);
+
+  const onProductImport = useCallback(async () => {
+    try {
+      setProductCsvBusy(true);
+      setProductCsvMsg(null);
+      const { pickProductsCsv } = await import("@/lib/productCsv");
+      const picked = await pickProductsCsv();
+      if (!picked.ok) {
+        if (picked.error) setProductCsvMsg({ ok: false, text: picked.error });
+        return;
+      }
+      const rows = picked.rows!;
+      const existing = await db.loadProducts();
+      const byName = new Map(existing.map((p) => [p.name.toLowerCase().trim(), p]));
+      let created = 0;
+      let updated = 0;
+      const now = Date.now();
+      for (const row of rows) {
+        const match = byName.get(row.name.toLowerCase().trim());
+        if (match) {
+          await db.updateProduct({
+            ...match,
+            category: row.category || match.category,
+            price: row.price,
+            barcode: row.barcode || match.barcode,
+            description: row.description || match.description,
+            stockQuantity: row.stockQuantity,
+            stockTracked: row.stockTracked,
+            vatInclusive: row.vatInclusive,
+            lowStockThreshold: row.lowStockThreshold,
+            colorHex: row.colorHex || match.colorHex,
+            updatedAt: now,
+          });
+          updated++;
+        } else {
+          await db.createProduct({
+            name: row.name,
+            category: row.category,
+            price: row.price,
+            barcode: row.barcode,
+            description: row.description,
+            stockQuantity: row.stockQuantity,
+            stockTracked: row.stockTracked,
+            vatInclusive: row.vatInclusive,
+            lowStockThreshold: row.lowStockThreshold,
+            colorHex: row.colorHex,
+            updatedAt: now,
+          });
+          created++;
+        }
+      }
+      setProductCsvMsg({ ok: true, text: `Import done — ${created} created, ${updated} updated.` });
+    } catch (e: any) {
+      setProductCsvMsg({ ok: false, text: e?.message || "Import failed." });
+    } finally {
+      setProductCsvBusy(false);
     }
   }, [db]);
 
@@ -1951,7 +2027,39 @@ export default function BackOfficeScreen() {
   const renderContent = () => {
     switch (section) {
       case "menu": return renderMenu();
-      case "products": return <View style={s.sectionContent}>{renderHeader("Products")}<ProductsScreen embedded /></View>;
+      case "products": return (
+        <View style={s.sectionContent}>
+          {renderHeader("Products")}
+          <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card, gap: 8 }}>
+            {productCsvMsg ? (
+              <TouchableOpacity style={{ flex: 1 }} onPress={() => setProductCsvMsg(null)}>
+                <Text style={{ fontSize: 12, color: productCsvMsg.ok ? "#16A085" : "#E74C3C", lineHeight: 16 }} numberOfLines={2}>
+                  {productCsvMsg.text}
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={{ flex: 1, fontSize: 12, color: colors.mutedForeground }}>
+                Export products to CSV or import from a CSV file.
+              </Text>
+            )}
+            <TouchableOpacity
+              disabled={productCsvBusy}
+              onPress={onProductExport}
+              style={{ backgroundColor: colors.primary + "22", paddingHorizontal: 12, paddingVertical: 7, borderRadius: colors.radius, opacity: productCsvBusy ? 0.5 : 1 }}
+            >
+              <Text style={{ color: colors.primary, fontSize: 13, fontWeight: "600" }}>↓ Export</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              disabled={productCsvBusy}
+              onPress={onProductImport}
+              style={{ backgroundColor: "#16A08522", paddingHorizontal: 12, paddingVertical: 7, borderRadius: colors.radius, opacity: productCsvBusy ? 0.5 : 1 }}
+            >
+              <Text style={{ color: "#16A085", fontSize: 13, fontWeight: "600" }}>↑ Import</Text>
+            </TouchableOpacity>
+          </View>
+          <ProductsScreen embedded />
+        </View>
+      );
       case "customers": return <View style={s.sectionContent}>{renderHeader("Customers")}<CustomersScreen embedded /></View>;
       case "reports": return <ReportsHub onBack={() => setSection("menu")} />;
       case "categories": return renderCategories();
