@@ -1,0 +1,129 @@
+name: Android Release Build
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      eas_profile:
+        description: "EAS build profile (preview = APK, production = AAB)"
+        required: false
+        default: "preview"
+        type: choice
+        options:
+          - preview
+          - production
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-android:
+    name: Build Android (${{ github.event.inputs.eas_profile || (startsWith(github.ref, 'refs/tags/') && 'production' || 'preview') }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        run: echo "dir=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.dir }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Determine EAS profile
+        id: profile
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "value=${{ github.event.inputs.eas_profile }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "value=production" >> $GITHUB_OUTPUT
+          else
+            echo "value=preview" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Android via EAS
+        id: eas-build
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EAS_PROFILE: ${{ steps.profile.outputs.value }}
+          EAS_NO_DOWNLOAD: "0"
+        run: pnpm --filter @workspace/pos-app run build:android 2>&1 | tee /tmp/eas-build.log
+        shell: bash
+
+      - name: Extract EAS build URL
+        id: build-url
+        if: always()
+        run: |
+          url=$(grep -oP 'https://expo\.dev/[^\s"'"'"']+/builds/[^\s"'"'"']+' /tmp/eas-build.log | head -1 || true)
+          echo "value=${url}" >> $GITHUB_OUTPUT
+
+      - name: Upload APK / AAB as GitHub artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: al-salik-pos-android-${{ steps.profile.outputs.value }}-${{ github.sha }}
+          path: |
+            artifacts/pos-app/dist/*.apk
+            artifacts/pos-app/dist/*.aab
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Write job summary
+        if: always()
+        run: |
+          profile="${{ steps.profile.outputs.value }}"
+          build_url="${{ steps.build-url.outputs.value }}"
+          status="${{ job.status }}"
+          ref="${{ github.ref_name }}"
+          sha="${{ github.sha }}"
+
+          echo "## Android Build — \`${profile}\` profile" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Ref | \`${ref}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${sha:0:7}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Profile | \`${profile}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ${status} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -n "${build_url}" ]; then
+            echo "**EAS Dashboard:** [View build](${build_url})" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${status}" = "success" ]; then
+            echo "The APK/AAB has been uploaded as a **GitHub Actions artifact** on this run." >> $GITHUB_STEP_SUMMARY
+            echo "Download it from the **Artifacts** section below." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "> Build failed. Check the logs above for details." >> $GITHUB_STEP_SUMMARY
+            if [ -n "${build_url}" ]; then
+              echo "> You can also inspect the build directly on the [EAS dashboard](${build_url})." >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
