@@ -38,6 +38,12 @@ export interface Product {
    * any real edit".
    */
   updatedAt?: number;
+  /**
+   * Saloon mode: estimated service duration in minutes (e.g. 45 for a
+   * haircut). Used for appointment scheduling / bookings. NULL / undefined
+   * in standard mode; ignored for stock-tracked retail items in saloon mode.
+   */
+  durationMinutes?: number;
 }
 
 export interface PrinterConfig {
@@ -64,6 +70,9 @@ export interface CartItem {
   discountValue?: number;
   discountAmount?: number;
   taxRate?: number;
+  /** Saloon mode: stylist assigned to this specific line item. */
+  stylistId?: string;
+  stylistName?: string;
 }
 
 export interface SaleItem {
@@ -75,6 +84,9 @@ export interface SaleItem {
   quantity: number;
   lineTotal: number;
   discountAmount?: number;
+  /** Saloon mode: stylist who performed this service. */
+  stylistId?: string;
+  stylistName?: string;
 }
 
 export interface SplitPaymentEntry {

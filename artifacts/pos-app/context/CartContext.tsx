@@ -15,6 +15,7 @@ type CartAction =
   | { type: "UPDATE_QUANTITY"; productId: string; quantity: number }
   | { type: "SET_ITEM_DISCOUNT"; productId: string; discountType?: "percentage" | "fixed"; discountValue?: number }
   | { type: "SET_ITEM_PRICE"; productId: string; price: number }
+  | { type: "SET_ITEM_STYLIST"; productId: string; stylistId?: string; stylistName?: string }
   | { type: "RESTORE"; items: CartItem[] }
   | { type: "CLEAR" };
 
@@ -38,6 +39,7 @@ interface CartContextValue {
   updateQuantity: (productId: string, quantity: number) => void;
   setItemDiscount: (productId: string, discountType?: "percentage" | "fixed", discountValue?: number) => void;
   setItemPrice: (productId: string, price: number) => void;
+  setItemStylist: (productId: string, stylistId?: string, stylistName?: string) => void;
   restoreCart: (items: CartItem[], heldInfo?: HeldOrderInfo) => void;
   clearCart: () => void;
   getItemQuantity: (productId: string) => number;
@@ -130,6 +132,14 @@ function cartReducer(state: CartState, action: CartAction): CartState {
         }),
       };
     }
+    case "SET_ITEM_STYLIST":
+      return {
+        items: state.items.map((i) =>
+          i.product.id !== action.productId
+            ? i
+            : { ...i, stylistId: action.stylistId, stylistName: action.stylistName },
+        ),
+      };
     case "RESTORE":
       return { items: action.items };
     case "CLEAR":
@@ -200,6 +210,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: "SET_ITEM_DISCOUNT", productId, discountType, discountValue }), []);
   const setItemPrice = useCallback((productId: string, price: number) =>
     dispatch({ type: "SET_ITEM_PRICE", productId, price }), []);
+  const setItemStylist = useCallback((productId: string, stylistId?: string, stylistName?: string) =>
+    dispatch({ type: "SET_ITEM_STYLIST", productId, stylistId, stylistName }), []);
   const restoreCart = useCallback((items: CartItem[], heldInfo?: HeldOrderInfo) => {
     dispatch({ type: "RESTORE", items });
     setHeldOrderInfo(heldInfo ?? null);
@@ -213,9 +225,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(() => ({
     items: state.items, itemCount, subtotal, netSubtotal, itemDiscountTotal, effectiveSubtotal,
-    vatAmount, total, quantityMap, heldOrderInfo, addItem, removeItem, updateQuantity, setItemDiscount, setItemPrice, restoreCart, clearCart, getItemQuantity,
+    vatAmount, total, quantityMap, heldOrderInfo, addItem, removeItem, updateQuantity, setItemDiscount, setItemPrice, setItemStylist, restoreCart, clearCart, getItemQuantity,
   }), [state.items, itemCount, subtotal, netSubtotal, itemDiscountTotal, effectiveSubtotal,
-    vatAmount, total, quantityMap, heldOrderInfo, addItem, removeItem, updateQuantity, setItemDiscount, setItemPrice, restoreCart, clearCart, getItemQuantity]);
+    vatAmount, total, quantityMap, heldOrderInfo, addItem, removeItem, updateQuantity, setItemDiscount, setItemPrice, setItemStylist, restoreCart, clearCart, getItemQuantity]);
 
   return (
     <CartContext.Provider value={value}>

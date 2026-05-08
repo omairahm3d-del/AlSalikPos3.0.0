@@ -26,6 +26,7 @@ export default function LoginPage({ onLoggedIn }: Props) {
         company: r.company,
         branches: r.branches,
         branchId: r.branches[0]?.id ?? null,
+        workMode: r.company.workMode ?? "standard",
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");

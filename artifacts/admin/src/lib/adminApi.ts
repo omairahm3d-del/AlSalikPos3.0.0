@@ -7,8 +7,13 @@ export interface Company {
   status: string;
   contactEmail: string | null;
   notes: string | null;
+  workMode?: "standard" | "saloon";
   createdAt: string;
   updatedAt: string;
+}
+
+export interface UpdateCompanyInput {
+  workMode: "standard" | "saloon";
 }
 
 export type LicenseType = "online" | "offline";
@@ -247,6 +252,15 @@ export const adminApi = {
     return request(`/companies/${companyId}/managers/${managerId}/password`, {
       method: "POST",
       body: JSON.stringify({ newPassword }),
+    });
+  },
+  updateCompany(
+    companyId: string,
+    input: UpdateCompanyInput,
+  ): Promise<{ company: Company }> {
+    return request(`/companies/${companyId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
     });
   },
   /**

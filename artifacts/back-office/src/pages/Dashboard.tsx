@@ -84,7 +84,7 @@ export default function Dashboard({ session, onSession, onLogout }: Props) {
       </div>
       <div className="p-6">
         {tab === "reports" && (
-          <ReportsHub token={session.token} branchId={branchId} />
+          <ReportsHub token={session.token} branchId={branchId} workMode={session.workMode} />
         )}
         {tab === "stock" && (
           <StockTab token={session.token} branchId={branchId} />

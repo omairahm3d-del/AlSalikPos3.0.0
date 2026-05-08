@@ -10,6 +10,8 @@ export interface ManagerSession {
   company: { id: string; name: string; slug: string };
   branches: BranchSummary[];
   branchId: string | null;
+  /** Business type: "standard" (restaurant/retail) or "saloon" (beauty). Defaults to "standard". */
+  workMode?: "standard" | "saloon";
 }
 
 export function loadSession(): ManagerSession | null {

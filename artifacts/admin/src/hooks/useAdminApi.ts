@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   adminApi,
   CreateCompanyInput,
+  UpdateCompanyInput,
   IssueLicenseInput,
   ExtendLicenseInput,
   CreateBranchInput,
@@ -137,6 +138,17 @@ export function useSetManagerActive(companyId: string) {
       queryClient.invalidateQueries({
         queryKey: ["admin", "company", companyId, "managers"],
       });
+    },
+  });
+}
+
+export function useUpdateCompany() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, ...input }: UpdateCompanyInput & { companyId: string }) =>
+      adminApi.updateCompany(companyId, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "companies"] });
     },
   });
 }

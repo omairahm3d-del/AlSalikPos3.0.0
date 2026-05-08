@@ -28,6 +28,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       priceChangeAllowed: r.price_change_allowed === 1,
       vatInclusive: r.vat_inclusive === 1,
       updatedAt: r.updated_at ?? undefined,
+      durationMinutes: r.duration_minutes ?? undefined,
     }));
   }, [db]);
 
@@ -39,8 +40,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     // misses a creation that survived the local commit.
     await db.withExclusiveTransactionAsync(async (tx) => {
       await tx.runAsync(
-        "INSERT INTO products (id, name, category, price, description, color_hex, barcode, stock_quantity, stock_tracking, tax_group_id, low_stock_threshold, image_uri, printer_id, price_change_allowed, vat_inclusive, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [id, product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.stockTracked ? 1 : 0, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, product.priceChangeAllowed ? 1 : 0, product.vatInclusive ? 1 : 0, updatedAt]
+        "INSERT INTO products (id, name, category, price, description, color_hex, barcode, stock_quantity, stock_tracking, tax_group_id, low_stock_threshold, image_uri, printer_id, price_change_allowed, vat_inclusive, duration_minutes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [id, product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.stockTracked ? 1 : 0, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, product.priceChangeAllowed ? 1 : 0, product.vatInclusive ? 1 : 0, product.durationMinutes ?? null, updatedAt]
       );
       await enqueueCatalogTx(tx, "product", id, created, false, updatedAt);
     });
@@ -52,8 +53,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     const next: Product = { ...product, updatedAt };
     await db.withExclusiveTransactionAsync(async (tx) => {
       await tx.runAsync(
-        "UPDATE products SET name=?, category=?, price=?, description=?, color_hex=?, barcode=?, stock_quantity=?, stock_tracking=?, tax_group_id=?, low_stock_threshold=?, image_uri=?, printer_id=?, price_change_allowed=?, vat_inclusive=?, updated_at=? WHERE id=?",
-        [product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.stockTracked ? 1 : 0, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, product.priceChangeAllowed ? 1 : 0, product.vatInclusive ? 1 : 0, updatedAt, product.id]
+        "UPDATE products SET name=?, category=?, price=?, description=?, color_hex=?, barcode=?, stock_quantity=?, stock_tracking=?, tax_group_id=?, low_stock_threshold=?, image_uri=?, printer_id=?, price_change_allowed=?, vat_inclusive=?, duration_minutes=?, updated_at=? WHERE id=?",
+        [product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.stockTracked ? 1 : 0, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, product.priceChangeAllowed ? 1 : 0, product.vatInclusive ? 1 : 0, product.durationMinutes ?? null, updatedAt, product.id]
       );
       await enqueueCatalogTx(tx, "product", product.id, next, false, updatedAt);
     });
@@ -132,8 +133,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         const itemId = generateId();
         const lineTotal = item.product.price * item.quantity - (item.discountAmount ?? 0);
         await tx.runAsync(
-          "INSERT INTO sale_items (id, sale_id, product_id, product_name, product_price, quantity, line_total, discount_amount) VALUES (?,?,?,?,?,?,?,?)",
-          [itemId, saleId, item.product.id, item.product.name, item.product.price, item.quantity, lineTotal, item.discountAmount ?? 0]
+          "INSERT INTO sale_items (id, sale_id, product_id, product_name, product_price, quantity, line_total, discount_amount, stylist_id, stylist_name) VALUES (?,?,?,?,?,?,?,?,?,?)",
+          [itemId, saleId, item.product.id, item.product.name, item.product.price, item.quantity, lineTotal, item.discountAmount ?? 0, item.stylistId ?? null, item.stylistName ?? null]
         );
         // Only deduct stock for products the merchant is tracking
         // (stock_tracking=1). Untracked products (default stock_tracking=0)
@@ -259,6 +260,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     id: i.id, saleId: i.sale_id, productId: i.product_id,
     productName: i.product_name, productPrice: i.product_price,
     quantity: i.quantity, lineTotal: i.line_total, discountAmount: i.discount_amount ?? 0,
+    stylistId: i.stylist_id ?? undefined, stylistName: i.stylist_name ?? undefined,
   });
 
   const loadSales = useCallback(async (): Promise<Sale[]> => {

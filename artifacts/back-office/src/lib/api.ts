@@ -42,7 +42,7 @@ export interface LoginResponse {
   token: string;
   tokenExpiresAt: string;
   manager: { id: string; email: string; name: string; role: string };
-  company: { id: string; name: string; slug: string };
+  company: { id: string; name: string; slug: string; workMode?: "standard" | "saloon" };
   branches: BranchSummary[];
 }
 

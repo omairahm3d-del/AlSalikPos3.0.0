@@ -13,6 +13,8 @@ const isoDate = z.iso
 
 const licenseTypeEnum = z.enum(["online", "offline"]);
 
+const workModeEnum = z.enum(["standard", "saloon"]);
+
 const createCompanyBody = z.object({
   name: z.string().min(1).max(200),
   slug: z.string().min(2).max(63),
@@ -21,6 +23,11 @@ const createCompanyBody = z.object({
   maxDevices: z.number().int().min(1).max(1000).optional(),
   expiresAt: isoDate.nullable().optional(),
   licenseType: licenseTypeEnum.optional(),
+  workMode: workModeEnum.optional(),
+});
+
+const updateCompanyBody = z.object({
+  workMode: workModeEnum,
 });
 
 const issueLicenseBody = z.object({
@@ -51,6 +58,15 @@ export const adminController = {
   async listCompanies(_req: Request, res: Response) {
     const companies = await companyRepo.list();
     res.json({ companies });
+  },
+
+  async updateCompany(req: Request, res: Response) {
+    const companyId = z.string().uuid().parse(req.params["companyId"]);
+    const { workMode } = updateCompanyBody.parse(req.body);
+    const company = await companyRepo.update(companyId, { workMode });
+    if (!company) throw notFound("company_not_found", "Company not found");
+    req.log.info({ companyId, workMode }, "Company updated");
+    res.json({ company });
   },
 
   async issueLicense(req: Request, res: Response) {

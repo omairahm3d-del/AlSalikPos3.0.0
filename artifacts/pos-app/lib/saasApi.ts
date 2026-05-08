@@ -105,6 +105,8 @@ export type ValidateLicenseResponse =
         platform: string;
       };
       branch: ValidatedBranch;
+      /** Business type configured by the admin ("standard" | "saloon"). Defaults to "standard". */
+      workMode: "standard" | "saloon";
     }
   | {
       kind: "needs_branch_selection";

@@ -37,6 +37,13 @@ const K_OWNING_COMPANY = "saas.owningCompanyId";
  * is cleared (license swap, backup restore).
  */
 const K_CATALOG_CURSOR = "saas.catalogCursor";
+/**
+ * Work mode for this device's company: "standard" (restaurant/retail) or
+ * "saloon" (beauty). Synced from the cloud on each license validate so the
+ * admin can flip it from the admin console without requiring re-activation.
+ * Defaults to "standard" on read for sessions persisted before this existed.
+ */
+const K_WORK_MODE = "saas.workMode";
 
 export async function getOwningCompanyId(): Promise<string | null> {
   return AsyncStorage.getItem(K_OWNING_COMPANY);
@@ -99,6 +106,11 @@ export interface LicenseSession {
   branch: StoredBranch | null;
   licenseKey: string;
   deviceUid: string;
+  /**
+   * Business type: "standard" (restaurant/retail) or "saloon" (beauty).
+   * Defaults to "standard" for sessions persisted before this field existed.
+   */
+  workMode: "standard" | "saloon";
 }
 
 /**
@@ -186,6 +198,15 @@ export async function loadSession(): Promise<LicenseSession | null> {
         // back-compat with sessions persisted before branches existed.
       }
     }
+    let workModeRaw: string | null = null;
+    try {
+      workModeRaw = await AsyncStorage.getItem(K_WORK_MODE);
+    } catch {
+      // tolerate
+    }
+    const workMode: "standard" | "saloon" =
+      workModeRaw === "saloon" ? "saloon" : "standard";
+
     return {
       token,
       tokenExpiresAt: exp,
@@ -194,6 +215,7 @@ export async function loadSession(): Promise<LicenseSession | null> {
       branch,
       licenseKey: key,
       deviceUid,
+      workMode,
     };
   } catch {
     return null;
@@ -225,6 +247,7 @@ export async function saveSession(s: LicenseSession): Promise<void> {
     // Always keep the most-recently-used key so silent re-validate can find it
     // even after clearSession() removes the rest of the session.
     [K_SAVED_KEY, s.licenseKey],
+    [K_WORK_MODE, s.workMode ?? "standard"],
   ];
   if (s.branch) pairs.push([K_BRANCH, JSON.stringify(s.branch)]);
   await AsyncStorage.multiSet(pairs);

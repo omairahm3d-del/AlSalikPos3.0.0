@@ -277,6 +277,8 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       quantity: item.quantity,
       lineTotal: item.product.price * item.quantity - (item.discountAmount ?? 0),
       discountAmount: item.discountAmount ?? 0,
+      stylistId: item.stylistId,
+      stylistName: item.stylistName,
     }));
 
     await setJson(K.sales, [sale, ...existing]);

@@ -9,6 +9,13 @@ export const companiesTable = pgTable("saas_companies", {
   status: text("status").notNull().default("active"),
   contactEmail: text("contact_email"),
   notes: text("notes"),
+  /**
+   * Business type / UI mode for the POS client.
+   * - "standard" (default) — restaurant/retail layout: Products, Tables, KOT.
+   * - "saloon" — beauty/saloon layout: Services, Chairs/Stations, per-line
+   *   stylist assignment, Bookings tab, no physical stock on services.
+   */
+  workMode: text("work_mode").notNull().default("standard"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

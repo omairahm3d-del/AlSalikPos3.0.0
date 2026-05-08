@@ -10,6 +10,7 @@ router.use("/admin", requireAdmin);
 
 router.post("/admin/companies", asyncHandler(adminController.createCompany));
 router.get("/admin/companies", asyncHandler(adminController.listCompanies));
+router.patch("/admin/companies/:companyId", asyncHandler(adminController.updateCompany));
 router.post("/admin/licenses", asyncHandler(adminController.issueLicense));
 router.get(
   "/admin/companies/:companyId/licenses",

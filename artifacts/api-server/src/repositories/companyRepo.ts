@@ -23,4 +23,16 @@ export const companyRepo = {
   async list(): Promise<Company[]> {
     return saasDb.select().from(companiesTable);
   },
+
+  async update(
+    id: string,
+    data: Partial<Pick<Company, "workMode">>,
+  ): Promise<Company | undefined> {
+    const [row] = await saasDb
+      .update(companiesTable)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(companiesTable.id, id))
+      .returning();
+    return row;
+  },
 };

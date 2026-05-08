@@ -76,17 +76,20 @@ type View =
   | "staff"
   | "rider"
   | "customer"
-  | "items";
+  | "items"
+  | "stylist";
 
-const HUB_ITEMS: {
+const BASE_HUB_ITEMS: {
   key: Exclude<View, null>;
   title: string;
   sub: string;
   color: string;
+  saloonOnly?: boolean;
 }[] = [
   { key: "daily", title: "Daily Sales (Z-style)", sub: "End-of-day roll-up: net sales, VAT, transactions per day", color: "#E74C3C" },
   { key: "payment", title: "Payment Method Report", sub: "Revenue breakdown by cash, card & credit", color: "#4F8EF7" },
   { key: "staff", title: "Staff Sales Report", sub: "Performance per staff member", color: "#2ECC71" },
+  { key: "stylist", title: "Stylist Report", sub: "Revenue and service count per stylist (saloon mode)", color: "#E91E8C", saloonOnly: true },
   { key: "rider", title: "Rider Delivery Report", sub: "Deliveries and revenue per rider", color: "#3498DB" },
   { key: "customer", title: "Customer Transactions", sub: "Transaction history per customer", color: "#9B59B6" },
   { key: "items", title: "Daily Item Detail", sub: "Full transaction & line-item breakdown", color: "#F39C12" },
@@ -95,11 +98,15 @@ const HUB_ITEMS: {
 export default function ReportsHub({
   token,
   branchId,
+  workMode,
 }: {
   token: string;
   branchId: string;
+  workMode?: "standard" | "saloon";
 }) {
+  const isSaloon = workMode === "saloon";
   const [view, setView] = useState<View>(null);
+  const HUB_ITEMS = BASE_HUB_ITEMS.filter((it) => !it.saloonOnly || isSaloon);
 
   if (view === null) {
     return (
@@ -133,10 +140,95 @@ export default function ReportsHub({
     case "daily": return <DailyReport {...common} />;
     case "payment": return <PaymentReport {...common} />;
     case "staff": return <StaffReport {...common} />;
+    case "stylist": return <StylistReport {...common} />;
     case "rider": return <RiderReport {...common} />;
     case "customer": return <CustomerReport {...common} />;
     case "items": return <ItemsReport {...common} />;
   }
+}
+
+/* ------------------------------------------------------------------------ */
+/* 3b. Stylist (saloon mode)                                                */
+/* ------------------------------------------------------------------------ */
+
+function StylistReport({
+  token, branchId, onBack,
+}: { token: string; branchId: string; onBack: () => void }) {
+  const [preset, setPreset] = useState<Preset>("last7");
+  const { range, q } = useRangeSales(token, branchId, preset);
+  const valid = validSalesOf(q.data?.sales ?? []);
+
+  const stats = useMemo(() => {
+    const map = new Map<string, { count: number; amount: number }>();
+    for (const s of valid) {
+      const items: Array<{ stylistName?: string; lineTotal?: number }> =
+        (s.payload as any)?.items ?? [];
+      for (const it of items) {
+        const name = it.stylistName || "Unassigned";
+        const ex = map.get(name);
+        const amt = n(it.lineTotal);
+        if (ex) { ex.count++; ex.amount += amt; }
+        else map.set(name, { count: 1, amount: amt });
+      }
+    }
+    return Array.from(map.entries())
+      .map(([name, v]) => ({ name, ...v, avg: v.count > 0 ? v.amount / v.count : 0 }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [valid]);
+
+  const total = stats.reduce((sum, s) => sum + s.amount, 0);
+
+  const handleExport = () => {
+    if (stats.length === 0) return alert("Nothing to export.");
+    downloadCsv("stylist-report", buildCsv(stats.map((s) => ({
+      Stylist: s.name, Services: s.count,
+      TotalRevenue: s.amount.toFixed(2), AvgOrder: s.avg.toFixed(2),
+    }))));
+  };
+
+  return (
+    <ReportFrame
+      title="Stylist Report"
+      onBack={onBack}
+      onExport={handleExport}
+      controls={<PresetBar preset={preset} onChange={setPreset} />}
+    >
+      <StatGrid
+        stats={[
+          { label: "Period", value: range.label },
+          { label: "Total Revenue", value: fmtAED(total), accent: "good" },
+          { label: "Stylists", value: String(stats.length) },
+        ]}
+      />
+      {q.isLoading ? <EmptyState label="Loading…" /> :
+        stats.length === 0 ? <EmptyState label={`No stylist data in ${range.label}`} /> : (
+        <div className="space-y-2">
+          {stats.map((s, i) => (
+            <div key={s.name} className="bg-white border border-gray-200 rounded p-4">
+              <div className="flex items-center gap-3">
+                <span
+                  className={
+                    "w-7 h-7 rounded-full inline-flex items-center justify-center text-xs font-bold " +
+                    (i === 0 ? "bg-pink-500 text-white" : "bg-gray-100 text-gray-600")
+                  }
+                >
+                  #{i + 1}
+                </span>
+                <div className="flex-1">
+                  <div className="font-semibold">{s.name}</div>
+                  <div className="text-xs text-gray-500">
+                    {s.count} service{s.count !== 1 ? "s" : ""} · Avg {fmtAED(s.avg)}
+                  </div>
+                </div>
+                <div className="font-semibold">{fmtAED(s.amount)}</div>
+              </div>
+              <ProgressBar pct={total > 0 ? (s.amount / total) * 100 : 0} />
+            </div>
+          ))}
+        </div>
+      )}
+    </ReportFrame>
+  );
 }
 
 /* ------------------------------------------------------------------------ */

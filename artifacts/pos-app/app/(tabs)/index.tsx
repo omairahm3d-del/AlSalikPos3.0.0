@@ -31,6 +31,7 @@ import { ReceiptModal } from "@/components/ReceiptModal";
 import { useCart } from "@/context/CartContext";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useStaff } from "@/context/StaffContext";
+import { useWorkMode } from "@/context/WorkModeContext";
 import { useColors } from "@/hooks/useColors";
 import { generateKitchenTicketHTML, getUniqueStations } from "@/lib/kitchenTicketTemplate";
 import { generateBillHTML } from "@/lib/billTemplate";
@@ -55,6 +56,7 @@ export default function POSScreen() {
 
   const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder } = useDatabase();
   const { currentStaff } = useStaff();
+  const { isSaloon } = useWorkMode();
   const {
     items: cartItems,
     itemCount,
@@ -71,6 +73,7 @@ export default function POSScreen() {
     updateQuantity,
     setItemDiscount,
     setItemPrice,
+    setItemStylist,
     restoreCart,
     clearCart,
   } = useCart();
@@ -115,6 +118,8 @@ export default function POSScreen() {
   const [showItemDiscount, setShowItemDiscount] = useState<string | null>(null);
   const [itemDiscType, setItemDiscType] = useState<"percentage" | "fixed">("percentage");
   const [itemDiscValue, setItemDiscValue] = useState("");
+
+  const [showStylistPicker, setShowStylistPicker] = useState<string | null>(null);
 
   const [showPriceEdit, setShowPriceEdit] = useState<string | null>(null);
   const [priceEditInput, setPriceEditInput] = useState("");
@@ -224,7 +229,10 @@ export default function POSScreen() {
       : 0;
     addItem(product, rate);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [productById, taxGroupMap, addItem, businessSettings]);
+    if (isSaloon) {
+      setShowStylistPicker(product.id);
+    }
+  }, [productById, taxGroupMap, addItem, businessSettings, isSaloon]);
 
   const handleAddItem = useCallback((product: Product) => {
     handleAddById(product.id);
@@ -1381,6 +1389,49 @@ export default function POSScreen() {
             >
               <Text style={{ color: colors.mutedForeground, fontWeight: "600" }}>Cancel</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Stylist picker — saloon mode only */}
+      <Modal visible={isSaloon && showStylistPicker !== null} transparent animationType="fade" onRequestClose={() => setShowStylistPicker(null)}>
+        <View style={[styles.paymentOverlay]}>
+          <View style={[styles.paymentSheet, { backgroundColor: colors.card, borderRadius: colors.radius }]}>
+            <Text style={[styles.paymentTitle, { color: colors.foreground }]}>Assign Stylist</Text>
+            <Text style={[styles.paymentLabel, { color: colors.mutedForeground, marginBottom: 12 }]}>
+              Choose the stylist for this service (optional)
+            </Text>
+            <TouchableOpacity
+              onPress={() => setShowStylistPicker(null)}
+              style={[styles.cancelBtn, { borderColor: colors.border, borderRadius: colors.radius, marginBottom: 8 }]}
+            >
+              <Text style={{ color: colors.mutedForeground, fontWeight: "600" }}>Skip</Text>
+            </TouchableOpacity>
+            <ScrollView style={{ maxHeight: 280 }}>
+              {cartItems
+                .filter((ci) => ci.product.id === showStylistPicker)
+                .slice(-1)
+                .map((ci) => (
+                  <View key={ci.product.id}>
+                    {([] as Array<{ id: string; name: string }>)
+                      .concat(
+                        currentStaff ? [{ id: currentStaff.id, name: currentStaff.name }] : []
+                      )
+                      .map((s) => (
+                        <TouchableOpacity
+                          key={s.id}
+                          onPress={() => {
+                            setItemStylist(ci.product.id, s.id, s.name);
+                            setShowStylistPicker(null);
+                          }}
+                          style={[styles.customerPickerBtn, { borderColor: colors.border, borderRadius: colors.radius, marginBottom: 6 }]}
+                        >
+                          <Text style={{ color: colors.foreground, fontWeight: "600" }}>{s.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                  </View>
+                ))}
+            </ScrollView>
           </View>
         </View>
       </Modal>

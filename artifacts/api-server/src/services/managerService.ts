@@ -16,7 +16,7 @@ export interface LoginResult {
   token: string;
   tokenExpiresAt: Date;
   manager: Pick<Manager, "id" | "email" | "name" | "role">;
-  company: Pick<Company, "id" | "name" | "slug">;
+  company: Pick<Company, "id" | "name" | "slug"> & { workMode?: "standard" | "saloon" };
   branches: Array<Pick<Branch, "id" | "name" | "address">>;
 }
 
@@ -66,7 +66,7 @@ export const managerService = {
         name: manager.name,
         role: manager.role,
       },
-      company: { id: company.id, name: company.name, slug: company.slug },
+      company: { id: company.id, name: company.name, slug: company.slug, workMode: company.workMode === "saloon" ? "saloon" : "standard" },
       branches: branches.map((b) => ({
         id: b.id,
         name: b.name,

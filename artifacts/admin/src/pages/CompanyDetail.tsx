@@ -14,6 +14,7 @@ import {
   useCreateManager,
   useSetManagerActive,
   useResetManagerPassword,
+  useUpdateCompany,
 } from "@/hooks/useAdminApi";
 import type { Branch, LicenseType, Manager } from "@/lib/adminApi";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,6 +53,7 @@ export function CompanyDetail() {
   const createManager = useCreateManager(companyId || "");
   const setManagerActive = useSetManagerActive(companyId || "");
   const resetManagerPassword = useResetManagerPassword(companyId || "");
+  const updateCompany = useUpdateCompany();
   const { toast } = useToast();
 
   const [issueOpen, setIssueOpen] = useState(false);
@@ -323,6 +325,27 @@ export function CompanyDetail() {
             <div>
               <p className="text-sm font-medium text-muted-foreground">Created</p>
               <p className="mt-1">{format(parseISO(company.createdAt), "PPP")}</p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Work Mode</p>
+              <select
+                className="mt-1 border border-gray-200 rounded px-2 py-1 text-sm"
+                value={company.workMode ?? "standard"}
+                onChange={async (e) => {
+                  try {
+                    await updateCompany.mutateAsync({
+                      companyId: company.id,
+                      workMode: e.target.value as "standard" | "saloon",
+                    });
+                    toast({ title: "Work mode updated." });
+                  } catch (err: any) {
+                    toast({ title: "Failed to update work mode", description: err.message, variant: "destructive" });
+                  }
+                }}
+              >
+                <option value="standard">Standard (Restaurant / Retail)</option>
+                <option value="saloon">Saloon / Beauty</option>
+              </select>
             </div>
             {company.notes && (
               <div className="md:col-span-3">

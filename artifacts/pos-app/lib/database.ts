@@ -277,6 +277,11 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     // stock_tracking distinguishes "actively tracked" (1) from "default 999 untracked" (0).
     // Without this flag there is no way to tell the default 999 from a real 999-unit stock.
     "ALTER TABLE products ADD COLUMN stock_tracking INTEGER NOT NULL DEFAULT 0",
+    // Saloon mode: estimated service duration in minutes. NULL for standard products.
+    "ALTER TABLE products ADD COLUMN duration_minutes INTEGER DEFAULT NULL",
+    // Saloon mode: stylist assigned to each sale line item. NULL in standard mode.
+    "ALTER TABLE sale_items ADD COLUMN stylist_id TEXT DEFAULT NULL",
+    "ALTER TABLE sale_items ADD COLUMN stylist_name TEXT DEFAULT NULL",
   ];
 
   // Sync event log. Append-only ring buffer (capped to 200 rows by the

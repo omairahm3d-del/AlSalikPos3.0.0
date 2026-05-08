@@ -119,6 +119,7 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
                   branch: res.branch,
                   licenseKey: key,
                   deviceUid,
+                  workMode: res.workMode ?? "standard",
                 };
                 await saveSession(next);
                 if (myOp !== opSeq.current) return;
@@ -195,6 +196,7 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
         branch: res.branch,
         licenseKey: licenseKey.trim().toUpperCase(),
         deviceUid,
+        workMode: res.workMode ?? "standard",
       };
       await saveSession(next);
       if (myOp !== opSeq.current) return { kind: "ok" };
@@ -233,6 +235,7 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
         branch: res.branch,
         licenseKey: current.licenseKey,
         deviceUid: current.deviceUid,
+        workMode: res.workMode ?? "standard",
       };
       await saveSession(next);
       if (myOp !== opSeq.current) return;

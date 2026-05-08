@@ -24,6 +24,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useWorkMode } from "@/context/WorkModeContext";
 import type { Category, Ingredient, PrinterConfig, Product, TaxGroup } from "@/types";
 import { CURRENCY, PRODUCT_COLORS, formatCurrency } from "@/types";
 
@@ -31,6 +32,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const permissions = usePermissions();
+  const { isSaloon, productLabel } = useWorkMode();
   const { width } = useWindowDimensions();
   const {
     loadProducts, createProduct, updateProduct, deleteProduct,
@@ -66,6 +68,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
   // (default) to back-calculated from the displayed price.
   const [priceChangeAllowed, setPriceChangeAllowed] = useState(false);
   const [vatInclusive, setVatInclusive] = useState(false);
+  const [durationMinutes, setDurationMinutes] = useState<string>("");
 
   const [printerConfigs, setPrinterConfigs] = useState<PrinterConfig[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
@@ -136,6 +139,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     setLowStockThreshold("10"); setSelectedTaxGroupId(undefined); setImageUri(undefined);
     setSelectedPrinterId(undefined);
     setPriceChangeAllowed(false); setVatInclusive(false);
+    setDurationMinutes("");
     setRecipeItems([]); setRecipeIngId(""); setRecipeIngQty("");
     setModalVisible(true);
   };
@@ -150,6 +154,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     setSelectedPrinterId(product.printerId);
     setPriceChangeAllowed(!!product.priceChangeAllowed);
     setVatInclusive(!!product.vatInclusive);
+    setDurationMinutes(product.durationMinutes != null ? String(product.durationMinutes) : "");
     const items = await loadRecipeIngredients(product.id);
     setRecipeItems(items.map((ri) => ({ ingredientId: ri.ingredientId, ingredientName: ri.ingredientName ?? "", quantity: ri.quantity })));
     setRecipeIngId(""); setRecipeIngQty("");
@@ -178,6 +183,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     const barcodeVal = barcode.trim() || undefined;
 
     let productId: string;
+    const durationVal = durationMinutes.trim() ? (parseInt(durationMinutes, 10) || undefined) : undefined;
     if (editingProduct) {
       await updateProduct({
         ...editingProduct,
@@ -185,7 +191,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
         colorHex: selectedColor, barcode: barcodeVal, stockQuantity: stock, stockTracked,
         lowStockThreshold: threshold, taxGroupId: selectedTaxGroupId, imageUri,
         printerId: selectedPrinterId,
-        priceChangeAllowed, vatInclusive,
+        priceChangeAllowed, vatInclusive, durationMinutes: durationVal,
       });
       productId = editingProduct.id;
     } else {
@@ -194,7 +200,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
         colorHex: selectedColor, barcode: barcodeVal, stockQuantity: stock, stockTracked,
         lowStockThreshold: threshold, taxGroupId: selectedTaxGroupId, imageUri,
         printerId: selectedPrinterId,
-        priceChangeAllowed, vatInclusive,
+        priceChangeAllowed, vatInclusive, durationMinutes: durationVal,
       });
       productId = created.id;
     }
@@ -280,7 +286,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     <View style={[styles.root, { backgroundColor: colors.background, paddingTop: topPadding }]}>
       <View style={styles.statsRow}>
         <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-          <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Products</Text>
+          <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{productLabel}</Text>
           <Text style={[styles.statValue, { color: colors.foreground }]}>{products.length}</Text>
         </View>
         <TouchableOpacity
@@ -388,6 +394,20 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
+              </>
+            )}
+
+            {isSaloon && (
+              <>
+                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Duration (minutes, optional)</Text>
+                <TextInput
+                  value={durationMinutes}
+                  onChangeText={setDurationMinutes}
+                  placeholder="e.g. 45"
+                  placeholderTextColor={colors.mutedForeground}
+                  keyboardType="number-pad"
+                  style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
+                />
               </>
             )}
 
