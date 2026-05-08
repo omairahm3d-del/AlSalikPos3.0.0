@@ -9,7 +9,8 @@
     "serve": "node server/serve.js",
     "build:android": "node scripts/build-android.js",
     "build:android:release": "node scripts/build-android.js --release",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "postinstall": "node scripts/fix-native-modules.js"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

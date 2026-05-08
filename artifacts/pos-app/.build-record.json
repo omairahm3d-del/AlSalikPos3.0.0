@@ -1,0 +1,17 @@
+[
+  {
+    "buildId": "90401a64-fcc1-4279-bb17-f9f5d0b87b29",
+    "status": "FINISHED",
+    "profile": "preview",
+    "platform": "android",
+    "artifactType": "apk",
+    "apkUrl": "https://expo.dev/artifacts/eas/iP8LFGSC35XE3QnXKjwK1M.apk",
+    "dashboardUrl": "https://expo.dev/accounts/omairahm3ds-organization/projects/pos-app/builds/90401a64-fcc1-4279-bb17-f9f5d0b87b29",
+    "gitCommit": "current",
+    "sdkVersion": "54.0.0",
+    "appVersion": "1.0.0",
+    "versionCode": 1,
+    "builtAt": "2026-05-08T22:02:00Z",
+    "notes": "First APK with react-native-bluetooth-escpos-printer and react-native-tcp-socket compiled in. Includes Android Bluetooth permissions: BLUETOOTH, BLUETOOTH_ADMIN, BLUETOOTH_CONNECT, BLUETOOTH_SCAN, ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION. The postinstall script (scripts/fix-native-modules.js) patches the package's outdated build.gradle (removes jcenter, upgrades to compileSdkVersion 34, adds AndroidX namespace) and its RNBluetoothManagerModule.java (android.support.v4 → androidx.core) so it compiles against modern Android SDK."
+  }
+]
