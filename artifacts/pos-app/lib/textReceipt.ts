@@ -101,6 +101,60 @@ export function generateReceiptText(
   return lines.join("\n");
 }
 
+export function generateWhatsAppReceipt(
+  sale: Sale,
+  items: SaleItem[],
+  business: BusinessSettings,
+): string {
+  const sep = "─────────────────────────────";
+  const lines: string[] = [];
+  const vatPct = Math.round(sale.vatRate * 100);
+
+  lines.push(sale.isRefund ? "*إشعار استرداد | REFUND RECEIPT*" : "*فاتورة ضريبية مبسطة | SIMPLIFIED TAX INVOICE*");
+  lines.push("");
+  if (business.businessName) lines.push(`*${business.businessName}*`);
+  if (business.trn) lines.push(`TRN: ${business.trn}`);
+  if (business.address) lines.push(business.address);
+  if (business.phone) lines.push(`Tel: ${business.phone}`);
+  lines.push("");
+  lines.push(sep);
+  if (sale.invoiceNumber) lines.push(`Invoice #: ${sale.invoiceNumber}`);
+  lines.push(`Date: ${dateStr(sale.createdAt)}`);
+  if (sale.customerName) lines.push(`Customer: ${sale.customerName}`);
+  if (sale.staffName) lines.push(`Served by: ${sale.staffName}`);
+  if (sale.tableName) lines.push(`Table: ${sale.tableName}`);
+  lines.push(`Payment: ${sale.paymentMethod}`);
+  lines.push(sep);
+  lines.push("*Items:*");
+  for (const it of items) {
+    const qty = Math.abs(it.quantity);
+    const line = `• ${it.productName} × ${qty}${qty > 1 ? "" : ""}  — ${CURRENCY} ${it.lineTotal.toFixed(2)}`;
+    lines.push(line);
+    if ((it.discountAmount ?? 0) > 0) {
+      lines.push(`  _(Discount: -${CURRENCY} ${it.discountAmount!.toFixed(2)})_`);
+    }
+  }
+  lines.push(sep);
+  lines.push(`Subtotal (excl. VAT):  ${CURRENCY} ${sale.subtotal.toFixed(2)}`);
+  if ((sale.discountAmount ?? 0) > 0) {
+    lines.push(`Discount:             -${CURRENCY} ${sale.discountAmount!.toFixed(2)}`);
+  }
+  lines.push(`VAT (${vatPct}%):               ${CURRENCY} ${sale.vatAmount.toFixed(2)}`);
+  lines.push(sep);
+  lines.push(`*TOTAL (incl. VAT):    ${CURRENCY} ${sale.total.toFixed(2)}*`);
+  if (sale.loyaltyPointsEarned) lines.push(`🌟 Points earned: ${sale.loyaltyPointsEarned}`);
+  lines.push(sep);
+  lines.push("شكراً لتعاملكم معنا  |  Thank you for your business!");
+  return lines.join("\n");
+}
+
+export function formatWhatsAppPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("00")) return digits.slice(2);
+  if (digits.startsWith("0") && digits.length <= 10) return `971${digits.slice(1)}`;
+  return digits;
+}
+
 export function generateZReportText(report: ZReport, business: BusinessSettings, paperWidth: "58mm" | "80mm" = "80mm"): string {
   const width = paperWidth === "58mm" ? 32 : 48;
   const sep = "-".repeat(width);

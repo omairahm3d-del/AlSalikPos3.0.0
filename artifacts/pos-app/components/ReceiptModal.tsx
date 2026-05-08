@@ -1,11 +1,14 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  Linking,
   Modal,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -14,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
 import { generateReceiptHTML } from "@/lib/receiptTemplate";
+import { formatWhatsAppPhone, generateWhatsAppReceipt } from "@/lib/textReceipt";
 import type { BusinessSettings, Sale, SaleItem } from "@/types";
 import { formatCurrency } from "@/types";
 
@@ -26,11 +30,16 @@ interface Props {
 export function ReceiptModal({ visible, sale, onClose }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { loadSaleWithItems, loadBusinessSettings } = useDatabase();
+  const { loadSaleWithItems, loadBusinessSettings, loadCustomers } = useDatabase();
 
   const [items, setItems] = useState<SaleItem[]>([]);
   const [business, setBusiness] = useState<BusinessSettings | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const [showPhonePrompt, setShowPhonePrompt] = useState(false);
+  const [phoneInput, setPhoneInput] = useState("");
+  const [whatsappLoading, setWhatsappLoading] = useState(false);
+  const phoneInputRef = useRef<TextInput>(null);
 
   const loadData = useCallback(async () => {
     if (!sale) return;
@@ -99,6 +108,56 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
     } catch {
     }
   };
+
+  const openWhatsApp = useCallback(async (phone: string) => {
+    if (!sale || !business) return;
+    const cleaned = formatWhatsAppPhone(phone);
+    if (!cleaned || cleaned.length < 7) {
+      Alert.alert("Invalid Number", "Please enter a valid phone number including country code (e.g. 971501234567).");
+      return;
+    }
+    const message = generateWhatsAppReceipt(sale, items, business);
+    const url = `https://wa.me/${cleaned}?text=${encodeURIComponent(message)}`;
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) {
+        Alert.alert("WhatsApp Not Found", "WhatsApp does not appear to be installed on this device.");
+        return;
+      }
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert("Error", "Could not open WhatsApp.");
+    }
+  }, [sale, items, business]);
+
+  const handleWhatsApp = useCallback(async () => {
+    if (!sale || !business) return;
+    setWhatsappLoading(true);
+    try {
+      if (sale.customerId) {
+        const customers = await loadCustomers();
+        const customer = customers.find((c) => c.id === sale.customerId);
+        if (customer?.phone?.trim()) {
+          setWhatsappLoading(false);
+          await openWhatsApp(customer.phone.trim());
+          return;
+        }
+      }
+      setWhatsappLoading(false);
+      setPhoneInput("");
+      setShowPhonePrompt(true);
+      setTimeout(() => phoneInputRef.current?.focus(), 200);
+    } catch {
+      setWhatsappLoading(false);
+      setPhoneInput("");
+      setShowPhonePrompt(true);
+    }
+  }, [sale, business, loadCustomers, openWhatsApp]);
+
+  const handleSendFromPrompt = useCallback(async () => {
+    setShowPhonePrompt(false);
+    await openWhatsApp(phoneInput);
+  }, [phoneInput, openWhatsApp]);
 
   if (!sale) return null;
 
@@ -229,7 +288,20 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
                 style={[styles.actionBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
               >
                 <Feather name="printer" size={18} color="#fff" />
-                <Text style={styles.actionBtnText}>Print Receipt</Text>
+                <Text style={styles.actionBtnText}>Print</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleWhatsApp}
+                disabled={whatsappLoading}
+                style={[styles.actionBtn, { backgroundColor: "#25D366", borderRadius: colors.radius, opacity: whatsappLoading ? 0.7 : 1 }]}
+              >
+                {whatsappLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Feather name="message-circle" size={18} color="#fff" />
+                )}
+                <Text style={styles.actionBtnText}>WhatsApp</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -237,12 +309,60 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
                 style={[styles.actionBtn, { backgroundColor: colors.secondary, borderColor: colors.border, borderWidth: 1, borderRadius: colors.radius }]}
               >
                 <Feather name="share-2" size={18} color={colors.foreground} />
-                <Text style={[styles.actionBtnText, { color: colors.foreground }]}>Share PDF</Text>
+                <Text style={[styles.actionBtnText, { color: colors.foreground }]}>PDF</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
         )}
       </View>
+
+      {/* ── Phone number prompt ──────────────────────────────────── */}
+      <Modal
+        visible={showPhonePrompt}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPhonePrompt(false)}
+      >
+        <View style={styles.promptOverlay}>
+          <View style={[styles.promptBox, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 }]}>
+            <View style={styles.promptHeader}>
+              <View style={[styles.promptIcon, { backgroundColor: "#25D366" + "20" }]}>
+                <Feather name="message-circle" size={20} color="#25D366" />
+              </View>
+              <Text style={[styles.promptTitle, { color: colors.foreground }]}>Send via WhatsApp</Text>
+            </View>
+            <Text style={[styles.promptSub, { color: colors.mutedForeground }]}>
+              Enter the customer's WhatsApp number. Include country code (e.g. 971501234567 for UAE).
+            </Text>
+            <TextInput
+              ref={phoneInputRef}
+              value={phoneInput}
+              onChangeText={setPhoneInput}
+              placeholder="971501234567"
+              placeholderTextColor={colors.mutedForeground}
+              keyboardType="phone-pad"
+              style={[styles.promptInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
+              onSubmitEditing={handleSendFromPrompt}
+              returnKeyType="send"
+            />
+            <View style={styles.promptActions}>
+              <TouchableOpacity
+                onPress={() => setShowPhonePrompt(false)}
+                style={[styles.promptBtn, { backgroundColor: colors.secondary, borderColor: colors.border, borderWidth: 1, borderRadius: colors.radius }]}
+              >
+                <Text style={[styles.promptBtnText, { color: colors.foreground }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSendFromPrompt}
+                style={[styles.promptBtn, { backgroundColor: "#25D366", borderRadius: colors.radius }]}
+              >
+                <Feather name="send" size={15} color="#fff" />
+                <Text style={[styles.promptBtnText, { color: "#fff" }]}>Send</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 }
@@ -286,16 +406,16 @@ const styles = StyleSheet.create({
   grandLabel: { fontSize: 15, fontWeight: "700", fontFamily: "Inter_700Bold" },
   grandValue: { fontSize: 15, fontWeight: "700", fontFamily: "Inter_700Bold" },
   footerText: { fontSize: 11, textAlign: "center", lineHeight: 18, marginTop: 4 },
-  actions: { flexDirection: "row", gap: 12, marginTop: 16 },
+  actions: { flexDirection: "row", gap: 8, marginTop: 16 },
   actionBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 14,
-    gap: 8,
+    paddingVertical: 13,
+    gap: 6,
   },
-  actionBtnText: { color: "#fff", fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  actionBtnText: { color: "#fff", fontSize: 13, fontWeight: "700", fontFamily: "Inter_700Bold" },
   trnWarning: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -308,4 +428,50 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     flex: 1,
   },
+  promptOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  promptBox: {
+    width: "100%",
+    maxWidth: 400,
+    padding: 24,
+    borderWidth: 1,
+  },
+  promptHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 10,
+  },
+  promptIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  promptTitle: { fontSize: 17, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  promptSub: { fontSize: 13, lineHeight: 19, marginBottom: 16 },
+  promptInput: {
+    height: 48,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    fontSize: 16,
+    marginBottom: 20,
+    letterSpacing: 1,
+  },
+  promptActions: { flexDirection: "row", gap: 10 },
+  promptBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    gap: 6,
+  },
+  promptBtnText: { fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" },
 });
