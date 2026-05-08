@@ -8,9 +8,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import * as Updates from "expo-updates";
-import React, { useEffect, useRef, useState } from "react";
-import { Alert, ActivityIndicator, View, Text, StyleSheet } from "react-native";
+import React, { useEffect, useRef } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -70,7 +68,6 @@ function LicenseGate({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
-  const [updating, setUpdating] = useState(false);
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -84,51 +81,7 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, fontError]);
 
-  // OTA update check — only runs in production builds (no-op in Expo Go / dev).
-  useEffect(() => {
-    if (__DEV__) return;
-    (async () => {
-      try {
-        const result = await Updates.checkForUpdateAsync();
-        if (!result.isAvailable) return;
-        Alert.alert(
-          "Update Available",
-          "A new version of Al Salik POS is ready to install. The app will restart after updating.",
-          [
-            { text: "Later", style: "cancel" },
-            {
-              text: "Update Now",
-              onPress: async () => {
-                setUpdating(true);
-                try {
-                  await Updates.fetchUpdateAsync();
-                  await Updates.reloadAsync();
-                } catch {
-                  setUpdating(false);
-                  Alert.alert("Update Failed", "Could not download the update. Please check your internet connection and try again.");
-                }
-              },
-            },
-          ],
-          { cancelable: false },
-        );
-      } catch {
-        // Network unavailable or EAS not configured — silently ignore.
-      }
-    })();
-  }, []);
-
   if (!fontsLoaded && !fontError) return null;
-
-  if (updating) {
-    return (
-      <View style={styles.updateOverlay}>
-        <ActivityIndicator size="large" color="#ffffff" />
-        <Text style={styles.updateTitle}>Downloading Update…</Text>
-        <Text style={styles.updateSub}>Please keep the app open. It will restart automatically.</Text>
-      </View>
-    );
-  }
 
   return (
     <SafeAreaProvider>
@@ -159,25 +112,3 @@ export default function RootLayout() {
   );
 }
 
-const styles = StyleSheet.create({
-  updateOverlay: {
-    flex: 1,
-    backgroundColor: "#0F1117",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 16,
-    paddingHorizontal: 32,
-  },
-  updateTitle: {
-    color: "#ffffff",
-    fontSize: 20,
-    fontWeight: "700",
-    textAlign: "center",
-  },
-  updateSub: {
-    color: "#9CA3AF",
-    fontSize: 14,
-    textAlign: "center",
-    lineHeight: 20,
-  },
-});
