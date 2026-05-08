@@ -1,0 +1,78 @@
+diff --git a/.npmignore b/.npmignore
+deleted file mode 100644
+index e0e58ddb4c6f80f95d2bc8f91272aa2b000651f6..0000000000000000000000000000000000000000
+diff --git a/android/build.gradle b/android/build.gradle
+index d86e4f51dc2427f7ea6ef00586ace79a9ddb7ef0..91139db7598e9ba10b38e1fcfb1ecdffcf70766d 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -1,31 +1,22 @@
+ buildscript {
+     repositories {
+-        jcenter { url "http://jcenter.bintray.com/" }
+-        maven {url "http://repo.spring.io/plugins-release/"}
++        google()
+         mavenCentral()
+-        maven {
+-            // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
+-            url "$rootDir/../node_modules/react-native/android"
+-        }
+-        maven {
+-            url 'https://maven.google.com'
+-        }
+     }
+-
+     dependencies {
+-        classpath 'com.android.tools.build:gradle:3.1.4'
++        classpath 'com.android.tools.build:gradle:7.4.2'
+     }
+ }
+ 
+ apply plugin: 'com.android.library'
+ 
+ android {
+-    compileSdkVersion 27
+-    buildToolsVersion "27.0.3"
++    compileSdkVersion 34
++    buildToolsVersion "34.0.0"
+ 
+     defaultConfig {
+-        minSdkVersion 16
+-        targetSdkVersion 24
++        minSdkVersion 21
++        targetSdkVersion 34
+         versionCode 1
+         versionName "1.0"
+     }
+@@ -37,24 +28,19 @@ android {
+             aidl.srcDirs = ['src/main/java']
+         }
+     }
++    namespace "cn.jystudio.bluetooth"
+ }
+ 
+ repositories {
+-    jcenter { url "http://jcenter.bintray.com/" }
+-    maven {url "http://repo.spring.io/plugins-release/"}
++    google()
+     mavenCentral()
+     maven {
+-        // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
+         url "$rootDir/../node_modules/react-native/android"
+     }
+-    maven {
+-        url 'https://maven.google.com'
+-    }
+ }
+ 
+ dependencies {
+-    compile fileTree(dir: 'libs', include: ['*.jar'])
+-    implementation 'com.facebook.react:react-native:+'  // From node_modules
+-    implementation group: 'com.android.support', name: 'support-v4', version: '27.0.0'
+-    implementation "com.google.zxing:core:3.3.0"
++    implementation fileTree(dir: 'libs', include: ['*.jar'])
++    implementation 'com.facebook.react:react-native:+'
++    implementation "com.google.zxing:core:3.5.2"
+ }
+diff --git a/ios/ZXingObjC-3.2.2/.npmignore b/ios/ZXingObjC-3.2.2/.npmignore
+deleted file mode 100755
+index 81e5559b3d6d294cf804dbd657c72d3353eb7111..0000000000000000000000000000000000000000
