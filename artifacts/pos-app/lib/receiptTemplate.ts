@@ -155,6 +155,7 @@ export function generateReceiptHTML(
     ${sale.customerName ? `<tr><td class="info-line"><strong>${bilingual("Customer", "العميل")}:</strong></td><td class="info-line" style="text-align:right;">${sale.customerName}</td></tr>` : ""}
     ${sale.staffName ? `<tr><td class="info-line"><strong>${bilingual("Cashier", "الكاشير")}:</strong></td><td class="info-line" style="text-align:right;">${sale.staffName}</td></tr>` : ""}
     ${sale.tableName ? `<tr><td class="info-line"><strong>${bilingual("Table", "طاولة")}:</strong></td><td class="info-line" style="text-align:right;">${sale.tableName}</td></tr>` : ""}
+    ${sale.orderType ? `<tr><td class="info-line"><strong>${bilingual("Order Type", "نوع الطلب")}:</strong></td><td class="info-line" style="text-align:right;">${sale.orderType === "dine-in" ? "Dine-in / داخل المطعم" : sale.orderType === "takeaway" ? "Takeaway / خارجي" : sale.orderType === "delivery" ? "Delivery / توصيل" : sale.orderType}</td></tr>` : ""}
     ${isRefund && sale.originalSaleId ? `<tr><td class="info-line"><strong>${bilingual("Ref", "مرجع")}:</strong></td><td class="info-line" style="text-align:right;">Original Sale / الفاتورة الأصلية</td></tr>` : ""}
   </table>
 
