@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod/v4";
 import { and, desc, eq, gte, lte, lt, sql, or, isNull } from "drizzle-orm";
 import type { Request, Response } from "express";
@@ -10,7 +11,7 @@ import {
 } from "@workspace/saas-db";
 import { managerService } from "../services/managerService";
 import { branchRepo } from "../repositories/branchRepo";
-import { forbidden, notFound } from "../lib/errors";
+import { badRequest, conflict, forbidden, notFound } from "../lib/errors";
 
 const loginBody = z.object({
   companySlug: z.string().min(1).max(63),
@@ -24,6 +25,22 @@ const listQuery = z.object({
   to: z.string().datetime().optional(),
   limit: z.coerce.number().int().min(1).max(500).optional(),
   cursor: z.string().optional(),
+});
+
+const importProductRow = z.object({
+  name: z.string().min(1).max(200),
+  category: z.string().max(100).default(""),
+  price: z.coerce.number().min(0),
+  sku: z.string().max(100).default(""),
+  barcode: z.string().max(100).default(""),
+  description: z.string().max(500).default(""),
+  stockQuantity: z.coerce.number().int().default(0),
+  vatInclusive: z.coerce.boolean().default(false),
+});
+
+const importBody = z.object({
+  branchId: z.string().uuid(),
+  products: z.array(importProductRow).min(1).max(1000),
 });
 
 /**
@@ -232,6 +249,224 @@ export const managerController = {
       .orderBy(desc(customersTable.clientUpdatedAt))
       .limit(q.limit ?? 500);
     res.json({ customers: rows });
+  },
+
+  /**
+   * Bulk import products (and auto-create categories) via manager auth.
+   * For each product: matches by name+branch to update existing or create new.
+   * Categories are looked up by name and created if absent.
+   */
+  async importCatalog(req: Request, res: Response) {
+    const m = req.manager!;
+    const body = importBody.parse(req.body);
+    await assertBranchInCompany(m.companyId, body.branchId);
+
+    const now = new Date();
+    const nowMs = now.getTime();
+
+    // 1. Resolve / create categories by name
+    const categoryNames = [
+      ...new Set(body.products.map((p) => p.category).filter(Boolean)),
+    ];
+    for (const catName of categoryNames) {
+      const [existing] = await saasDb
+        .select({ clientId: categoriesTable.clientId })
+        .from(categoriesTable)
+        .where(
+          and(
+            eq(categoriesTable.companyId, m.companyId),
+            isNull(categoriesTable.deletedAt),
+            sql`${categoriesTable.payload}->>'name' = ${catName}`,
+            or(
+              eq(categoriesTable.branchId, body.branchId),
+              isNull(categoriesTable.branchId),
+            ),
+          ),
+        )
+        .limit(1);
+
+      if (!existing) {
+        const clientId = randomUUID();
+        await saasDb.insert(categoriesTable).values({
+          companyId: m.companyId,
+          branchId: body.branchId,
+          clientId,
+          payload: {
+            id: clientId,
+            name: catName,
+            colorHex: "#6B7280",
+            updatedAt: nowMs,
+          },
+          clientUpdatedAt: now,
+          serverUpdatedAt: now,
+        });
+      }
+    }
+
+    // 2. Upsert products — match by name within company+branch
+    let created = 0;
+    let updated = 0;
+
+    for (const p of body.products) {
+      const [existing] = await saasDb
+        .select({
+          clientId: productsTable.clientId,
+          payload: productsTable.payload,
+        })
+        .from(productsTable)
+        .where(
+          and(
+            eq(productsTable.companyId, m.companyId),
+            isNull(productsTable.deletedAt),
+            sql`${productsTable.payload}->>'name' = ${p.name}`,
+            or(
+              eq(productsTable.branchId, body.branchId),
+              isNull(productsTable.branchId),
+            ),
+          ),
+        )
+        .limit(1);
+
+      if (existing) {
+        const merged = {
+          ...(existing.payload as Record<string, unknown>),
+          name: p.name,
+          category: p.category,
+          price: p.price,
+          sku: p.sku,
+          barcode: p.barcode,
+          description: p.description,
+          stockQuantity: p.stockQuantity,
+          vatInclusive: p.vatInclusive,
+          updatedAt: nowMs,
+        };
+        await saasDb
+          .update(productsTable)
+          .set({ payload: merged, clientUpdatedAt: now, serverUpdatedAt: now })
+          .where(
+            and(
+              eq(productsTable.clientId, existing.clientId),
+              eq(productsTable.companyId, m.companyId),
+            ),
+          );
+        updated++;
+      } else {
+        const clientId = randomUUID();
+        await saasDb.insert(productsTable).values({
+          companyId: m.companyId,
+          branchId: body.branchId,
+          clientId,
+          payload: {
+            id: clientId,
+            name: p.name,
+            category: p.category,
+            price: p.price,
+            sku: p.sku,
+            barcode: p.barcode,
+            description: p.description,
+            stockQuantity: p.stockQuantity,
+            stockTracked: p.stockQuantity > 0,
+            vatInclusive: p.vatInclusive,
+            colorHex: "#6B7280",
+            lowStockThreshold: 5,
+            updatedAt: nowMs,
+          },
+          clientUpdatedAt: now,
+          serverUpdatedAt: now,
+        });
+        created++;
+      }
+    }
+
+    req.log.info(
+      { companyId: m.companyId, branchId: body.branchId, created, updated },
+      "Manager catalog import",
+    );
+    res.json({ created, updated, total: body.products.length });
+  },
+
+  /**
+   * Create a full-amount refund for an existing sale (manager-initiated).
+   * The refund sale inherits the original's deviceId so it passes the FK
+   * constraint without requiring a schema change.
+   */
+  async createRefund(req: Request, res: Response) {
+    const m = req.manager!;
+    const clientSaleId = String(req.params.clientSaleId);
+
+    const [original] = await saasDb
+      .select()
+      .from(salesTable)
+      .where(
+        and(
+          eq(salesTable.clientSaleId, clientSaleId),
+          eq(salesTable.companyId, m.companyId),
+        ),
+      )
+      .limit(1);
+
+    if (!original) throw notFound("sale_not_found", "Sale not found");
+    if (original.isRefund)
+      throw badRequest("already_refund", "Cannot refund a refund transaction");
+
+    const [existingRefund] = await saasDb
+      .select({ id: salesTable.id })
+      .from(salesTable)
+      .where(
+        and(
+          eq(salesTable.originalClientSaleId, clientSaleId),
+          eq(salesTable.companyId, m.companyId),
+        ),
+      )
+      .limit(1);
+
+    if (existingRefund)
+      throw conflict("already_refunded", "This sale has already been refunded");
+
+    const refundClientSaleId = randomUUID();
+    const now = new Date();
+    const origTotal = Math.abs(parseFloat(String(original.total)));
+    const origVat = Math.abs(parseFloat(String(original.vatAmount)));
+    const origPayload = (original.payload ?? {}) as Record<string, unknown>;
+    const origSubtotal =
+      typeof origPayload.subtotal === "number"
+        ? origPayload.subtotal
+        : parseFloat(String(origPayload.subtotal ?? 0));
+
+    await saasDb.insert(salesTable).values({
+      companyId: m.companyId,
+      deviceId: original.deviceId,
+      branchId: original.branchId,
+      clientSaleId: refundClientSaleId,
+      invoiceNumber: `REF-${original.invoiceNumber}`,
+      createdAtClient: now,
+      total: String(-origTotal),
+      vatAmount: String(-origVat),
+      paymentMethod: original.paymentMethod,
+      isRefund: true,
+      originalClientSaleId: clientSaleId,
+      staffId: null,
+      customerId: original.customerId,
+      payload: {
+        ...origPayload,
+        id: refundClientSaleId,
+        invoiceNumber: `REF-${original.invoiceNumber}`,
+        isRefund: true,
+        total: -origTotal,
+        vatAmount: -origVat,
+        subtotal: -origSubtotal,
+      },
+    });
+
+    req.log.info(
+      { companyId: m.companyId, originalClientSaleId: clientSaleId, refundClientSaleId },
+      "Manager-initiated refund",
+    );
+    res.json({
+      success: true,
+      refundClientSaleId,
+      invoiceNumber: `REF-${original.invoiceNumber}`,
+    });
   },
 };
 

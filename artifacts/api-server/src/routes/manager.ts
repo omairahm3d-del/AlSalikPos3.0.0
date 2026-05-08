@@ -17,11 +17,19 @@ router.get(
   asyncHandler(managerController.salesSummary),
 );
 router.get("/manager/products", asyncHandler(managerController.listProducts));
+router.post(
+  "/manager/catalog/import",
+  asyncHandler(managerController.importCatalog),
+);
 router.get(
   "/manager/categories",
   asyncHandler(managerController.listCategories),
 );
 router.get("/manager/customers", asyncHandler(managerController.listCustomers));
+router.post(
+  "/manager/sales/:clientSaleId/refund",
+  asyncHandler(managerController.createRefund),
+);
 
 // Purchasing & stock
 router.get(

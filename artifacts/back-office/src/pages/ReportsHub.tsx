@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type SaleRow, type SalePayload } from "@/lib/api";
 import { buildCsv, downloadCsv, fmtAED } from "@/lib/csv";
 
@@ -838,9 +838,13 @@ function CustomerReport({
 function ItemsReport({
   token, branchId, onBack,
 }: { token: string; branchId: string; onBack: () => void }) {
+  const qc = useQueryClient();
   const [day, setDay] = useState<string>(() =>
     new Date().toISOString().slice(0, 10),
   );
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [refundedIds, setRefundedIds] = useState<Set<string>>(new Set());
+  const [refundMsg, setRefundMsg] = useState<string | null>(null);
 
   const range = useMemo(() => {
     const s = new Date(`${day}T00:00:00.000`);
@@ -856,12 +860,32 @@ function ItemsReport({
     },
   });
 
+  const refundMutation = useMutation({
+    mutationFn: (clientSaleId: string) => api.refundSale(token, clientSaleId),
+    onSuccess: (data, clientSaleId) => {
+      setRefundedIds((prev) => new Set([...prev, clientSaleId]));
+      setRefundMsg(`Refund created: ${data.invoiceNumber}`);
+      void qc.invalidateQueries({ queryKey: ["items-day", branchId, day] });
+      void qc.invalidateQueries({ queryKey: ["range-sales", branchId] });
+      setTimeout(() => setRefundMsg(null), 4000);
+    },
+  });
+
   const sales = q.data?.sales ?? [];
   const valid = validSalesOf(sales);
   const total = valid.reduce((sum, s) => sum + n(s.total), 0);
   const refundCount = sales.filter((s) => s.isRefund).length;
 
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  function handleRefund(s: SaleRow, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (
+      !window.confirm(
+        `Issue a full refund for ${s.invoiceNumber} (${fmtAED(n(s.total))})?`,
+      )
+    )
+      return;
+    refundMutation.mutate(s.clientSaleId);
+  }
 
   const handleExport = () => {
     if (sales.length === 0) return alert("Nothing to export.");
@@ -933,41 +957,75 @@ function ItemsReport({
           { label: "Avg. Order", value: fmtAED(valid.length > 0 ? total / valid.length : 0) },
         ]}
       />
+
+      {refundMsg && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded px-4 py-2 text-sm text-emerald-800 flex items-center justify-between">
+          <span>{refundMsg}</span>
+          <button onClick={() => setRefundMsg(null)} className="ml-4 text-emerald-600">✕</button>
+        </div>
+      )}
+      {refundMutation.error && (
+        <div className="bg-rose-50 border border-rose-200 rounded px-4 py-2 text-sm text-rose-800">
+          {(refundMutation.error as Error).message}
+        </div>
+      )}
+
       {q.isLoading ? <EmptyState label="Loading…" /> :
         sales.length === 0 ? <EmptyState label="No sales on this day." /> : (
         <div className="space-y-2">
           {sales.map((s) => {
             const items: SalePayload["items"] = s.payload?.items ?? [];
             const isExp = expandedId === s.id;
+            const alreadyRefunded =
+              refundedIds.has(s.clientSaleId) ||
+              sales.some((r) => r.isRefund && r.payload?.originalClientSaleId === s.clientSaleId);
+            const canRefund = !s.isRefund && !alreadyRefunded;
             return (
-              <button
+              <div
                 key={s.id}
-                onClick={() => setExpandedId(isExp ? null : s.id)}
                 className={
-                  "w-full text-left bg-white border rounded p-4 " +
+                  "bg-white border rounded overflow-hidden " +
                   (s.isRefund ? "border-rose-200" : "border-gray-200")
                 }
               >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-semibold">
-                      {s.invoiceNumber}
-                      {s.isRefund ? " · REFUND" : ""}
+                {/* Header row — click to expand */}
+                <button
+                  onClick={() => setExpandedId(isExp ? null : s.id)}
+                  className="w-full text-left p-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold">
+                        {s.invoiceNumber}
+                        {s.isRefund ? (
+                          <span className="ml-2 text-xs font-medium text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded">
+                            REFUND
+                          </span>
+                        ) : alreadyRefunded ? (
+                          <span className="ml-2 text-xs font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+                            REFUNDED
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {fmtTime(s.createdAtClient)}
+                        {s.payload?.staffName ? ` · ${s.payload.staffName}` : ""}
+                        {s.payload?.customerName ? ` · ${s.payload.customerName}` : ""}
+                        {" · "}{s.paymentMethod}
+                      </div>
                     </div>
-                    <div className="text-xs text-gray-500">
-                      {fmtTime(s.createdAtClient)}
-                      {s.payload?.staffName ? ` · ${s.payload.staffName}` : ""}
-                      {s.payload?.customerName ? ` · ${s.payload.customerName}` : ""}
-                      {" · "}{s.paymentMethod}
+                    <div className="flex items-center gap-3">
+                      <div className={"font-semibold " + (s.isRefund ? "text-rose-600" : "text-emerald-600")}>
+                        {s.isRefund ? "-" : ""}{fmtAED(Math.abs(n(s.total)))}
+                      </div>
                     </div>
                   </div>
-                  <div className={"font-semibold " + (s.isRefund ? "text-rose-600" : "text-emerald-600")}>
-                    {fmtAED(n(s.total))}
-                  </div>
-                </div>
+                </button>
+
+                {/* Expanded detail */}
                 {isExp && (
-                  <div className="mt-3 pt-3 border-t border-gray-100 text-sm">
-                    <div className="grid grid-cols-2 gap-y-1 text-gray-600">
+                  <div className="px-4 pb-4 border-t border-gray-100 text-sm">
+                    <div className="grid grid-cols-2 gap-y-1 text-gray-600 pt-3">
                       {s.payload?.orderType ? (
                         <><div>Order Type</div><div className="text-right capitalize">{s.payload.orderType}</div></>
                       ) : null}
@@ -991,9 +1049,20 @@ function ItemsReport({
                         </div>
                       </>
                     ) : null}
+                    {canRefund && (
+                      <div className="mt-3 pt-3 border-t border-gray-100 flex justify-end">
+                        <button
+                          onClick={(e) => handleRefund(s, e)}
+                          disabled={refundMutation.isPending}
+                          className="text-xs font-semibold text-rose-700 border border-rose-200 hover:bg-rose-50 rounded px-3 py-1.5 disabled:opacity-50"
+                        >
+                          {refundMutation.isPending ? "Processing…" : "↩ Issue Refund"}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>

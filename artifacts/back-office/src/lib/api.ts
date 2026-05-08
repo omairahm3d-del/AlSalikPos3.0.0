@@ -79,6 +79,7 @@ export interface SalePayload {
   riderName?: string;
   discountAmount?: number;
   isRefund?: boolean;
+  originalClientSaleId?: string;
   items?: SaleItemPayload[];
 }
 
@@ -108,6 +109,17 @@ export interface CatalogRow {
   payload: Record<string, unknown>;
   clientUpdatedAt: string;
   branchId: string | null;
+}
+
+export interface ImportProductInput {
+  name: string;
+  category?: string;
+  price: number;
+  sku?: string;
+  barcode?: string;
+  description?: string;
+  stockQuantity?: number;
+  vatInclusive?: boolean;
 }
 
 /* ---------- Purchasing & stock ---------- */
@@ -275,6 +287,29 @@ export const api = {
       `/api/manager/products?branchId=${branchId}`,
       { token },
     ),
+  importCatalog: (
+    token: string,
+    branchId: string,
+    products: ImportProductInput[],
+  ) =>
+    request<{ created: number; updated: number; total: number }>(
+      `/api/manager/catalog/import`,
+      {
+        method: "POST",
+        token,
+        body: JSON.stringify({ branchId, products }),
+      },
+    ),
+  refundSale: (token: string, clientSaleId: string) =>
+    request<{
+      success: boolean;
+      refundClientSaleId: string;
+      invoiceNumber: string;
+    }>(`/api/manager/sales/${encodeURIComponent(clientSaleId)}/refund`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({}),
+    }),
   customers: (token: string, branchId: string) =>
     request<{ customers: CatalogRow[] }>(
       `/api/manager/customers?branchId=${branchId}`,
