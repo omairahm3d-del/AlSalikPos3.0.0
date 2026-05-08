@@ -39,3 +39,6 @@ yarn-error.*
 .vercel
 
 .env
+
+# Per-developer notification preferences (keep off source control)
+.build-notify.json
