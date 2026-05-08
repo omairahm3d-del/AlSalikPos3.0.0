@@ -316,16 +316,16 @@ export function CompanyDetail() {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
+    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4 md:space-y-6">
+      <div className="flex items-center gap-3 min-w-0">
+        <Button variant="ghost" size="icon" asChild className="flex-shrink-0">
           <Link href="/">
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
-        <div className="flex items-center gap-3">
-          <h1 className="text-3xl font-bold tracking-tight">{company.name}</h1>
-          <Badge variant={company.status === "active" ? "default" : "secondary"}>
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight truncate">{company.name}</h1>
+          <Badge variant={company.status === "active" ? "default" : "secondary"} className="flex-shrink-0">
             {company.status}
           </Badge>
         </div>
@@ -349,7 +349,7 @@ export function CompanyDetail() {
             <div>
               <p className="text-sm font-medium text-muted-foreground">Work Mode</p>
               <select
-                className="mt-1 border border-gray-200 rounded px-2 py-1 text-sm"
+                className="mt-1 w-full border border-border rounded px-2 py-1.5 text-sm bg-background"
                 value={company.workMode ?? "standard"}
                 onChange={async (e) => {
                   try {
@@ -378,12 +378,14 @@ export function CompanyDetail() {
       </Card>
 
       <Tabs defaultValue="licenses" className="w-full">
-        <TabsList className="grid w-full max-w-[800px] grid-cols-4">
-          <TabsTrigger value="licenses">Licenses ({licenses.length})</TabsTrigger>
-          <TabsTrigger value="devices">Devices ({devices.length})</TabsTrigger>
-          <TabsTrigger value="branches">Branches ({branches.length})</TabsTrigger>
-          <TabsTrigger value="managers">Managers ({managers.length})</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto pb-1 -mb-1">
+          <TabsList className="flex w-max min-w-full sm:grid sm:w-full sm:max-w-[800px] sm:grid-cols-4">
+            <TabsTrigger value="licenses" className="flex-1 whitespace-nowrap">Licenses ({licenses.length})</TabsTrigger>
+            <TabsTrigger value="devices" className="flex-1 whitespace-nowrap">Devices ({devices.length})</TabsTrigger>
+            <TabsTrigger value="branches" className="flex-1 whitespace-nowrap">Branches ({branches.length})</TabsTrigger>
+            <TabsTrigger value="managers" className="flex-1 whitespace-nowrap">Managers ({managers.length})</TabsTrigger>
+          </TabsList>
+        </div>
         
         <TabsContent value="licenses" className="mt-6 space-y-4">
           <div className="flex justify-between items-center">
@@ -472,37 +474,39 @@ export function CompanyDetail() {
                 const activeDevices = devices.filter(d => d.licenseId === license.id).length;
                 return (
                   <Card key={license.id} className={license.status === 'revoked' ? 'opacity-70 bg-muted/50' : ''}>
-                    <CardHeader className="pb-2 flex flex-row items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
+                    <CardHeader className="pb-2">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
                           <Badge variant={license.status === "active" ? "default" : "destructive"}>
                             {license.status}
                           </Badge>
                           <Badge variant={license.licenseType === "offline" ? "secondary" : "outline"}>
                             {license.licenseType === "offline" ? "Offline" : "Online"}
                           </Badge>
-                          <span className="text-sm text-muted-foreground">
-                            Generated {format(parseISO(license.createdAt), "PPP")}
+                          <span className="text-xs text-muted-foreground">
+                            {format(parseISO(license.createdAt), "PPP")}
                           </span>
                         </div>
-                        <div className="flex items-center gap-2 mt-2">
-                          <code className="font-mono text-lg font-semibold bg-muted px-2 py-1 rounded">
+                        <div className="flex items-center gap-2 mt-2 min-w-0">
+                          <code className="font-mono text-sm md:text-base font-semibold bg-muted px-2 py-1 rounded break-all min-w-0">
                             {revealedKeys[license.id] ? license.key : maskKey(license.key)}
                           </code>
                           <Button
                             variant="ghost"
                             size="icon"
+                            className="flex-shrink-0"
                             onClick={() => setRevealedKeys(prev => ({ ...prev, [license.id]: !prev[license.id] }))}
                             title={revealedKeys[license.id] ? "Hide key" : "Reveal key"}
                           >
                             {revealedKeys[license.id] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleCopy(license.key)} title="Copy key">
+                          <Button variant="ghost" size="icon" className="flex-shrink-0" onClick={() => handleCopy(license.key)} title="Copy key">
                             <Copy className="h-4 w-4" />
                           </Button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:flex-shrink-0">
                         {license.status !== 'revoked' && (
                           <Dialog open={extendOpen === license.id} onOpenChange={(open) => {
                             if (open) {
@@ -629,9 +633,10 @@ export function CompanyDetail() {
                           </Dialog>
                         )}
                       </div>
+                      </div>
                     </CardHeader>
                     <CardContent className="pt-2 text-sm">
-                      <div className="flex items-center gap-6 text-muted-foreground">
+                      <div className="flex flex-wrap items-center gap-4 text-muted-foreground">
                         <div className="flex items-center gap-2">
                           <MonitorSmartphone className="h-4 w-4" />
                           <span>{activeDevices} / {license.maxDevices} Devices</span>
