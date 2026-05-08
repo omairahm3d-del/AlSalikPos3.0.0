@@ -56,6 +56,65 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # ── Version bump ────────────────────────────────────────────────────────
+      # Fires only for tags matching vX.Y.Z (e.g. v1.2.3).
+      #
+      # Tag contract:
+      #   • Tags must follow the exact pattern vMAJOR.MINOR.PATCH (no pre-release
+      #     suffixes like -rc1 or -hotfix1). Non-conforming tags fail the job so
+      #     no production build is started with a stale version.
+      #   • MINOR and PATCH must each be 0–99 to keep versionCode monotonically
+      #     increasing across all valid semver increments.
+      #     Formula: MAJOR × 10 000 + MINOR × 100 + PATCH
+      #     Examples: v1.2.3 → 10203 | v2.0.0 → 20000 | v1.9.99 → 10999
+      #
+      # The bump is applied in-place to artifacts/pos-app/app.json on the CI
+      # runner only — nothing is committed back to the repository.
+      - name: Bump version from tag
+        id: version-bump
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+
+          # Enforce strict vX.Y.Z format — fail loudly so no stale version slips through
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Tag '$TAG' does not match the required vX.Y.Z format (e.g. v1.2.3)."
+            echo "::error::Pre-release suffixes (-rc1, -hotfix1, etc.) are not supported."
+            echo "::error::Please push a conforming tag to trigger a versioned release build."
+            exit 1
+          fi
+
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+
+          # Guard overflow: MINOR and PATCH must each be 0-99 to keep versionCode
+          # monotonically increasing (e.g. v1.200.0 would otherwise produce a lower
+          # code than v2.0.0, which violates Play Store upgrade rules).
+          if [ "$MINOR" -ge 100 ] || [ "$PATCH" -ge 100 ]; then
+            echo "::error::MINOR ($MINOR) and PATCH ($PATCH) must each be 0–99."
+            echo "::error::Bump MAJOR instead, or restructure the versioning scheme."
+            exit 1
+          fi
+
+          VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
+
+          echo "Bumping version to $VERSION (versionCode $VERSION_CODE)"
+
+          node -e "
+            const fs = require('fs');
+            const path = 'artifacts/pos-app/app.json';
+            const cfg = JSON.parse(fs.readFileSync(path, 'utf8'));
+            cfg.expo.version = '$VERSION';
+            cfg.expo.android.versionCode = $VERSION_CODE;
+            fs.writeFileSync(path, JSON.stringify(cfg, null, 2) + '\n');
+            console.log('app.json updated successfully.');
+          "
+
+          echo "version=$VERSION"           >> $GITHUB_OUTPUT
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+
       - name: Determine EAS profile
         id: profile
         run: |
@@ -102,6 +161,8 @@ jobs:
           status="${{ job.status }}"
           ref="${{ github.ref_name }}"
           sha="${{ github.sha }}"
+          version="${{ steps.version-bump.outputs.version }}"
+          version_code="${{ steps.version-bump.outputs.version_code }}"
 
           echo "## Android Build — \`${profile}\` profile" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -110,6 +171,9 @@ jobs:
           echo "| Ref | \`${ref}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Commit | \`${sha:0:7}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Profile | \`${profile}\` |" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${version}" ]; then
+            echo "| Version | \`${version}\` (versionCode \`${version_code}\`) |" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "| Status | ${status} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
