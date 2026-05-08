@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useVideoPlayer } from '../../lib/video/hooks';
 import { Scene1 } from './video_scenes/Scene1';
@@ -6,12 +7,20 @@ import { Scene3 } from './video_scenes/Scene3';
 import { Scene4 } from './video_scenes/Scene4';
 import { Scene5 } from './video_scenes/Scene5';
 
-const SCENE_DURATIONS = {
+export const SCENE_DURATIONS: Record<string, number> = {
   hook: 7000,
   speed: 10000,
   offline: 9000,
   control: 11000,
   close: 8000,
+};
+
+const SCENE_COMPONENTS: Record<string, React.ComponentType> = {
+  hook: Scene1,
+  speed: Scene2,
+  offline: Scene3,
+  control: Scene4,
+  close: Scene5,
 };
 
 const SCENE_KEYS = Object.keys(SCENE_DURATIONS);
@@ -40,9 +49,27 @@ const accentLine = [
   { left: '20%', width: '60%', top: '65%' },
 ];
 
-export default function VideoTemplate() {
-  const { currentScene } = useVideoPlayer({ durations: SCENE_DURATIONS });
-  const sc = currentScene;
+interface VideoTemplateProps {
+  durations?: Record<string, number>;
+  loop?: boolean;
+  onSceneChange?: (sceneKey: string) => void;
+}
+
+export default function VideoTemplate({
+  durations = SCENE_DURATIONS,
+  loop = true,
+  onSceneChange,
+}: VideoTemplateProps = {}) {
+  const { currentScene, currentSceneKey } = useVideoPlayer({ durations, loop });
+
+  useEffect(() => {
+    onSceneChange?.(currentSceneKey);
+  }, [currentSceneKey, onSceneChange]);
+
+  const baseSceneKey = currentSceneKey.replace(/_r[12]$/, '');
+  const sceneIndex = SCENE_KEYS.indexOf(baseSceneKey);
+  const sc = sceneIndex >= 0 ? sceneIndex : 0;
+  const SceneComponent = SCENE_COMPONENTS[baseSceneKey];
 
   return (
     <div className="relative w-full h-screen overflow-hidden bg-[#0A1628]">
@@ -96,29 +123,9 @@ export default function VideoTemplate() {
         <span className="text-white font-display font-bold text-[1.4vw] tracking-widest uppercase">Al Salik POS</span>
       </motion.div>
 
-      {/* Persistent scene indicator dots */}
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-2 z-50">
-        {SCENE_KEYS.map((_, i) => (
-          <motion.div
-            key={i}
-            className="rounded-full"
-            animate={{
-              width: i === sc ? 24 : 6,
-              height: 6,
-              backgroundColor: i === sc ? '#4F8EF7' : 'rgba(255,255,255,0.3)',
-            }}
-            transition={{ duration: 0.4 }}
-          />
-        ))}
-      </div>
-
-      {/* Scene-specific foreground content */}
+      {/* Scene-specific foreground content — key must be currentSceneKey for lock-loop */}
       <AnimatePresence mode="popLayout">
-        {sc === 0 && <Scene1 key="hook" />}
-        {sc === 1 && <Scene2 key="speed" />}
-        {sc === 2 && <Scene3 key="offline" />}
-        {sc === 3 && <Scene4 key="control" />}
-        {sc === 4 && <Scene5 key="close" />}
+        {SceneComponent && <SceneComponent key={currentSceneKey} />}
       </AnimatePresence>
     </div>
   );

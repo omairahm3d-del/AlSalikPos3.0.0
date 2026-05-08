@@ -1,5 +1,5 @@
-import VideoTemplate from "@/components/video/VideoTemplate";
+import VideoWithControls from "@/components/VideoWithControls";
 
 export default function App() {
-  return <VideoTemplate />;
+  return <VideoWithControls />;
 }
