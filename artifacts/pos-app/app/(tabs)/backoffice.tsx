@@ -1351,7 +1351,7 @@ export default function BackOfficeScreen() {
                   Tap a common path to select it, or type your own above.
                 </Text>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
-                  {["/dev/prnt", "/dev/usb/lp0", "/dev/ttyS0", "/dev/ttyS1", "/dev/ttyS2", "/dev/ttyS3", "/dev/printer", "/dev/bprint", "/dev/ttyUSB0"].map((p) => {
+                  {["/dev/prnt", "/dev/usb/lp0", "/dev/ttyS0", "/dev/ttyS1", "/dev/ttyS2", "/dev/ttyS3", "/dev/ttyS4", "/dev/ttyS5", "/dev/ttyXR0", "/dev/ttyXR1", "/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/thermal_printer", "/dev/tp", "/dev/printer", "/dev/bprint"].map((p) => {
                     const active = (printerSettings.androidPrinterPath || "/dev/prnt") === p;
                     return (
                       <TouchableOpacity
@@ -1396,7 +1396,10 @@ export default function BackOfficeScreen() {
                         setPrinterSettings({ ...printerSettings, androidPrinterPath: found });
                         Alert.alert("Printer Found", `Working path: ${found}\n\nIt has been set as your device path automatically.`);
                       } else {
-                        Alert.alert("Not Found", "Could not write to any common printer path.\n\nMake sure the printer is connected and the app has storage permissions.");
+                        Alert.alert(
+                        "Not Found",
+                        "Could not write to any common printer path.\n\nTry these steps:\n1. Make sure the printer is ON and connected.\n2. Go to Android Settings → Apps → Al Salik POS → Permissions and grant Storage access.\n3. Try typing your device's path manually above (e.g. /dev/ttyXR0 for Sunmy/Rockchip devices, /dev/ttyS4 for some built-in printers).\n4. On some devices, the Sunmi SDK option above works instead."
+                      );
                       }
                     }}
                     style={[s.chip, { borderColor: colors.primary, borderStyle: "dashed", alignSelf: "flex-start", borderRadius: colors.radius, flexDirection: "row", gap: 6 }]}

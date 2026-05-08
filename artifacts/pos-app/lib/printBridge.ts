@@ -123,9 +123,18 @@ export const ANDROID_PRINTER_PATHS = [
   "/dev/ttyS1",
   "/dev/ttyS2",
   "/dev/ttyS3",
+  "/dev/ttyS4",
+  "/dev/ttyS5",
+  "/dev/ttyXR0",
+  "/dev/ttyXR1",
+  "/dev/ttyAMA0",
+  "/dev/ttyAML1",
+  "/dev/ttyUSB0",
+  "/dev/ttyUSB1",
+  "/dev/thermal_printer",
+  "/dev/tp",
   "/dev/printer",
   "/dev/bprint",
-  "/dev/ttyUSB0",
 ];
 
 export async function printAndroidDevice(
@@ -134,15 +143,22 @@ export async function printAndroidDevice(
 ): Promise<boolean> {
   if (Platform.OS !== "android") return false;
   const path = opts.devicePath?.trim() || "/dev/prnt";
+  const RNFS = require("react-native-fs");
+  const payload = buildEscPosBytes(text, opts.autoCut !== false);
+  const b64 = Buffer.from(payload, "binary").toString("base64");
+  // Try writeFile first; fall back to appendFile which works better on
+  // character device nodes (avoids O_TRUNC which can fail on /dev/* paths).
   try {
-    const RNFS = require("react-native-fs");
-    const payload = buildEscPosBytes(text, opts.autoCut !== false);
-    const b64 = Buffer.from(payload, "binary").toString("base64");
     await RNFS.writeFile(path, b64, "base64");
     return true;
-  } catch (e: any) {
-    console.warn("[printBridge] Android device print failed:", e?.message ?? e);
-    return false;
+  } catch {
+    try {
+      await RNFS.appendFile(path, b64, "base64");
+      return true;
+    } catch (e: any) {
+      console.warn("[printBridge] Android device print failed:", e?.message ?? e);
+      return false;
+    }
   }
 }
 
