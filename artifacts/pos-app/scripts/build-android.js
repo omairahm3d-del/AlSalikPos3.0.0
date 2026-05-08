@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 /**
- * One-command Android APK build via EAS.
+ * One-command Android build via EAS.
  *
  * Usage:
- *   pnpm --filter @workspace/pos-app run build:android
+ *   pnpm --filter @workspace/pos-app run build:android           # APK (preview)
+ *   pnpm --filter @workspace/pos-app run build:android:release   # AAB (production)
+ *   node scripts/build-android.js --release                      # same as above
+ *
+ * Profile selection (highest priority wins):
+ *   1. --release CLI flag  → "production" (AAB)
+ *   2. EAS_PROFILE env var → whatever value you set
+ *   3. default             → "preview"   (APK)
  *
  * Required env:
  *   EXPO_TOKEN        – Expo account token with EAS build access
@@ -26,7 +33,13 @@ const fs = require("fs");
 const path = require("path");
 
 const projectRoot = path.resolve(__dirname, "..");
-const profile = process.env.EAS_PROFILE || "preview";
+
+// --release flag overrides everything → always "production".
+const hasReleaseFlag = process.argv.includes("--release");
+const profile = hasReleaseFlag
+  ? "production"
+  : (process.env.EAS_PROFILE || "preview");
+
 const skipDownload = process.env.EAS_NO_DOWNLOAD === "1";
 
 /**
@@ -147,8 +160,9 @@ function fail(message) {
 }
 
 function printBanner() {
+  const artifactType = profile === "production" ? "AAB" : "APK";
   console.log("=".repeat(60));
-  console.log("  Al Salik POS — Android APK build");
+  console.log(`  Al Salik POS — Android ${artifactType} build`);
   console.log(`  Profile : ${profile}`);
   console.log(`  Dir     : ${projectRoot}`);
   console.log("=".repeat(60));

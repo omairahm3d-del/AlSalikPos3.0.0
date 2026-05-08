@@ -8,6 +8,7 @@
     "build": "node scripts/build.js",
     "serve": "node server/serve.js",
     "build:android": "node scripts/build-android.js",
+    "build:android:release": "node scripts/build-android.js --release",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
