@@ -21,6 +21,7 @@ import { useDatabase } from "@/context/DatabaseCore";
 import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useWorkMode } from "@/context/WorkModeContext";
 import type { HeldOrder, PosTable, Product } from "@/types";
 import { VAT_RATE } from "@/types";
 
@@ -38,6 +39,7 @@ export default function TablesScreen() {
   const { loadTables, createTable, updateTable, deleteTable, setTableStatus, loadHeldOrderByTable, loadProducts, loadTaxGroups } = useDatabase();
   const { restoreCart } = useCart();
   const permissions = usePermissions();
+  const { tableLabelSingular, tableLabel } = useWorkMode();
 
   const [tables, setTables] = useState<PosTable[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,7 +82,7 @@ export default function TablesScreen() {
 
   const handleSave = async () => {
     if (!tableName.trim()) {
-      Alert.alert("Required", "Table name is required.");
+      Alert.alert("Required", `${tableLabelSingular} name is required.`);
       return;
     }
     const cap = parseInt(capacity, 10) || 4;
@@ -96,10 +98,10 @@ export default function TablesScreen() {
 
   const handleDelete = (table: PosTable) => {
     if (table.status === "occupied") {
-      Alert.alert("Cannot Delete", "Table is currently occupied.");
+      Alert.alert("Cannot Delete", `${tableLabelSingular} is currently occupied.`);
       return;
     }
-    Alert.alert("Delete Table", `Delete "${table.name}"?`, [
+    Alert.alert(`Delete ${tableLabelSingular}`, `Delete "${table.name}"?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete", style: "destructive",
@@ -212,8 +214,8 @@ export default function TablesScreen() {
       {!loading && tables.length === 0 ? (
         <View style={styles.empty}>
           <Feather name="grid" size={40} color={colors.mutedForeground} style={{ opacity: 0.4 }} />
-          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No tables yet</Text>
-          <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>Tap + to add your first table</Text>
+          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No {tableLabel.toLowerCase()} yet</Text>
+          <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>Tap + to add your first {tableLabelSingular.toLowerCase()}</Text>
         </View>
       ) : (
         <FlatList
@@ -246,18 +248,18 @@ export default function TablesScreen() {
               <Feather name="x" size={22} color={colors.foreground} />
             </TouchableOpacity>
             <Text style={[styles.modalTitle, { color: colors.foreground }]}>
-              {editingTable ? "Edit Table" : "New Table"}
+              {editingTable ? `Edit ${tableLabelSingular}` : `New ${tableLabelSingular}`}
             </Text>
             <TouchableOpacity onPress={handleSave}>
               <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 16 }}>Save</Text>
             </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Table Name *</Text>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>{tableLabelSingular} Name *</Text>
             <TextInput
               value={tableName}
               onChangeText={setTableName}
-              placeholder="e.g. Table 1, Patio A"
+              placeholder={`e.g. ${tableLabelSingular} 1, Station A`}
               placeholderTextColor={colors.mutedForeground}
               style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
             />

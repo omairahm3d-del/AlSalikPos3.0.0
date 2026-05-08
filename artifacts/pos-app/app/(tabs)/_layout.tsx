@@ -6,8 +6,10 @@ import { Feather } from "@expo/vector-icons";
 import React from "react";
 import { Platform } from "react-native";
 import { useColors } from "@/hooks/useColors";
+import { useWorkMode } from "@/context/WorkModeContext";
 
 function NativeTabLayout() {
+  const { tableLabel } = useWorkMode();
   return (
     <NativeTabs>
       <NativeTabs.Trigger name="index">
@@ -16,7 +18,7 @@ function NativeTabLayout() {
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="tables">
         <Icon sf={{ default: "tablecells", selected: "tablecells.fill" }} />
-        <Label>Tables</Label>
+        <Label>{tableLabel}</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="history">
         <Icon sf={{ default: "clock", selected: "clock.fill" }} />
@@ -33,6 +35,7 @@ function NativeTabLayout() {
 function ClassicTabLayout() {
   const colors = useColors();
   const isIOS = Platform.OS === "ios";
+  const { tableLabel } = useWorkMode();
 
   return (
     <Tabs
@@ -64,7 +67,7 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="tables"
         options={{
-          title: "Tables",
+          title: tableLabel,
           tabBarIcon: ({ color }) =>
             isIOS ? (
               <SymbolView name="tablecells" tintColor={color} size={24} />

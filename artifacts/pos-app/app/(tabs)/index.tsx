@@ -56,7 +56,7 @@ export default function POSScreen() {
 
   const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder, loadStaff } = useDatabase();
   const { currentStaff } = useStaff();
-  const { isSaloon } = useWorkMode();
+  const { isSaloon, tableLabelSingular, tableLabel } = useWorkMode();
   const {
     items: cartItems,
     itemCount,
@@ -963,7 +963,7 @@ export default function POSScreen() {
 
               {!heldOrderInfo && orderType === "dine-in" && availableTables.length > 0 && (
                 <>
-                  <Text style={[styles.paymentLabel, { color: colors.mutedForeground }]}>Table (optional)</Text>
+                  <Text style={[styles.paymentLabel, { color: colors.mutedForeground }]}>{tableLabelSingular} (optional)</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tableScrollRow}>
                     <TouchableOpacity
                       onPress={() => setSelectedTable(null)}
@@ -1293,14 +1293,14 @@ export default function POSScreen() {
       <Modal visible={showHoldTablePicker} animationType="fade" transparent>
         <View style={styles.paymentOverlay}>
           <View style={[styles.itemDiscSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2, maxHeight: "85%" }]}>
-            <Text style={[styles.paymentTitle, { color: colors.foreground, fontSize: 18 }]}>Select Table to Hold</Text>
+            <Text style={[styles.paymentTitle, { color: colors.foreground, fontSize: 18 }]}>Select {tableLabelSingular} to Hold</Text>
             {tables.length === 0 ? (
               <View style={{ padding: 16 }}>
                 <Text style={{ color: colors.mutedForeground, textAlign: "center", marginBottom: 8, fontSize: 14 }}>
-                  You haven't added any tables yet.
+                  You haven't added any {tableLabel.toLowerCase()} yet.
                 </Text>
                 <Text style={{ color: colors.mutedForeground, textAlign: "center", fontSize: 12 }}>
-                  Open the Tables tab and tap "+ Add Table" to create one, then come back here to hold this order.
+                  Open the {tableLabel} tab and tap "+ Add {tableLabelSingular}" to create one, then come back here to hold this order.
                 </Text>
               </View>
             ) : (
