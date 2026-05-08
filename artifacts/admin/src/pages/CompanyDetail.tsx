@@ -8,6 +8,8 @@ import {
   useRevokeLicense,
   useExtendLicense,
   useSetDeviceLimit,
+  useDeleteLicense,
+  useRemoveDevice,
   useCompanyBranches,
   useCreateBranch,
   useUpdateBranch,
@@ -28,7 +30,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { format, formatDistanceToNow, parseISO } from "date-fns";
-import { ArrowLeft, CalendarClock, Copy, Eye, EyeOff, KeyRound, MonitorSmartphone, Plus, ShieldAlert, XCircle, CheckCircle2, Building2, Star, UserCog, Smartphone } from "lucide-react";
+import { ArrowLeft, CalendarClock, Copy, Eye, EyeOff, KeyRound, MonitorSmartphone, Plus, ShieldAlert, XCircle, CheckCircle2, Building2, Star, UserCog, Smartphone, Trash2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function maskKey(key: string) {
@@ -50,6 +52,8 @@ export function CompanyDetail() {
   const revokeLicense = useRevokeLicense();
   const extendLicense = useExtendLicense();
   const setDeviceLimit = useSetDeviceLimit();
+  const deleteLicense = useDeleteLicense();
+  const removeDevice = useRemoveDevice();
   const createBranch = useCreateBranch(companyId || "");
   const updateBranch = useUpdateBranch(companyId || "");
   const createManager = useCreateManager(companyId || "");
@@ -64,6 +68,8 @@ export function CompanyDetail() {
   const [extendDate, setExtendDate] = useState("");
   const [deviceLimitOpen, setDeviceLimitOpen] = useState<string | null>(null);
   const [newDeviceLimit, setNewDeviceLimit] = useState(1);
+  const [deleteLicenseOpen, setDeleteLicenseOpen] = useState<string | null>(null);
+  const [removeDeviceOpen, setRemoveDeviceOpen] = useState<string | null>(null);
   const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
 
   const [branchOpen, setBranchOpen] = useState(false);
@@ -312,6 +318,26 @@ export function CompanyDetail() {
       setDeviceLimitOpen(null);
     } catch (err: any) {
       toast({ title: "Failed to update device limit", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleDeleteLicense = async (licenseId: string) => {
+    try {
+      await deleteLicense.mutateAsync({ companyId: company.id, licenseId });
+      toast({ title: "License deleted.", description: "All devices using this license have been disconnected." });
+      setDeleteLicenseOpen(null);
+    } catch (err: any) {
+      toast({ title: "Failed to delete license", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleRemoveDevice = async (deviceId: string) => {
+    try {
+      await removeDevice.mutateAsync({ companyId: company.id, deviceId });
+      toast({ title: "Device removed.", description: "The device will need to re-activate with its license key." });
+      setRemoveDeviceOpen(null);
+    } catch (err: any) {
+      toast({ title: "Failed to remove device", description: err.message, variant: "destructive" });
     }
   };
 
@@ -632,6 +658,38 @@ export function CompanyDetail() {
                             </DialogContent>
                           </Dialog>
                         )}
+                        <Dialog open={deleteLicenseOpen === license.id} onOpenChange={(open) => setDeleteLicenseOpen(open ? license.id : null)}>
+                          <DialogTrigger asChild>
+                            <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive hover:bg-destructive/10" title="Delete license">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle className="text-destructive flex items-center gap-2">
+                                <Trash2 className="h-5 w-5" /> Delete License
+                              </DialogTitle>
+                              <DialogDescription>
+                                This permanently removes the license and disconnects all devices using it. This cannot be undone.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <div className="py-4 space-y-3">
+                              <code className="font-mono text-center block bg-muted p-2 rounded text-sm break-all">{license.key}</code>
+                              {activeDevices > 0 && (
+                                <p className="text-sm text-destructive font-medium flex items-center gap-2">
+                                  <ShieldAlert className="h-4 w-4 flex-shrink-0" />
+                                  {activeDevices} active device(s) will lose access immediately.
+                                </p>
+                              )}
+                            </div>
+                            <DialogFooter>
+                              <Button variant="outline" onClick={() => setDeleteLicenseOpen(null)}>Cancel</Button>
+                              <Button variant="destructive" onClick={() => handleDeleteLicense(license.id)} disabled={deleteLicense.isPending}>
+                                {deleteLicense.isPending ? "Deleting…" : "Yes, Delete License"}
+                              </Button>
+                            </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
                       </div>
                       </div>
                     </CardHeader>
@@ -691,6 +749,7 @@ export function CompanyDetail() {
                       <th className="h-10 px-4 text-left font-medium text-muted-foreground">Version</th>
                       <th className="h-10 px-4 text-left font-medium text-muted-foreground">Last Seen</th>
                       <th className="h-10 px-4 text-left font-medium text-muted-foreground">License</th>
+                      <th className="h-10 px-4 text-left font-medium text-muted-foreground"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -709,6 +768,35 @@ export function CompanyDetail() {
                           </td>
                           <td className="p-4 font-mono text-xs">
                             {parentLicense ? parentLicense.key.substring(0, 9) + "..." : "—"}
+                          </td>
+                          <td className="p-4">
+                            <Dialog open={removeDeviceOpen === device.id} onOpenChange={(open) => setRemoveDeviceOpen(open ? device.id : null)}>
+                              <DialogTrigger asChild>
+                                <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive hover:bg-destructive/10" title="Remove device">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle className="text-destructive flex items-center gap-2">
+                                    <Trash2 className="h-5 w-5" /> Remove Device
+                                  </DialogTitle>
+                                  <DialogDescription>
+                                    This removes the device's activation record. The device will need to re-activate with its license key before it can be used again.
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <div className="py-4 space-y-2">
+                                  <p className="font-medium">{device.name || "Unknown Device"}</p>
+                                  <p className="text-sm text-muted-foreground font-mono">{device.deviceUid}</p>
+                                </div>
+                                <DialogFooter>
+                                  <Button variant="outline" onClick={() => setRemoveDeviceOpen(null)}>Cancel</Button>
+                                  <Button variant="destructive" onClick={() => handleRemoveDevice(device.id)} disabled={removeDevice.isPending}>
+                                    {removeDevice.isPending ? "Removing…" : "Yes, Remove Device"}
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
                           </td>
                         </tr>
                       );

@@ -32,6 +32,14 @@ router.patch(
   "/admin/companies/:companyId/licenses/:licenseId/devices",
   asyncHandler(adminController.setDeviceLimit),
 );
+router.delete(
+  "/admin/companies/:companyId/licenses/:licenseId",
+  asyncHandler(adminController.deleteLicense),
+);
+router.delete(
+  "/admin/companies/:companyId/devices/:deviceId",
+  asyncHandler(adminController.removeDevice),
+);
 
 router.get(
   "/admin/companies/:companyId/branches",

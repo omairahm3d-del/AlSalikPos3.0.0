@@ -61,4 +61,12 @@ export const licenseRepo = {
       .returning();
     return row;
   },
+
+  async deleteLicense(id: string, companyId: string): Promise<boolean> {
+    const result = await saasDb
+      .delete(licensesTable)
+      .where(and(eq(licensesTable.id, id), eq(licensesTable.companyId, companyId)))
+      .returning({ id: licensesTable.id });
+    return result.length > 0;
+  },
 };

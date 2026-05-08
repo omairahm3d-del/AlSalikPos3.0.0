@@ -204,3 +204,28 @@ export function useSetDeviceLimit() {
     },
   });
 }
+
+export function useDeleteLicense() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ companyId, licenseId }: { companyId: string; licenseId: string }) =>
+      adminApi.deleteLicense(companyId, licenseId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "company", variables.companyId, "licenses"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "company", variables.companyId, "devices"] });
+    },
+  });
+}
+
+export function useRemoveDevice() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ companyId, deviceId }: { companyId: string; deviceId: string }) =>
+      adminApi.removeDevice(companyId, deviceId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "company", variables.companyId, "devices"] });
+    },
+  });
+}

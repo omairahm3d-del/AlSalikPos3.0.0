@@ -210,6 +210,16 @@ export const adminApi = {
       body: JSON.stringify({ maxDevices }),
     });
   },
+  deleteLicense(companyId: string, licenseId: string): Promise<{ ok: true }> {
+    return request(`/companies/${companyId}/licenses/${licenseId}`, {
+      method: "DELETE",
+    });
+  },
+  removeDevice(companyId: string, deviceId: string): Promise<{ ok: true }> {
+    return request(`/companies/${companyId}/devices/${deviceId}`, {
+      method: "DELETE",
+    });
+  },
   listBranches(companyId: string): Promise<{ branches: Branch[] }> {
     return request(`/companies/${companyId}/branches`);
   },

@@ -55,4 +55,12 @@ export const deviceRepo = {
       .from(devicesTable)
       .where(eq(devicesTable.companyId, companyId));
   },
+
+  async deleteDevice(id: string, companyId: string): Promise<boolean> {
+    const result = await saasDb
+      .delete(devicesTable)
+      .where(and(eq(devicesTable.id, id), eq(devicesTable.companyId, companyId)))
+      .returning({ id: devicesTable.id });
+    return result.length > 0;
+  },
 };

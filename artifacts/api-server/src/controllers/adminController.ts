@@ -43,6 +43,11 @@ const revokeLicenseParams = z.object({
   licenseId: z.string().uuid(),
 });
 
+const deviceParams = z.object({
+  companyId: z.string().uuid(),
+  deviceId: z.string().uuid(),
+});
+
 const setDeviceLimitBody = z.object({
   maxDevices: z.number().int().min(1).max(1000),
 });
@@ -115,6 +120,22 @@ export const adminController = {
     if (!license) throw notFound("license_not_found", "License not found");
     req.log.info({ licenseId, maxDevices }, "License device limit updated");
     res.json({ license });
+  },
+
+  async deleteLicense(req: Request, res: Response) {
+    const { companyId, licenseId } = revokeLicenseParams.parse(req.params);
+    const deleted = await licenseRepo.deleteLicense(licenseId, companyId);
+    if (!deleted) throw notFound("license_not_found", "License not found");
+    req.log.info({ licenseId }, "License deleted");
+    res.json({ ok: true });
+  },
+
+  async removeDevice(req: Request, res: Response) {
+    const { companyId, deviceId } = deviceParams.parse(req.params);
+    const deleted = await deviceRepo.deleteDevice(deviceId, companyId);
+    if (!deleted) throw notFound("device_not_found", "Device not found");
+    req.log.info({ deviceId }, "Device removed");
+    res.json({ ok: true });
   },
 
   async listManagers(req: Request, res: Response) {
