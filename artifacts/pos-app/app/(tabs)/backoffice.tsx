@@ -132,7 +132,7 @@ export default function BackOfficeScreen() {
   const { session: licenseSession, deactivate } = useLicense();
   const isOffline = licenseSession?.license.licenseType === "offline";
   const { currentStaff, refreshStaffCheck, logout } = useStaff();
-  const { isSaloon, productLabel, productLabelSingular, orderTicketLabel } = useWorkMode();
+  const { isSaloon, isLaundry, isRetail, productLabel, productLabelSingular, orderTicketLabel } = useWorkMode();
   const [section, setSection] = useState<Section>("menu");
 
   useFocusEffect(useCallback(() => {
@@ -877,7 +877,7 @@ export default function BackOfficeScreen() {
       : {};
 
     const visibleSections = SECTIONS.filter((sec) => {
-      if (isSaloon && sec.saloonHide) return false;
+      if ((isSaloon || isLaundry || isRetail) && sec.saloonHide) return false;
       if (sec.adminOnly) return !currentStaff || currentStaff.role === "admin";
       if (!sec.permKey) return true;
       return permissions[sec.permKey] as boolean;
@@ -1646,7 +1646,7 @@ export default function BackOfficeScreen() {
         </View>
 
         {renderSwitch("Auto-print Receipt on Sale", printerSettings.autoPrintReceipt, (v) => setPrinterSettings({ ...printerSettings, autoPrintReceipt: v }))}
-        {!isSaloon && renderSwitch("Auto-print Kitchen Ticket", printerSettings.autoPrintKOT, (v) => setPrinterSettings({ ...printerSettings, autoPrintKOT: v }))}
+        {!isSaloon && !isLaundry && !isRetail && renderSwitch("Auto-print Kitchen Ticket", printerSettings.autoPrintKOT, (v) => setPrinterSettings({ ...printerSettings, autoPrintKOT: v }))}
 
         <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 16 }]}>Print Method</Text>
         <View style={s.chipRow}>
@@ -1714,7 +1714,7 @@ export default function BackOfficeScreen() {
               ))}
             </ScrollView>
 
-            {!isSaloon && (
+            {!isSaloon && !isLaundry && !isRetail && (
               <>
                 <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 16 }]}>Default KOT Printer</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}>
