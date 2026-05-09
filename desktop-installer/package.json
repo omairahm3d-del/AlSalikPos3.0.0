@@ -16,11 +16,11 @@
     "shorten-paths": "node shorten-paths.js",
     "rebuild-web": "rm -rf www && mv www-new www && node shorten-paths.js && mkdir -p dist/win-unpacked/resources/app && rm -rf dist/win-unpacked/resources/app/www && cp -r www dist/win-unpacked/resources/app/www && cp main.js dist/win-unpacked/resources/app/main.js && cp preload.js dist/win-unpacked/resources/app/preload.js && cp api-config.json dist/win-unpacked/resources/app/api-config.json",
     "rebuild-web-32": "mkdir -p dist-32/win-ia32-unpacked/resources/app && rm -rf dist-32/win-ia32-unpacked/resources/app/www && cp -r www dist-32/win-ia32-unpacked/resources/app/www && cp main.js dist-32/win-ia32-unpacked/resources/app/main.js && cp preload.js dist-32/win-ia32-unpacked/resources/app/preload.js && cp api-config.json dist-32/win-ia32-unpacked/resources/app/api-config.json",
-    "build:installer": "NSISDIR=$(cd .. && pwd)/.cache/electron-builder/nsis/nsis-3.0.4.1 ../.cache/electron-builder/nsis/nsis-3.0.4.1/linux/makensis -V2 installer.nsi",
-    "build:installer-32": "NSISDIR=$(cd .. && pwd)/.cache/electron-builder/nsis/nsis-3.0.4.1 ../.cache/electron-builder/nsis/nsis-3.0.4.1/linux/makensis -V2 installer-32.nsi",
+    "build:installer": "NSISDIR=$(cd .. && pwd)/.cache/electron-builder/nsis/nsis-3.0.4.1 ../.cache/electron-builder/nsis/nsis-3.0.4.1/linux/makensis -V2 installer.nsi && node sign-installers.js 64",
+    "build:installer-32": "NSISDIR=$(cd .. && pwd)/.cache/electron-builder/nsis/nsis-3.0.4.1 ../.cache/electron-builder/nsis/nsis-3.0.4.1/linux/makensis -V2 installer-32.nsi && node sign-installers.js 32",
     "build:all": "pnpm run export-web && pnpm run rebuild-web && pnpm run build:installer",
-    "build:win": "CSC_IDENTITY_AUTO_DISCOVERY=false WIN_CSC_LINK= electron-builder --win --x64",
-    "build:win7-32": "CSC_IDENTITY_AUTO_DISCOVERY=false WIN_CSC_LINK= electron-builder --win --ia32 --config electron-builder.win7.json",
+    "build:win": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --x64",
+    "build:win7-32": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --ia32 --config electron-builder.win7.json",
     "build:all-32": "pnpm run build:win7-32 && pnpm run rebuild-web-32 && pnpm run build:installer-32"
   },
   "devDependencies": {

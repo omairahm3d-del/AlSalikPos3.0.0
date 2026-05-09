@@ -144,9 +144,111 @@ Edit the `"version"` field in `package.json` and the `APP_VERSION` define in bot
 
 ---
 
+## Code Signing (Removing the "Unknown Publisher" Warning)
+
+Unsigned installers trigger a blue SmartScreen warning on every clean Windows install.
+To remove this warning, both the inner Electron executable **and** the NSIS Setup EXE must
+be signed with a trusted Extended Validation (EV) or OV code-signing certificate.
+
+### Obtaining a Certificate
+
+Purchase an OV or EV code-signing certificate from a Microsoft-approved CA, for example:
+
+- **Sectigo** — https://sectigo.com/ssl-certificates-tls/code-signing
+- **DigiCert** — https://www.digicert.com/signing/code-signing-certificates
+- **SSL.com** — https://www.ssl.com/certificates/ev-code-signing/
+
+The CA will issue a `.pfx` (PKCS#12) file containing both the certificate and the private key,
+protected by a password you set during enrollment.
+
+> **EV certificates** (hardware tokens) give immediate SmartScreen reputation.  
+> **OV certificates** suppress the "Unknown Publisher" warning but may still show SmartScreen  
+> until the file builds enough reputation.
+
+---
+
+### Environment Variables
+
+| Variable | Description |
+|---|---|
+| `WIN_CSC_LINK` | Absolute path to the `.pfx` file, **or** the file's contents base64-encoded with the prefix `base64,` |
+| `WIN_CSC_KEY_PASSWORD` | Password that protects the `.pfx` file |
+| `WIN_SIGN_TIMESTAMP_URL` | *(optional)* RFC 3161 timestamp server. Default: `http://timestamp.digicert.com` |
+| `WIN_SIGN_DESCRIPTION` | *(optional)* Product name embedded in the signature. Default: `Al Salik POS` |
+| `WIN_SIGN_URL` | *(optional)* Publisher URL embedded in the signature. Default: `https://alsalikcomputers.com` |
+
+Set these in your shell before building:
+
+```bash
+export WIN_CSC_LINK="/path/to/alsalik-codesign.pfx"
+export WIN_CSC_KEY_PASSWORD="your-pfx-password"
+```
+
+Or store them as CI/CD secrets (GitHub Actions, GitLab CI, etc.) and inject them at build time.
+
+---
+
+### What Gets Signed
+
+| Step | Tool | What is signed |
+|---|---|---|
+| `build:win` / `build:win7-32` | electron-builder | `Al Salik POS.exe` inside the unpacked directory |
+| `build:installer` | `sign-exe.sh` → `osslsigncode` | `dist\Al Salik POS Setup <version>.exe` |
+| `build:installer-32` | `sign-exe.sh` → `osslsigncode` | `dist-32\Al Salik POS Setup <version> (32-bit).exe` |
+
+`electron-builder` reads `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` automatically to sign
+the inner executable. The `sign-exe.sh` script signs the NSIS-generated Setup EXE
+immediately after NSIS finishes. Both steps are skipped gracefully when the variables are
+not set, so unsigned development builds continue to work with no changes.
+
+> **Note on `signAndEditExecutable: false`** in `desktop-installer/package.json`:  
+> This tells electron-builder to **sign** the Electron EXE but **not** rewrite its PE
+> version resource headers. The setting suppresses PE header editing only — signing via
+> `WIN_CSC_LINK` still occurs normally. It was set to preserve the original PE headers
+> embedded by the Electron build toolchain.
+
+---
+
+### Installing `osslsigncode` (Linux build machines)
+
+`osslsigncode` is required on Linux to sign the NSIS installer EXE.
+
+```bash
+# Debian / Ubuntu
+sudo apt-get install -y osslsigncode
+
+# Fedora / RHEL
+sudo dnf install -y osslsigncode
+
+# macOS
+brew install osslsigncode
+```
+
+On Windows (native builds), replace `osslsigncode` with Microsoft's `signtool.exe`
+from the Windows SDK — edit `sign-exe.sh` accordingly or sign the file manually after
+the build completes.
+
+---
+
+### Verifying the Signature
+
+After a signed build, verify from any Linux/macOS machine:
+
+```bash
+osslsigncode verify "dist/Al Salik POS Setup 1.0.0.exe"
+```
+
+On Windows:
+
+```powershell
+Get-AuthenticodeSignature "dist\Al Salik POS Setup 1.0.0.exe" | Select-Object Status, SignerCertificate
+```
+
+A valid signature returns `Valid` / `HashMismatch` will not appear.
+
+---
+
 ## Cross-compiling from Linux/macOS
 
 electron-builder supports building Windows installers from Linux/macOS with no extra setup.
-For code-signed builds (removes "Unknown Publisher" warning), supply a `.pfx` certificate
-from a trusted CA (Sectigo, DigiCert, etc.) via the `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD`
-environment variables.
+Code signing on Linux requires `osslsigncode` (see the Code Signing section above).
