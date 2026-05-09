@@ -109,7 +109,7 @@ const SECTIONS: SectionCard[] = [
   { id: "customers", icon: "users", title: "Customers", subtitle: "Manage customer profiles", color: "#1ABC9C", permKey: "boCustomers" },
   { id: "reports", icon: "bar-chart-2", title: "Reports", subtitle: "View sales summaries", color: "#F39C12", permKey: "boReports" },
   { id: "categories", icon: "layers", title: "Categories", subtitle: "Manage product categories", color: "#4F8EF7", permKey: "boCategories" },
-  { id: "riders", icon: "truck", title: "Delivery Riders", subtitle: "Manage delivery riders", color: "#3498DB", permKey: "boRiders", saloonHide: true },
+  { id: "riders", icon: "truck", title: "Delivery Riders", subtitle: "Manage delivery riders", color: "#3498DB", permKey: "boRiders" },
   { id: "ingredients", icon: "package", title: "Ingredients", subtitle: "Inventory & stock levels", color: "#16A085", permKey: "boIngredients", saloonHide: true },
   { id: "recipes", icon: "book-open", title: "Recipes", subtitle: "Link products to ingredients", color: "#8E44AD", permKey: "boRecipes", saloonHide: true },
   { id: "receipt", icon: "file-text", title: "Receipt Designer", subtitle: "Customize receipt layout", color: "#2ECC71", permKey: "boReceipt" },
@@ -866,10 +866,11 @@ export default function BackOfficeScreen() {
       );
     }
 
-    const LABEL_OVERRIDES: Partial<Record<string, { title: string; subtitle: string }>> = isSaloon
+    const LABEL_OVERRIDES: Partial<Record<string, { title: string; subtitle: string; icon?: string }>> = isSaloon
       ? {
           products: { title: productLabel, subtitle: `Manage ${productLabel.toLowerCase()}, pricing & stock` },
           categories: { title: "Service Categories", subtitle: "Manage service categories" },
+          riders: { title: "Stylists", subtitle: "Manage your stylists", icon: "scissors" },
         }
       : {};
 
@@ -1998,38 +1999,43 @@ export default function BackOfficeScreen() {
     </View>
   );
 
-  const renderRiders = () => (
-    <View style={s.sectionContent}>
-      {renderHeader("Delivery Riders")}
-      <FlatList
-        data={riderList}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={s.listContent}
-        ListEmptyComponent={<Text style={[s.emptyText, { color: colors.mutedForeground }]}>No riders yet. Tap + to add one.</Text>}
-        renderItem={({ item }) => (
-          <TouchableOpacity onPress={() => { setEditingRider(item); setRiderName(item.name); setRiderPhone(item.phone || ""); setRiderActive(item.active ?? true); setShowRiderModal(true); }}
-            style={[s.listItem, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, opacity: item.active ? 1 : 0.6 }]}>
-            <View style={[s.cardIconWrap, { backgroundColor: "#3498DB18" }]}>
-              <Feather name="truck" size={18} color="#3498DB" />
-            </View>
-            <View style={s.listItemInfo}>
-              <Text style={[s.listItemTitle, { color: colors.foreground }]}>{item.name}</Text>
-              <Text style={[s.listItemSub, { color: colors.mutedForeground }]}>{item.phone || "No phone"} · {item.active ? "Active" : "Inactive"}</Text>
-            </View>
-            {permissions.deleteRiders && (
-              <TouchableOpacity onPress={() => handleDeleteRider(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Feather name="trash-2" size={16} color={colors.destructive} />
-              </TouchableOpacity>
-            )}
-          </TouchableOpacity>
-        )}
-      />
-      <TouchableOpacity onPress={() => { setEditingRider(null); setRiderName(""); setRiderPhone(""); setRiderActive(true); setShowRiderModal(true); }}
-        style={[s.fab, { backgroundColor: colors.primary, borderRadius: 28, bottom: insets.bottom + 20 }]}>
-        <Feather name="plus" size={24} color="#fff" />
-      </TouchableOpacity>
-    </View>
-  );
+  const renderRiders = () => {
+    const riderLabel = isSaloon ? "Stylists" : "Delivery Riders";
+    const riderIcon = isSaloon ? "scissors" : "truck";
+    const riderColor = isSaloon ? "#E91E8C" : "#3498DB";
+    return (
+      <View style={s.sectionContent}>
+        {renderHeader(riderLabel)}
+        <FlatList
+          data={riderList}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={s.listContent}
+          ListEmptyComponent={<Text style={[s.emptyText, { color: colors.mutedForeground }]}>No {riderLabel.toLowerCase()} yet. Tap + to add one.</Text>}
+          renderItem={({ item }) => (
+            <TouchableOpacity onPress={() => { setEditingRider(item); setRiderName(item.name); setRiderPhone(item.phone || ""); setRiderActive(item.active ?? true); setShowRiderModal(true); }}
+              style={[s.listItem, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, opacity: item.active ? 1 : 0.6 }]}>
+              <View style={[s.cardIconWrap, { backgroundColor: riderColor + "18" }]}>
+                <Feather name={riderIcon as any} size={18} color={riderColor} />
+              </View>
+              <View style={s.listItemInfo}>
+                <Text style={[s.listItemTitle, { color: colors.foreground }]}>{item.name}</Text>
+                <Text style={[s.listItemSub, { color: colors.mutedForeground }]}>{item.phone || "No phone"} · {item.active ? "Active" : "Inactive"}</Text>
+              </View>
+              {permissions.deleteRiders && (
+                <TouchableOpacity onPress={() => handleDeleteRider(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Feather name="trash-2" size={16} color={colors.destructive} />
+                </TouchableOpacity>
+              )}
+            </TouchableOpacity>
+          )}
+        />
+        <TouchableOpacity onPress={() => { setEditingRider(null); setRiderName(""); setRiderPhone(""); setRiderActive(true); setShowRiderModal(true); }}
+          style={[s.fab, { backgroundColor: colors.primary, borderRadius: 28, bottom: insets.bottom + 20 }]}>
+          <Feather name="plus" size={24} color="#fff" />
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   const renderIngredients = () => {
     const lowStockItems = ingredientList.filter((i) => i.stockQuantity <= i.lowStockThreshold);
@@ -2557,11 +2563,13 @@ export default function BackOfficeScreen() {
         <KeyboardAvoidingView style={[s.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={[s.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={() => setShowRiderModal(false)}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
-            <Text style={[s.modalTitle, { color: colors.foreground }]}>{editingRider ? "Edit Rider" : "New Rider"}</Text>
+            <Text style={[s.modalTitle, { color: colors.foreground }]}>
+              {editingRider ? (isSaloon ? "Edit Stylist" : "Edit Rider") : (isSaloon ? "New Stylist" : "New Rider")}
+            </Text>
             <TouchableOpacity onPress={handleSaveRider}><Text style={{ color: colors.primary, fontWeight: "700", fontSize: 16 }}>Save</Text></TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={s.formContent}>
-            {renderField("Name", riderName, setRiderName, "Rider name")}
+            {renderField("Name", riderName, setRiderName, isSaloon ? "Stylist name" : "Rider name")}
             {renderField("Phone", riderPhone, setRiderPhone, "050-xxx-xxxx")}
             {renderSwitch("Active", riderActive, setRiderActive)}
           </ScrollView>

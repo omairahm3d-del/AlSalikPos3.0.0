@@ -1680,14 +1680,14 @@ export default function POSScreen() {
               >
                 <Text style={{ color: colors.mutedForeground, fontWeight: "600" }}>— None / Skip</Text>
               </TouchableOpacity>
-              {allStaff.map((s) => {
+              {riders.filter((r) => r.active !== false).map((r) => {
                 const isCurrentItem = cartItems.find((ci) => ci.product.id === showStylistPicker);
-                const isAssigned = isCurrentItem?.stylistId === s.id;
+                const isAssigned = isCurrentItem?.stylistId === r.id;
                 return (
                   <TouchableOpacity
-                    key={s.id}
+                    key={r.id}
                     onPress={() => {
-                      if (showStylistPicker) setItemStylist(showStylistPicker, s.id, s.name);
+                      if (showStylistPicker) setItemStylist(showStylistPicker, r.id, r.name);
                       setShowStylistPicker(null);
                     }}
                     style={[
@@ -1701,14 +1701,14 @@ export default function POSScreen() {
                     ]}
                   >
                     <Text style={{ color: isAssigned ? "#E91E8C" : colors.foreground, fontWeight: "600" }}>
-                      {s.name}{isAssigned ? " ✓" : ""}
+                      {r.name}{isAssigned ? " ✓" : ""}
                     </Text>
                   </TouchableOpacity>
                 );
               })}
-              {allStaff.length === 0 && (
+              {riders.filter((r) => r.active !== false).length === 0 && (
                 <Text style={{ color: colors.mutedForeground, fontSize: 13, textAlign: "center", padding: 16 }}>
-                  No active staff found. Add staff in the Staff tab.
+                  No active stylists found. Add stylists in Back Office → Stylists.
                 </Text>
               )}
             </ScrollView>
