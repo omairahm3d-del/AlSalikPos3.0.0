@@ -127,6 +127,8 @@ export default function POSScreen() {
   const [itemDiscType, setItemDiscType] = useState<"percentage" | "fixed">("percentage");
   const [itemDiscValue, setItemDiscValue] = useState("");
 
+  const [cashTendered, setCashTendered] = useState("");
+
   const [showStylistPicker, setShowStylistPicker] = useState<string | null>(null);
 
   const [showPriceEdit, setShowPriceEdit] = useState<string | null>(null);
@@ -418,6 +420,11 @@ export default function POSScreen() {
         return;
       }
     }
+    const parsedTendered = parseFloat(cashTendered) || 0;
+    if (paymentMethod === "Cash" && parsedTendered > 0 && parsedTendered < finalTotal - 0.005) {
+      Alert.alert("Insufficient Cash", `Amount tendered (${formatCurrency(parsedTendered)}) is less than the total (${formatCurrency(finalTotal)}).`);
+      return;
+    }
 
     const chargeTableId = heldOrderInfo?.tableId ?? selectedTable?.id;
     const chargeTableName = heldOrderInfo?.tableName ?? selectedTable?.name;
@@ -441,6 +448,7 @@ export default function POSScreen() {
         loyaltyPointsRedeemed: loyaltyRedeemPtsActual > 0 ? loyaltyRedeemPtsActual : undefined,
         splitPayments: paymentMethod === "Split" ? splitEntries : undefined,
         allowNegativeStock: businessSettings?.allowNegativeStock !== false,
+        cashTendered: paymentMethod === "Cash" && (parseFloat(cashTendered) || 0) > 0 ? parseFloat(cashTendered) : undefined,
       });
 
       // KOT printing on charge/bill:
@@ -657,7 +665,23 @@ export default function POSScreen() {
   const openScanner = useCallback(() => setShowScanner(true), []);
   const closeCart = useCallback(() => setShowCart(false), []);
   const openCart = useCallback(() => setShowCart(true), []);
-  const closePayment = useCallback(() => setShowPayment(false), []);
+  const closePayment = useCallback(() => { setShowPayment(false); setCashTendered(""); }, []);
+
+  const handleCashKey = useCallback((key: string) => {
+    setCashTendered((prev) => {
+      if (key === "⌫") return prev.slice(0, -1);
+      if (key === ".") {
+        if (prev.includes(".")) return prev;
+        return prev === "" ? "0." : prev + ".";
+      }
+      if (prev === "0" && key !== ".") return key;
+      if (prev.includes(".")) {
+        const [, dec] = prev.split(".");
+        if (dec.length >= 2) return prev;
+      }
+      return prev + key;
+    });
+  }, []);
   const closeReceipt = useCallback(() => setReceiptSale(null), []);
   const clearSearch = useCallback(() => setSearchQuery(""), []);
   const toggleDiscount = useCallback(() => setShowDiscountInput((p) => !p), []);
@@ -1168,6 +1192,7 @@ export default function POSScreen() {
                       onPress={() => {
                         setPaymentMethod(m);
                         if (m !== "Split") setSplitEntries([]);
+                        if (m !== "Cash") setCashTendered("");
                       }}
                       style={[styles.methodBtn, { borderColor: active ? activeColor : colors.border, backgroundColor: active ? activeColor + "18" : "transparent", borderRadius: colors.radius }]}
                     >
@@ -1177,6 +1202,75 @@ export default function POSScreen() {
                   );
                 })}
               </View>
+
+              {paymentMethod === "Cash" && (() => {
+                const parsedT = parseFloat(cashTendered) || 0;
+                const changeBack = parsedT > 0 ? Math.max(0, parsedT - finalTotal) : 0;
+                const shortBy = parsedT > 0 && parsedT < finalTotal - 0.005 ? finalTotal - parsedT : 0;
+                const UAE_DENOMS = [5, 10, 20, 50, 100, 200, 500];
+                const quickAmounts = [
+                  { label: "Exact", value: finalTotal },
+                  ...UAE_DENOMS
+                    .filter((d) => d > finalTotal)
+                    .slice(0, 4)
+                    .map((d) => ({ label: `${d}`, value: d })),
+                ];
+                const numpadKeys = ["1","2","3","4","5","6","7","8","9",".","0","⌫"];
+                return (
+                  <View style={[styles.cashNumpadBox, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}>
+                    <Text style={[styles.paymentLabel, { color: colors.mutedForeground, marginBottom: 6 }]}>Cash Tendered</Text>
+                    <View style={[styles.cashDisplay, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+                      <Text style={[styles.cashDisplayText, { color: cashTendered ? colors.foreground : colors.mutedForeground }]}>
+                        {cashTendered ? `AED ${cashTendered}` : "AED 0.00"}
+                      </Text>
+                    </View>
+
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                      <View style={{ flexDirection: "row", gap: 6 }}>
+                        {quickAmounts.map((qa) => (
+                          <TouchableOpacity
+                            key={qa.label}
+                            onPress={() => setCashTendered(qa.value.toFixed(2))}
+                            style={[styles.quickAmtBtn, { borderColor: colors.border, backgroundColor: colors.card, borderRadius: colors.radius }]}
+                          >
+                            <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>{qa.label}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </ScrollView>
+
+                    <View style={styles.numpadGrid}>
+                      {numpadKeys.map((key) => (
+                        <TouchableOpacity
+                          key={key}
+                          onPress={() => handleCashKey(key)}
+                          style={[styles.numpadKey, { backgroundColor: key === "⌫" ? colors.destructive + "18" : colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
+                        >
+                          <Text style={{ color: key === "⌫" ? colors.destructive : colors.foreground, fontSize: 18, fontWeight: "700" }}>{key}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    {parsedT > 0 && (
+                      shortBy > 0 ? (
+                        <View style={[styles.changeRow, { backgroundColor: colors.destructive + "15" }]}>
+                          <Feather name="alert-circle" size={14} color={colors.destructive} />
+                          <Text style={[styles.changeText, { color: colors.destructive }]}>
+                            Short by AED {shortBy.toFixed(2)}
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={[styles.changeRow, { backgroundColor: colors.success + "15" }]}>
+                          <Feather name="check-circle" size={14} color={colors.success} />
+                          <Text style={[styles.changeText, { color: colors.success }]}>
+                            Change: AED {changeBack.toFixed(2)}
+                          </Text>
+                        </View>
+                      )
+                    )}
+                  </View>
+                );
+              })()}
 
               <TouchableOpacity
                 onPress={() => setShowCustomerSelect(true)}
@@ -1778,6 +1872,14 @@ const styles = StyleSheet.create({
   paymentLabel: { fontSize: 12, marginBottom: 8, textTransform: "uppercase" },
   paymentMethods: { flexDirection: "row", gap: 8, marginBottom: 12, flexWrap: "wrap" },
   methodBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 12, borderWidth: 2, minWidth: 80 },
+  cashNumpadBox: { padding: 12, marginBottom: 12 },
+  cashDisplay: { paddingVertical: 10, paddingHorizontal: 16, borderWidth: 1, marginBottom: 10, alignItems: "flex-end" },
+  cashDisplayText: { fontSize: 24, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  quickAmtBtn: { paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1 },
+  numpadGrid: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 10 },
+  numpadKey: { width: "30%", aspectRatio: 1.8, alignItems: "center", justifyContent: "center", borderWidth: 1, flexGrow: 1 },
+  changeRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6 },
+  changeText: { fontSize: 15, fontWeight: "700", fontFamily: "Inter_700Bold" },
   customerPickerBtn: { padding: 14, borderWidth: 1, marginBottom: 12 },
   customerPickerRow: { flexDirection: "row", alignItems: "center" },
   customerPickerAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", marginRight: 10 },

@@ -331,6 +331,10 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     // Commission percentage per rider/stylist. Stored as a real (0–100).
     // Default 0 so existing riders have no commission until explicitly set.
     "ALTER TABLE riders ADD COLUMN commission_pct REAL NOT NULL DEFAULT 0",
+    // Cash numpad: amount tendered by the customer and change to return.
+    // NULL for non-cash sales or when the cashier skips entering the amount.
+    "ALTER TABLE sales ADD COLUMN cash_tendered REAL DEFAULT NULL",
+    "ALTER TABLE sales ADD COLUMN change_due REAL DEFAULT NULL",
   ];
 
   // Sync event log. Append-only ring buffer (capped to 200 rows by the

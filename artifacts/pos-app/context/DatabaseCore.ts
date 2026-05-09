@@ -188,6 +188,8 @@ export interface SaleOptions {
   splitPayments?: SplitPaymentEntry[];
   /** Mirrors BusinessSettings.allowNegativeStock — when true stock can go below zero. Default true. */
   allowNegativeStock?: boolean;
+  /** Cash payment: amount the customer hands over. Used to compute change. */
+  cashTendered?: number;
 }
 
 export interface DatabaseContextValue {

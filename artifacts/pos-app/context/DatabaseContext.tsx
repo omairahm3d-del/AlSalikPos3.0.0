@@ -85,7 +85,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
   }, [db]);
 
   const saveSale = useCallback(async (items: CartItem[], options: SaleOptions): Promise<Sale> => {
-    const { paymentMethod, orderType, customerId, customerName, staffId, staffName, tableId, tableName, riderId, riderName, discountType, discountValue, discountAmount: orderDiscount, loyaltyPointsRedeemed, splitPayments } = options;
+    const { paymentMethod, orderType, customerId, customerName, staffId, staffName, tableId, tableName, riderId, riderName, discountType, discountValue, discountAmount: orderDiscount, loyaltyPointsRedeemed, splitPayments, cashTendered } = options;
 
     if (paymentMethod === "Credit" && !customerId) throw new Error("Credit sales require a customer");
 
@@ -119,15 +119,20 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       const pointsEarned = customerId ? Math.floor(total) : 0;
       const effectiveVatRate = subtotal > 0 ? vatAmount / subtotal : VAT_RATE;
 
+      const changeDue = paymentMethod === "Cash" && (cashTendered ?? 0) > 0
+        ? Math.max(0, (cashTendered ?? 0) - total)
+        : null;
+
       await tx.runAsync(
         `INSERT INTO sales (id, invoice_number, created_at, subtotal, vat_rate, vat_amount, total, payment_method,
          order_type, customer_id, customer_name, staff_id, staff_name, table_id, table_name,
          rider_id, rider_name, discount_type, discount_value, discount_amount, is_refund, original_sale_id,
-         loyalty_points_earned, loyalty_points_redeemed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,NULL,?,?)`,
+         loyalty_points_earned, loyalty_points_redeemed, cash_tendered, change_due) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,NULL,?,?,?,?)`,
         [saleId, invoiceNumber, createdAt, subtotal, effectiveVatRate, vatAmount, total, paymentMethod,
          orderType ?? null, customerId ?? null, customerName ?? null, staffId ?? null, staffName ?? null,
          tableId ?? null, tableName ?? null, riderId ?? null, riderName ?? null,
-         discountType ?? null, discountValue ?? null, orderDiscAmt, pointsEarned, loyaltyPointsRedeemed ?? 0]
+         discountType ?? null, discountValue ?? null, orderDiscAmt, pointsEarned, loyaltyPointsRedeemed ?? 0,
+         (cashTendered != null && cashTendered > 0) ? cashTendered : null, changeDue ?? null]
       );
 
       for (const item of items) {
@@ -237,6 +242,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         discountType, discountValue, discountAmount: orderDiscAmt,
         loyaltyPointsEarned: pointsEarned, loyaltyPointsRedeemed: loyaltyPointsRedeemed ?? 0,
         splitPayments,
+        cashTendered: (cashTendered ?? 0) > 0 ? cashTendered : undefined,
+        changeDue: changeDue !== null ? changeDue : undefined,
       };
     });
     if (!savedSale) throw new Error("Sale transaction did not complete");
@@ -257,6 +264,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     isRefund: r.is_refund === 1, originalSaleId: r.original_sale_id ?? undefined,
     loyaltyPointsEarned: r.loyalty_points_earned ?? 0,
     loyaltyPointsRedeemed: r.loyalty_points_redeemed ?? 0,
+    cashTendered: r.cash_tendered ?? undefined,
+    changeDue: r.change_due ?? undefined,
   });
 
   const mapItemRow = (i: any): SaleItem => {

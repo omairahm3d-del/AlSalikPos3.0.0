@@ -97,6 +97,11 @@ export function generateReceiptText(
   lines.push(moneyRow(`VAT ${Math.round(sale.vatRate * 100)}%`, fmt(sale.vatAmount)));
   lines.push(sep);
   lines.push(moneyRow("TOTAL", fmt(sale.total)));
+  if (sale.paymentMethod === "Cash" && (sale.cashTendered ?? 0) > 0) {
+    lines.push(sep);
+    lines.push(moneyRow("Cash Tendered", fmt(sale.cashTendered!)));
+    lines.push(moneyRow("Change", fmt(sale.changeDue ?? 0)));
+  }
   lines.push(sep);
   lines.push(`Payment: ${asciiSafe(sale.paymentMethod)}`);
   if (sale.loyaltyPointsEarned) lines.push(`Points earned: ${sale.loyaltyPointsEarned}`);

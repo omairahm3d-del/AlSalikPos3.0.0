@@ -178,6 +178,8 @@ export interface Sale {
   loyaltyPointsEarned?: number;
   loyaltyPointsRedeemed?: number;
   splitPayments?: SplitPaymentEntry[];
+  cashTendered?: number;
+  changeDue?: number;
   items?: SaleItem[];
 }
 

@@ -199,6 +199,14 @@ export function generateReceiptHTML(
     </tr>
   </table>
 
+  ${sale.paymentMethod === "Cash" && (sale.cashTendered ?? 0) > 0 ? `
+  <div class="divider"></div>
+  <table>
+    <tr><td style="text-align:left;">${bilingual("Cash Tendered", "المبلغ المدفوع")}</td><td style="text-align:right;">${fmt(sale.cashTendered!)}</td></tr>
+    <tr><td style="text-align:left;font-weight:bold;">${bilingual("Change", "الباقي")}</td><td style="text-align:right;font-weight:bold;">${fmt(sale.changeDue ?? 0)}</td></tr>
+  </table>
+  ` : ""}
+
   <div class="divider"></div>
 
   ${sale.invoiceNumber ? `<div class="center" style="margin-top:8px;">${generateBarcodeSVG(sale.invoiceNumber, { width: rd.paperWidth === "58mm" ? 160 : 220, height: 36 })}</div>` : ""}
