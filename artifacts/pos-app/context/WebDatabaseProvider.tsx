@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback } from "react";
 import type {
-  BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment, Customer,
+  Appointment, BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment, Customer,
   Expense, HeldOrder, HeldOrderItem, Ingredient, PosTable, Product,
   RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
@@ -30,6 +30,7 @@ const K = {
   localPurchases: "@pos_local_purchases",
   localPurchaseItems: "@pos_local_purchase_items",
   localStockMovements: "@pos_local_stock_movements",
+  appointments: "@pos_appointments",
 };
 
 interface WebCatalogOutboxRow {
@@ -782,6 +783,36 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     await setJson(K.riders, existing.filter((r) => r.id !== id));
   }, []);
 
+  const loadAppointments = useCallback(async (dateMs?: number): Promise<Appointment[]> => {
+    const all = await getJson<Appointment[]>(K.appointments, []);
+    if (dateMs === undefined) return [...all].sort((a, b) => a.appointmentDate - b.appointmentDate);
+    const d = new Date(dateMs);
+    d.setHours(0, 0, 0, 0);
+    const start = d.getTime();
+    d.setHours(23, 59, 59, 999);
+    const end = d.getTime();
+    return all
+      .filter((a) => a.appointmentDate >= start && a.appointmentDate <= end)
+      .sort((a, b) => a.appointmentDate - b.appointmentDate);
+  }, []);
+
+  const createAppointment = useCallback(async (appt: Omit<Appointment, "id" | "createdAt">): Promise<Appointment> => {
+    const existing = await getJson<Appointment[]>(K.appointments, []);
+    const na: Appointment = { ...appt, id: generateId(), createdAt: Date.now() };
+    await setJson(K.appointments, [...existing, na]);
+    return na;
+  }, []);
+
+  const updateAppointment = useCallback(async (appt: Appointment): Promise<void> => {
+    const existing = await getJson<Appointment[]>(K.appointments, []);
+    await setJson(K.appointments, existing.map((a) => a.id === appt.id ? appt : a));
+  }, []);
+
+  const deleteAppointment = useCallback(async (id: string): Promise<void> => {
+    const existing = await getJson<Appointment[]>(K.appointments, []);
+    await setJson(K.appointments, existing.filter((a) => a.id !== id));
+  }, []);
+
   const saveHeldOrder = useCallback(async (order: Omit<HeldOrder, "id" | "createdAt" | "updatedAt"> & { id?: string }): Promise<HeldOrder> => {
     const now = Date.now();
     const existing = await getJson<HeldOrder[]>(K.heldOrders, []);
@@ -1382,6 +1413,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       loadCategories, createCategory, updateCategory, deleteCategory,
       loadSplitPayments, saveZReport, loadZReports,
       loadRiders, createRider, updateRider, deleteRider,
+      loadAppointments, createAppointment, updateAppointment, deleteAppointment,
       saveHeldOrder, loadHeldOrders, loadHeldOrderByTable, deleteHeldOrder, updateKdsStatus,
       loadIngredients, createIngredient, updateIngredient, deleteIngredient, updateIngredientStock,
       loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,

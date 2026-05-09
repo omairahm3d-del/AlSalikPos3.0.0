@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import type {
-  BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment, Customer,
+  Appointment, BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment, Customer,
   Expense, HeldOrder, Ingredient, OrderType, PosTable, Product,
   RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
@@ -245,6 +245,11 @@ export interface DatabaseContextValue {
   createRider: (rider: Omit<Rider, "id" | "active" | "createdAt">) => Promise<Rider>;
   updateRider: (rider: Rider) => Promise<void>;
   deleteRider: (id: string) => Promise<void>;
+
+  loadAppointments: (dateMs?: number) => Promise<Appointment[]>;
+  createAppointment: (appt: Omit<Appointment, "id" | "createdAt">) => Promise<Appointment>;
+  updateAppointment: (appt: Appointment) => Promise<void>;
+  deleteAppointment: (id: string) => Promise<void>;
 
   saveHeldOrder: (order: Omit<HeldOrder, "id" | "createdAt" | "updatedAt"> & { id?: string }) => Promise<HeldOrder>;
   loadHeldOrders: () => Promise<HeldOrder[]>;

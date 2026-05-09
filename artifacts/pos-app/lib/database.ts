@@ -150,6 +150,23 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
       created_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS appointments (
+      id TEXT PRIMARY KEY,
+      customer_id TEXT DEFAULT NULL,
+      customer_name TEXT NOT NULL DEFAULT '',
+      customer_phone TEXT DEFAULT '',
+      stylist_id TEXT DEFAULT NULL,
+      stylist_name TEXT DEFAULT '',
+      service_name TEXT DEFAULT '',
+      chair_id TEXT DEFAULT NULL,
+      chair_name TEXT DEFAULT '',
+      appointment_date INTEGER NOT NULL,
+      duration_minutes INTEGER NOT NULL DEFAULT 30,
+      status TEXT NOT NULL DEFAULT 'scheduled',
+      notes TEXT DEFAULT '',
+      created_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS held_orders (
       id TEXT PRIMARY KEY,
       table_id TEXT NOT NULL,

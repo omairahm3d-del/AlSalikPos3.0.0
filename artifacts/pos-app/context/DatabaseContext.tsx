@@ -1,7 +1,7 @@
 import React, { useCallback } from "react";
 import { useSQLiteContext } from "expo-sqlite";
 import type {
-  BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment, Customer,
+  Appointment, BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment, Customer,
   Expense, HeldOrder, HeldOrderItem, Ingredient, PosTable, Product,
   RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
@@ -752,6 +752,60 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
 
   const deleteRider = useCallback(async (id: string): Promise<void> => {
     await db.runAsync("DELETE FROM riders WHERE id=?", [id]);
+  }, [db]);
+
+  const loadAppointments = useCallback(async (dateMs?: number): Promise<Appointment[]> => {
+    let rows: any[];
+    if (dateMs !== undefined) {
+      const d = new Date(dateMs);
+      d.setHours(0, 0, 0, 0);
+      const start = d.getTime();
+      d.setHours(23, 59, 59, 999);
+      const end = d.getTime();
+      rows = await db.getAllAsync<any>(
+        "SELECT * FROM appointments WHERE appointment_date >= ? AND appointment_date <= ? ORDER BY appointment_date ASC",
+        [start, end]
+      );
+    } else {
+      rows = await db.getAllAsync<any>("SELECT * FROM appointments ORDER BY appointment_date ASC");
+    }
+    return rows.map((r: any): Appointment => ({
+      id: r.id,
+      customerId: r.customer_id ?? undefined,
+      customerName: r.customer_name ?? "",
+      customerPhone: r.customer_phone ?? "",
+      stylistId: r.stylist_id ?? undefined,
+      stylistName: r.stylist_name ?? "",
+      serviceName: r.service_name ?? "",
+      chairId: r.chair_id ?? undefined,
+      chairName: r.chair_name ?? "",
+      appointmentDate: r.appointment_date,
+      durationMinutes: r.duration_minutes ?? 30,
+      status: r.status as Appointment["status"],
+      notes: r.notes ?? "",
+      createdAt: r.created_at,
+    }));
+  }, [db]);
+
+  const createAppointment = useCallback(async (appt: Omit<Appointment, "id" | "createdAt">): Promise<Appointment> => {
+    const id = generateId();
+    const createdAt = Date.now();
+    await db.runAsync(
+      "INSERT INTO appointments (id, customer_id, customer_name, customer_phone, stylist_id, stylist_name, service_name, chair_id, chair_name, appointment_date, duration_minutes, status, notes, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      [id, appt.customerId ?? null, appt.customerName, appt.customerPhone, appt.stylistId ?? null, appt.stylistName, appt.serviceName, appt.chairId ?? null, appt.chairName, appt.appointmentDate, appt.durationMinutes, appt.status, appt.notes, createdAt]
+    );
+    return { ...appt, id, createdAt };
+  }, [db]);
+
+  const updateAppointment = useCallback(async (appt: Appointment): Promise<void> => {
+    await db.runAsync(
+      "UPDATE appointments SET customer_id=?, customer_name=?, customer_phone=?, stylist_id=?, stylist_name=?, service_name=?, chair_id=?, chair_name=?, appointment_date=?, duration_minutes=?, status=?, notes=? WHERE id=?",
+      [appt.customerId ?? null, appt.customerName, appt.customerPhone, appt.stylistId ?? null, appt.stylistName, appt.serviceName, appt.chairId ?? null, appt.chairName, appt.appointmentDate, appt.durationMinutes, appt.status, appt.notes, appt.id]
+    );
+  }, [db]);
+
+  const deleteAppointment = useCallback(async (id: string): Promise<void> => {
+    await db.runAsync("DELETE FROM appointments WHERE id=?", [id]);
   }, [db]);
 
   const saveHeldOrder = useCallback(async (order: Omit<HeldOrder, "id" | "createdAt" | "updatedAt"> & { id?: string }): Promise<HeldOrder> => {
@@ -1520,6 +1574,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       loadCategories, createCategory, updateCategory, deleteCategory,
       loadSplitPayments, saveZReport, loadZReports,
       loadRiders, createRider, updateRider, deleteRider,
+      loadAppointments, createAppointment, updateAppointment, deleteAppointment,
       saveHeldOrder, loadHeldOrders, loadHeldOrderByTable, deleteHeldOrder, updateKdsStatus,
       loadIngredients, createIngredient, updateIngredient, deleteIngredient, updateIngredientStock,
       loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,

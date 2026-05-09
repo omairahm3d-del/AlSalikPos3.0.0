@@ -26,6 +26,12 @@ function NativeTabLayout() {
           <Label>Kitchen</Label>
         </NativeTabs.Trigger>
       )}
+      {isSaloon && (
+        <NativeTabs.Trigger name="appointments">
+          <Icon sf={{ default: "calendar", selected: "calendar" }} />
+          <Label>Appointments</Label>
+        </NativeTabs.Trigger>
+      )}
       <NativeTabs.Trigger name="history">
         <Icon sf={{ default: "clock", selected: "clock.fill" }} />
         <Label>History</Label>
@@ -116,6 +122,19 @@ function ClassicTabLayout() {
               <SymbolView name="gearshape" tintColor={color} size={24} />
             ) : (
               <Feather name="settings" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="appointments"
+        options={{
+          href: isSaloon ? undefined : null,
+          title: "Appointments",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="calendar" tintColor={color} size={24} />
+            ) : (
+              <Feather name="calendar" size={22} color={color} />
             ),
         }}
       />

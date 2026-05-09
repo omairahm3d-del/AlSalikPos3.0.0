@@ -136,6 +136,25 @@ export interface Rider {
 
 export type KdsStatus = "new" | "preparing" | "ready" | "bumped";
 
+export type AppointmentStatus = "scheduled" | "in-progress" | "completed" | "cancelled" | "no-show";
+
+export interface Appointment {
+  id: string;
+  customerId?: string;
+  customerName: string;
+  customerPhone: string;
+  stylistId?: string;
+  stylistName: string;
+  serviceName: string;
+  chairId?: string;
+  chairName: string;
+  appointmentDate: number;
+  durationMinutes: number;
+  status: AppointmentStatus;
+  notes: string;
+  createdAt: number;
+}
+
 export interface HeldOrder {
   id: string;
   tableId: string;
