@@ -37,7 +37,7 @@ import { useWorkMode } from "@/context/WorkModeContext";
 import { useColors } from "@/hooks/useColors";
 import { generateKitchenTicketHTML, getUniqueStations } from "@/lib/kitchenTicketTemplate";
 import { generateBillHTML } from "@/lib/billTemplate";
-import type { BusinessSettings, Category, Customer, KOTSettings, ModifierGroup, OrderType, PosTable, Product, Rider, Sale, SelectedModifier, SplitPaymentEntry, TaxGroup } from "@/types";
+import type { BusinessSettings, Category, Customer, KOTSettings, ModifierGroup, OrderType, PosTable, Product, Rider, Sale, SaleItem, SelectedModifier, SplitPaymentEntry, TaxGroup } from "@/types";
 import { DEFAULT_KOT_SETTINGS, VAT_RATE, formatCurrency } from "@/types";
 
 type PaymentMethod = "Card" | "Cash" | "Credit" | "Split";
@@ -488,6 +488,85 @@ export default function POSScreen() {
         } catch (printErr: any) {
           // Non-fatal — sale is already saved.
           console.warn("KOT print on charge failed:", printErr?.message || printErr);
+        }
+      }
+
+      // ── Auto-print receipt ──────────────────────────────────────────────
+      if (businessSettings?.printerSettings?.autoPrintReceipt) {
+        try {
+          const ps = businessSettings.printerSettings;
+          const isDirect = (ps.printMethod ?? "system") === "direct";
+          // Build SaleItem[] from the cart items still in scope (same calc as saveSale)
+          const printItems: SaleItem[] = cartItems.map((ci) => {
+            const effectivePrice = ci.product.price + (ci.modifierTotal ?? 0);
+            const lineTotal = effectivePrice * ci.quantity - (ci.discountAmount ?? 0);
+            return {
+              id: "",
+              saleId: sale.id,
+              productId: ci.product.id,
+              productName: ci.product.name,
+              productPrice: effectivePrice,
+              quantity: ci.quantity,
+              lineTotal,
+              discountAmount: ci.discountAmount,
+              stylistId: ci.stylistId,
+              stylistName: ci.stylistName,
+              modifiers: ci.selectedModifiers,
+              modifierTotal: ci.modifierTotal,
+            };
+          });
+          const { printHtml } = await import("@/lib/printBridge");
+          if (isDirect) {
+            const { generateReceiptText } = await import("@/lib/textReceipt");
+            const rawText = generateReceiptText(sale, printItems, businessSettings);
+            if (Platform.OS === "web" && !window.electronPOS) {
+              const w = window.open("", "_blank");
+              if (w) {
+                w.document.write(`<html><head><title>Receipt</title><style>body{font-family:monospace;white-space:pre;font-size:13px;padding:16px;}</style></head><body>${rawText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</body></html>`);
+                w.document.close();
+                w.focus();
+                setTimeout(() => { w.print(); }, 400);
+              }
+            } else {
+              await printHtml("", {
+                deviceName: ps.windowsReceiptPrinterName || "",
+                paperWidth: ps.paperWidth || "80mm",
+                rawMode: true,
+                rawText,
+                autoCut: true,
+                codepage: ps.rawCodepage || "cp1252",
+                sunmiEnabled: !!ps.sunmiEnabled,
+                androidDevicePath: ps.androidPrinterEnabled ? (ps.androidPrinterPath || "/dev/prnt") : undefined,
+                networkPrinterIp: ps.networkPrinterEnabled ? ps.networkPrinterIp : undefined,
+                networkPrinterPort: ps.networkPrinterPort,
+                bluetoothAddress: ps.bluetoothPrinterEnabled ? ps.bluetoothPrinterAddress : undefined,
+              });
+            }
+          } else {
+            const { generateReceiptHTML } = await import("@/lib/receiptTemplate");
+            const html = generateReceiptHTML(sale, printItems, businessSettings);
+            const needRaw = !!ps.rawTextMode || !!ps.androidPrinterEnabled || !!ps.sunmiEnabled || !!ps.networkPrinterEnabled || !!ps.bluetoothPrinterEnabled;
+            let rawText: string | undefined;
+            if (needRaw) {
+              const { generateReceiptText } = await import("@/lib/textReceipt");
+              rawText = generateReceiptText(sale, printItems, businessSettings);
+            }
+            await printHtml(html, {
+              deviceName: ps.windowsReceiptPrinterName || "",
+              paperWidth: ps.paperWidth || "80mm",
+              rawMode: !!ps.rawTextMode,
+              rawText,
+              autoCut: ps.autoCutPaper !== false,
+              codepage: ps.rawCodepage || "cp1252",
+              sunmiEnabled: !!ps.sunmiEnabled,
+              androidDevicePath: ps.androidPrinterEnabled ? (ps.androidPrinterPath || "/dev/prnt") : undefined,
+              networkPrinterIp: ps.networkPrinterEnabled ? ps.networkPrinterIp : undefined,
+              networkPrinterPort: ps.networkPrinterPort,
+              bluetoothAddress: ps.bluetoothPrinterEnabled ? ps.bluetoothPrinterAddress : undefined,
+            });
+          }
+        } catch {
+          // Auto-print is best-effort — the sale is already saved
         }
       }
 
