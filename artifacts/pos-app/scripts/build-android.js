@@ -330,6 +330,7 @@ function runEasBuild() {
       env: {
         ...process.env,
         EAS_NO_VCS: "1",
+        EAS_SKIP_AUTO_FINGERPRINT: "1",
       },
     });
 
