@@ -128,6 +128,7 @@ export default function POSScreen() {
   const [itemDiscValue, setItemDiscValue] = useState("");
 
   const [cashTendered, setCashTendered] = useState("");
+  const [showCashNumpad, setShowCashNumpad] = useState(false);
 
   const [showStylistPicker, setShowStylistPicker] = useState<string | null>(null);
 
@@ -596,7 +597,8 @@ export default function POSScreen() {
     }
   }, [cartItems, paymentMethod, selectedCustomer, splitRemaining, orderDiscAmt, loyaltyRedeemAmount,
     saveSale, currentStaff, selectedTable, heldOrderInfo, selectedRider, orderType, orderDiscountType, orderDiscountValue,
-    loyaltyRedeemPtsActual, splitEntries, clearCart, fetchData, kotSettings, businessSettings]);
+    loyaltyRedeemPtsActual, splitEntries, clearCart, fetchData, kotSettings, businessSettings,
+    cashTendered, finalTotal]);
 
   const handleAddSplit = useCallback(() => {
     const amt = parseFloat(splitAmount);
@@ -665,7 +667,7 @@ export default function POSScreen() {
   const openScanner = useCallback(() => setShowScanner(true), []);
   const closeCart = useCallback(() => setShowCart(false), []);
   const openCart = useCallback(() => setShowCart(true), []);
-  const closePayment = useCallback(() => { setShowPayment(false); setCashTendered(""); }, []);
+  const closePayment = useCallback(() => { setShowPayment(false); setCashTendered(""); setShowCashNumpad(false); }, []);
 
   const handleCashKey = useCallback((key: string) => {
     setCashTendered((prev) => {
@@ -1193,6 +1195,7 @@ export default function POSScreen() {
                         setPaymentMethod(m);
                         if (m !== "Split") setSplitEntries([]);
                         if (m !== "Cash") setCashTendered("");
+                        if (m === "Cash") setShowCashNumpad(true);
                       }}
                       style={[styles.methodBtn, { borderColor: active ? activeColor : colors.border, backgroundColor: active ? activeColor + "18" : "transparent", borderRadius: colors.radius }]}
                     >
@@ -1206,69 +1209,32 @@ export default function POSScreen() {
               {paymentMethod === "Cash" && (() => {
                 const parsedT = parseFloat(cashTendered) || 0;
                 const changeBack = parsedT > 0 ? Math.max(0, parsedT - finalTotal) : 0;
-                const shortBy = parsedT > 0 && parsedT < finalTotal - 0.005 ? finalTotal - parsedT : 0;
-                const UAE_DENOMS = [5, 10, 20, 50, 100, 200, 500];
-                const quickAmounts = [
-                  { label: "Exact", value: finalTotal },
-                  ...UAE_DENOMS
-                    .filter((d) => d > finalTotal)
-                    .slice(0, 4)
-                    .map((d) => ({ label: `${d}`, value: d })),
-                ];
-                const numpadKeys = ["1","2","3","4","5","6","7","8","9",".","0","⌫"];
                 return (
-                  <View style={[styles.cashNumpadBox, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}>
-                    <Text style={[styles.paymentLabel, { color: colors.mutedForeground, marginBottom: 6 }]}>Cash Tendered</Text>
-                    <View style={[styles.cashDisplay, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-                      <Text style={[styles.cashDisplayText, { color: cashTendered ? colors.foreground : colors.mutedForeground }]}>
-                        {cashTendered ? `AED ${cashTendered}` : "AED 0.00"}
-                      </Text>
-                    </View>
-
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-                      <View style={{ flexDirection: "row", gap: 6 }}>
-                        {quickAmounts.map((qa) => (
-                          <TouchableOpacity
-                            key={qa.label}
-                            onPress={() => setCashTendered(qa.value.toFixed(2))}
-                            style={[styles.quickAmtBtn, { borderColor: colors.border, backgroundColor: colors.card, borderRadius: colors.radius }]}
-                          >
-                            <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>{qa.label}</Text>
-                          </TouchableOpacity>
-                        ))}
+                  <TouchableOpacity
+                    onPress={() => setShowCashNumpad(true)}
+                    style={[styles.cashSummaryBtn, {
+                      backgroundColor: colors.secondary,
+                      borderColor: cashTendered ? colors.success : colors.border,
+                      borderRadius: colors.radius,
+                    }]}
+                  >
+                    <Feather name="dollar-sign" size={16} color={cashTendered ? colors.success : colors.mutedForeground} />
+                    {cashTendered ? (
+                      <View style={{ flex: 1, marginLeft: 10 }}>
+                        <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 14 }}>
+                          AED {cashTendered}
+                        </Text>
+                        <Text style={{ color: colors.success, fontSize: 12, marginTop: 1 }}>
+                          Change: AED {changeBack.toFixed(2)}
+                        </Text>
                       </View>
-                    </ScrollView>
-
-                    <View style={styles.numpadGrid}>
-                      {numpadKeys.map((key) => (
-                        <TouchableOpacity
-                          key={key}
-                          onPress={() => handleCashKey(key)}
-                          style={[styles.numpadKey, { backgroundColor: key === "⌫" ? colors.destructive + "18" : colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
-                        >
-                          <Text style={{ color: key === "⌫" ? colors.destructive : colors.foreground, fontSize: 18, fontWeight: "700" }}>{key}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    {parsedT > 0 && (
-                      shortBy > 0 ? (
-                        <View style={[styles.changeRow, { backgroundColor: colors.destructive + "15" }]}>
-                          <Feather name="alert-circle" size={14} color={colors.destructive} />
-                          <Text style={[styles.changeText, { color: colors.destructive }]}>
-                            Short by AED {shortBy.toFixed(2)}
-                          </Text>
-                        </View>
-                      ) : (
-                        <View style={[styles.changeRow, { backgroundColor: colors.success + "15" }]}>
-                          <Feather name="check-circle" size={14} color={colors.success} />
-                          <Text style={[styles.changeText, { color: colors.success }]}>
-                            Change: AED {changeBack.toFixed(2)}
-                          </Text>
-                        </View>
-                      )
+                    ) : (
+                      <Text style={{ color: colors.mutedForeground, flex: 1, marginLeft: 10 }}>
+                        Tap to enter cash amount
+                      </Text>
                     )}
-                  </View>
+                    <Feather name="edit-2" size={14} color={colors.mutedForeground} />
+                  </TouchableOpacity>
                 );
               })()}
 
@@ -1454,6 +1420,110 @@ export default function POSScreen() {
           </ScrollView>
         </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal visible={showCashNumpad} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowCashNumpad(false)}>
+        <View style={[styles.numpadScreen, { backgroundColor: colors.background }]}>
+          <View style={[styles.numpadScreenHeader, { borderBottomColor: colors.border }]}>
+            <TouchableOpacity
+              onPress={() => { setShowCashNumpad(false); setCashTendered(""); }}
+              style={styles.numpadHeaderBtn}
+            >
+              <Text style={{ color: colors.mutedForeground, fontSize: 15 }}>Clear</Text>
+            </TouchableOpacity>
+            <Text style={[styles.numpadScreenTitle, { color: colors.foreground }]}>Collect Amount</Text>
+            <TouchableOpacity
+              onPress={() => setShowCashNumpad(false)}
+              style={styles.numpadHeaderBtn}
+            >
+              <Text style={{ color: colors.primary, fontSize: 15, fontWeight: "700" }}>Done</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={[styles.numpadDueRow, { backgroundColor: colors.secondary }]}>
+            <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>Total Due</Text>
+            <Text style={[styles.numpadDueValue, { color: colors.foreground }]}>{formatCurrency(finalTotal)}</Text>
+          </View>
+
+          <View style={[styles.numpadDisplayBox, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+            <Text style={[styles.numpadDisplayAmt, { color: cashTendered ? colors.foreground : colors.mutedForeground }]}>
+              {cashTendered ? `AED  ${cashTendered}` : "AED  0.00"}
+            </Text>
+          </View>
+
+          {(() => {
+            const parsedT = parseFloat(cashTendered) || 0;
+            const changeBack = parsedT > 0 ? Math.max(0, parsedT - finalTotal) : 0;
+            const shortBy = parsedT > 0 && parsedT < finalTotal - 0.005 ? finalTotal - parsedT : 0;
+            const UAE_DENOMS = [5, 10, 20, 50, 100, 200, 500];
+            const quickAmounts = [
+              { label: "Exact", value: finalTotal },
+              ...UAE_DENOMS.filter((d) => d > finalTotal).slice(0, 4).map((d) => ({ label: `AED ${d}`, value: d })),
+            ];
+            const numpadKeys = ["1","2","3","4","5","6","7","8","9",".","0","⌫"];
+            return (
+              <>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.numpadQuickRow} contentContainerStyle={{ gap: 8, alignItems: "center", paddingHorizontal: 16 }}>
+                  {quickAmounts.map((qa) => (
+                    <TouchableOpacity
+                      key={qa.label}
+                      onPress={() => setCashTendered(qa.value.toFixed(2))}
+                      style={[styles.numpadQuickBtn, { borderColor: colors.border, backgroundColor: colors.secondary, borderRadius: colors.radius }]}
+                    >
+                      <Text style={{ color: colors.primary, fontSize: 13, fontWeight: "700" }}>{qa.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                {parsedT > 0 && (
+                  shortBy > 0 ? (
+                    <View style={[styles.numpadChangeBanner, { backgroundColor: "#E74C3C18", borderColor: "#E74C3C33" }]}>
+                      <Feather name="alert-circle" size={16} color="#E74C3C" />
+                      <Text style={[styles.numpadChangeTxt, { color: "#E74C3C" }]}>Short by  AED {shortBy.toFixed(2)}</Text>
+                    </View>
+                  ) : (
+                    <View style={[styles.numpadChangeBanner, { backgroundColor: colors.success + "15", borderColor: colors.success + "40" }]}>
+                      <Feather name="refresh-cw" size={16} color={colors.success} />
+                      <Text style={[styles.numpadChangeTxt, { color: colors.success }]}>Change  AED {changeBack.toFixed(2)}</Text>
+                    </View>
+                  )
+                )}
+
+                <View style={styles.numpadGridFull}>
+                  {numpadKeys.map((key) => (
+                    <TouchableOpacity
+                      key={key}
+                      onPress={() => handleCashKey(key)}
+                      activeOpacity={0.65}
+                      style={[
+                        styles.numpadKeyFull,
+                        { backgroundColor: key === "⌫" ? colors.destructive + "18" : colors.card, borderColor: colors.border, borderRadius: colors.radius * 1.5 },
+                      ]}
+                    >
+                      <Text style={{ color: key === "⌫" ? colors.destructive : colors.foreground, fontSize: 22, fontWeight: "700" }}>{key}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <View style={[styles.numpadConfirmRow, { borderTopColor: colors.border }]}>
+                  <TouchableOpacity
+                    onPress={() => setShowCashNumpad(false)}
+                    disabled={parsedT > 0 && shortBy > 0}
+                    style={[styles.numpadConfirmBtn, {
+                      backgroundColor: parsedT > 0 && shortBy > 0 ? colors.mutedForeground : colors.success,
+                      borderRadius: colors.radius,
+                    }]}
+                  >
+                    <Feather name="check-circle" size={20} color="#fff" />
+                    <Text style={styles.numpadConfirmTxt}>
+                      {parsedT === 0 ? "Skip / No Amount" : shortBy > 0 ? "Insufficient Cash" : `Confirm  ·  Change AED ${changeBack.toFixed(2)}`}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            );
+          })()}
+        </View>
       </Modal>
 
       <Modal visible={!!showPriceEdit} animationType="fade" transparent>
@@ -1872,14 +1942,24 @@ const styles = StyleSheet.create({
   paymentLabel: { fontSize: 12, marginBottom: 8, textTransform: "uppercase" },
   paymentMethods: { flexDirection: "row", gap: 8, marginBottom: 12, flexWrap: "wrap" },
   methodBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 12, borderWidth: 2, minWidth: 80 },
-  cashNumpadBox: { padding: 12, marginBottom: 12 },
-  cashDisplay: { paddingVertical: 10, paddingHorizontal: 16, borderWidth: 1, marginBottom: 10, alignItems: "flex-end" },
-  cashDisplayText: { fontSize: 24, fontWeight: "700", fontFamily: "Inter_700Bold" },
-  quickAmtBtn: { paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1 },
-  numpadGrid: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 10 },
-  numpadKey: { width: "30%", aspectRatio: 1.8, alignItems: "center", justifyContent: "center", borderWidth: 1, flexGrow: 1 },
-  changeRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6 },
-  changeText: { fontSize: 15, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  cashSummaryBtn: { flexDirection: "row", alignItems: "center", padding: 14, borderWidth: 1.5, marginBottom: 12, borderRadius: 8 },
+  numpadScreen: { flex: 1 },
+  numpadScreenHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1 },
+  numpadHeaderBtn: { width: 60, alignItems: "center" },
+  numpadScreenTitle: { fontSize: 17, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  numpadDueRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 10 },
+  numpadDueValue: { fontSize: 16, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  numpadDisplayBox: { paddingVertical: 22, paddingHorizontal: 24, alignItems: "flex-end", borderBottomWidth: 1 },
+  numpadDisplayAmt: { fontSize: 38, fontWeight: "700", fontFamily: "Inter_700Bold", letterSpacing: 1 },
+  numpadQuickRow: { maxHeight: 52, marginVertical: 12 },
+  numpadQuickBtn: { paddingHorizontal: 16, paddingVertical: 10, borderWidth: 1 },
+  numpadChangeBanner: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 16, marginBottom: 8, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, borderWidth: 1 },
+  numpadChangeTxt: { fontSize: 16, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  numpadGridFull: { flexDirection: "row", flexWrap: "wrap", gap: 10, paddingHorizontal: 16, flex: 1 },
+  numpadKeyFull: { width: "30%", flexGrow: 1, minHeight: 60, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  numpadConfirmRow: { padding: 16, borderTopWidth: 1 },
+  numpadConfirmBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 16 },
+  numpadConfirmTxt: { color: "#fff", fontSize: 16, fontWeight: "700", fontFamily: "Inter_700Bold" },
   customerPickerBtn: { padding: 14, borderWidth: 1, marginBottom: 12 },
   customerPickerRow: { flexDirection: "row", alignItems: "center" },
   customerPickerAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", marginRight: 10 },

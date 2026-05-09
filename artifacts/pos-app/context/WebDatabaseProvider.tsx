@@ -238,7 +238,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const saveSale = useCallback(async (items: CartItem[], options: SaleOptions): Promise<Sale> => {
-    const { paymentMethod, orderType, customerId, customerName, staffId, staffName, tableId, tableName, riderId, riderName, discountType, discountValue, discountAmount: orderDiscount, loyaltyPointsRedeemed, splitPayments } = options;
+    const { paymentMethod, orderType, customerId, customerName, staffId, staffName, tableId, tableName, riderId, riderName, discountType, discountValue, discountAmount: orderDiscount, loyaltyPointsRedeemed, splitPayments, cashTendered } = options;
     if (paymentMethod === "Credit" && !customerId) throw new Error("Credit sales require a customer");
 
     // Per-line totals respect per-product `vatInclusive` and any zero
@@ -266,12 +266,17 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     await AsyncStorage.setItem(K.counter, String(seq + 1));
 
     const effectiveVatRate = subtotal > 0 ? vatAmount / subtotal : VAT_RATE;
+    const changeDue = paymentMethod === "Cash" && (cashTendered ?? 0) > 0
+      ? Math.max(0, (cashTendered ?? 0) - total)
+      : undefined;
     const sale: Sale = {
       id: saleId, invoiceNumber, createdAt, subtotal, vatRate: effectiveVatRate, vatAmount, total, paymentMethod,
       orderType, customerId, customerName, staffId, staffName, tableId, tableName, riderId, riderName,
       discountType, discountValue, discountAmount: orderDiscount ?? 0,
       loyaltyPointsEarned: pointsEarned, loyaltyPointsRedeemed: loyaltyPointsRedeemed ?? 0,
       splitPayments,
+      cashTendered: (cashTendered ?? 0) > 0 ? cashTendered : undefined,
+      changeDue,
     };
 
     const saleItems: SaleItem[] = items.map((item) => {
