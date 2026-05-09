@@ -18,6 +18,7 @@ import { Stack, router } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { ScreenWrapper } from "@/components/ScreenWrapper";
 import { useLicense } from "@/context/LicenseContext";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useSync } from "@/context/SyncContext";
@@ -130,7 +131,7 @@ export default function StockScreen() {
   }
 
   return (
-    <View style={[s.root, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+    <ScreenWrapper style={[s.root, { backgroundColor: colors.background, paddingTop: insets.top }]}>
       <Stack.Screen options={{ headerShown: false }} />
       <Header
         title="Stock on hand"
@@ -270,7 +271,7 @@ export default function StockScreen() {
           onClose={() => setHistoryFor(null)}
         />
       )}
-    </View>
+    </ScreenWrapper>
   );
 }
 

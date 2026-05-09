@@ -16,6 +16,7 @@ import { Stack, router, useFocusEffect } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { ScreenWrapper } from "@/components/ScreenWrapper";
 import { useLicense } from "@/context/LicenseContext";
 import { useDatabase } from "@/context/DatabaseCore";
 import { posApi, type PosPurchaseItem, type PosPurchaseRow } from "@/lib/posPurchasing";
@@ -239,7 +240,7 @@ export default function PurchasesScreen() {
   }
 
   return (
-    <View style={[s.root, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+    <ScreenWrapper style={[s.root, { backgroundColor: colors.background, paddingTop: insets.top }]}>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={[s.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -417,7 +418,7 @@ export default function PurchasesScreen() {
           )}
         </View>
       </Modal>
-    </View>
+    </ScreenWrapper>
   );
 }
 
