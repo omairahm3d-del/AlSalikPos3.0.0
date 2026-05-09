@@ -85,7 +85,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
   }, [db]);
 
   const saveSale = useCallback(async (items: CartItem[], options: SaleOptions): Promise<Sale> => {
-    const { paymentMethod, orderType, customerId, customerName, staffId, staffName, tableId, tableName, riderId, riderName, discountType, discountValue, discountAmount: orderDiscount, loyaltyPointsRedeemed, splitPayments, cashTendered } = options;
+    const { paymentMethod, orderType, customerId, customerName, staffId, staffName, tableId, tableName, riderId, riderName, discountType, discountValue, discountAmount: orderDiscount, loyaltyPointsRedeemed, splitPayments, cashTendered, customerCreditBalance } = options;
 
     if (paymentMethod === "Credit" && !customerId) throw new Error("Credit sales require a customer");
 
@@ -244,6 +244,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         splitPayments,
         cashTendered: (cashTendered ?? 0) > 0 ? cashTendered : undefined,
         changeDue: changeDue !== null ? changeDue : undefined,
+        customerCreditBalance: customerCreditBalance !== undefined ? customerCreditBalance : undefined,
       };
     });
     if (!savedSale) throw new Error("Sale transaction did not complete");

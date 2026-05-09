@@ -450,6 +450,7 @@ export default function POSScreen() {
         splitPayments: paymentMethod === "Split" ? splitEntries : undefined,
         allowNegativeStock: businessSettings?.allowNegativeStock !== false,
         cashTendered: paymentMethod === "Cash" && (parseFloat(cashTendered) || 0) > 0 ? parseFloat(cashTendered) : undefined,
+        customerCreditBalance: selectedCustomer ? selectedCustomer.creditBalance : undefined,
       });
 
       // KOT printing on charge/bill:

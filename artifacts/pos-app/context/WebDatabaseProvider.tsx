@@ -238,7 +238,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const saveSale = useCallback(async (items: CartItem[], options: SaleOptions): Promise<Sale> => {
-    const { paymentMethod, orderType, customerId, customerName, staffId, staffName, tableId, tableName, riderId, riderName, discountType, discountValue, discountAmount: orderDiscount, loyaltyPointsRedeemed, splitPayments, cashTendered } = options;
+    const { paymentMethod, orderType, customerId, customerName, staffId, staffName, tableId, tableName, riderId, riderName, discountType, discountValue, discountAmount: orderDiscount, loyaltyPointsRedeemed, splitPayments, cashTendered, customerCreditBalance } = options;
     if (paymentMethod === "Credit" && !customerId) throw new Error("Credit sales require a customer");
 
     // Per-line totals respect per-product `vatInclusive` and any zero
@@ -277,6 +277,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       splitPayments,
       cashTendered: (cashTendered ?? 0) > 0 ? cashTendered : undefined,
       changeDue,
+      customerCreditBalance: customerCreditBalance !== undefined ? customerCreditBalance : undefined,
     };
 
     const saleItems: SaleItem[] = items.map((item) => {

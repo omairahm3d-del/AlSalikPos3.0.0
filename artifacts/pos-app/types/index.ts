@@ -180,6 +180,8 @@ export interface Sale {
   splitPayments?: SplitPaymentEntry[];
   cashTendered?: number;
   changeDue?: number;
+  /** Customer's credit balance BEFORE this sale (snapshot at time of charge). Used on receipt to show old balance + new outstanding. */
+  customerCreditBalance?: number;
   items?: SaleItem[];
 }
 

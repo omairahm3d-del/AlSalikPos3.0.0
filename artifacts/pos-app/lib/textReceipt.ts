@@ -102,6 +102,16 @@ export function generateReceiptText(
     lines.push(moneyRow("Cash Tendered", fmt(sale.cashTendered!)));
     lines.push(moneyRow("Change", fmt(sale.changeDue ?? 0)));
   }
+  if (sale.customerCreditBalance !== undefined) {
+    const prevBal = sale.customerCreditBalance;
+    const newBal = prevBal + (sale.paymentMethod === "Credit" ? sale.total : 0);
+    lines.push(sep);
+    lines.push(moneyRow("Prev Balance", fmt(prevBal)));
+    if (sale.paymentMethod === "Credit") {
+      lines.push(moneyRow("This Sale (Credit)", `+${fmt(sale.total)}`));
+    }
+    lines.push(moneyRow("Outstanding Bal", fmt(newBal)));
+  }
   lines.push(sep);
   lines.push(`Payment: ${asciiSafe(sale.paymentMethod)}`);
   if (sale.loyaltyPointsEarned) lines.push(`Points earned: ${sale.loyaltyPointsEarned}`);

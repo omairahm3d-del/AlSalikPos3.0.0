@@ -190,6 +190,8 @@ export interface SaleOptions {
   allowNegativeStock?: boolean;
   /** Cash payment: amount the customer hands over. Used to compute change. */
   cashTendered?: number;
+  /** Snapshot of the customer's credit balance BEFORE this sale. Printed on receipt. */
+  customerCreditBalance?: number;
 }
 
 export interface DatabaseContextValue {
