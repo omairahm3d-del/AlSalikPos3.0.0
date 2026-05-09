@@ -873,7 +873,7 @@ export default function POSScreen() {
             <Text style={[styles.cartTitle, { color: colors.foreground }]}>Order</Text>
             <View style={styles.cartHeaderRight}>
               {currentStaff && (
-                <Text style={[styles.staffLabel, { color: colors.mutedForeground }]}>
+                <Text style={[styles.staffLabel, { color: colors.mutedForeground }]} numberOfLines={1} ellipsizeMode="tail">
                   {currentStaff.name}
                 </Text>
               )}
@@ -934,9 +934,9 @@ export default function POSScreen() {
                   <TouchableOpacity
                     key={ot.key}
                     onPress={() => { if (!heldOrderInfo) setOrderType(ot.key); }}
-                    style={[styles.orderTypeChip, { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary + "18" : "transparent", borderRadius: colors.radius, opacity: heldOrderInfo && !active ? 0.4 : 1 }]}
+                    style={[styles.orderTypeChip, { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary + "22" : colors.secondary, borderRadius: colors.radius, opacity: heldOrderInfo && !active ? 0.5 : 1 }]}
                   >
-                    <Text style={{ color: active ? colors.primary : colors.mutedForeground, fontSize: 13, fontWeight: "700" }}>{ot.label}</Text>
+                    <Text style={{ color: active ? colors.primary : colors.foreground, fontSize: 13, fontWeight: active ? "700" : "600" }}>{ot.label}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -1900,16 +1900,16 @@ const styles = StyleSheet.create({
   iconBtn: { width: 38, height: 38, alignItems: "center", justifyContent: "center", borderWidth: 1 },
   endOfDayBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, gap: 5 },
   endOfDayText: { fontSize: 12, fontWeight: "700" },
-  cartInner: { flex: 1 },
+  cartInner: { flex: 1, overflow: "hidden" },
   cartHeader: { paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1 },
-  cartHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  cartHeaderRight: { flexDirection: "row", gap: 12, alignItems: "center" },
-  cartTitle: { fontSize: 17, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  cartHeaderRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  cartHeaderRight: { flex: 1, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", minWidth: 0 },
+  cartTitle: { fontSize: 17, fontWeight: "700", fontFamily: "Inter_700Bold", flexShrink: 0 },
   heldBadge: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginTop: 6, alignSelf: "flex-start" },
   orderTypeRow: { flexDirection: "row", gap: 6, marginTop: 10 },
   orderTypeChip: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingHorizontal: 8, paddingVertical: 10, borderWidth: 1.5 },
-  staffLabel: { fontSize: 11 },
-  cartList: { flex: 1 },
+  staffLabel: { fontSize: 11, maxWidth: 80 },
+  cartList: { flex: 1, minHeight: 0 },
   cartFooter: { padding: 16, borderTopWidth: 1 },
   totalsRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
   totalLabel: { fontSize: 13 },
