@@ -695,7 +695,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
               </View>
             )}
 
-            <View style={[styles.ingredientSection, { borderColor: colors.border, borderRadius: colors.radius, marginTop: 24 }]}>
+            {!isSaloon && <View style={[styles.ingredientSection, { borderColor: colors.border, borderRadius: colors.radius, marginTop: 24 }]}>
               <View style={styles.ingredientHeader}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                   <View style={[styles.ingredientIconWrap, { backgroundColor: "#8E44AD" + "18" }]}>
@@ -762,7 +762,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
                   </Text>
                 </View>
               )}
-            </View>
+            </View>}
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
