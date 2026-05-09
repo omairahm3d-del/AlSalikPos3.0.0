@@ -183,6 +183,7 @@ export default function BackOfficeScreen() {
   const [riderName, setRiderName] = useState("");
   const [riderPhone, setRiderPhone] = useState("");
   const [riderActive, setRiderActive] = useState(true);
+  const [riderCommission, setRiderCommission] = useState("0");
   const [editingRider, setEditingRider] = useState<Rider | null>(null);
   const [showRiderModal, setShowRiderModal] = useState(false);
 
@@ -442,13 +443,14 @@ export default function BackOfficeScreen() {
   const handleSaveRider = async () => {
     if (!riderName.trim()) { Alert.alert("Invalid", "Rider name is required."); return; }
     try {
+      const commissionPct = parseFloat(riderCommission) || 0;
       if (editingRider) {
-        await db.updateRider({ ...editingRider, name: riderName.trim(), phone: riderPhone.trim(), active: riderActive });
+        await db.updateRider({ ...editingRider, name: riderName.trim(), phone: riderPhone.trim(), active: riderActive, commissionPct });
       } else {
-        await db.createRider({ name: riderName.trim(), phone: riderPhone.trim(), vehicleInfo: "" });
+        await db.createRider({ name: riderName.trim(), phone: riderPhone.trim(), vehicleInfo: "", commissionPct });
       }
       await loadRiderList();
-      setEditingRider(null); setRiderName(""); setRiderPhone(""); setRiderActive(true); setShowRiderModal(false);
+      setEditingRider(null); setRiderName(""); setRiderPhone(""); setRiderActive(true); setRiderCommission("0"); setShowRiderModal(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Saved", editingRider ? "Rider updated successfully." : "Rider added successfully.");
     } catch (e: any) {
@@ -2012,14 +2014,14 @@ export default function BackOfficeScreen() {
           contentContainerStyle={s.listContent}
           ListEmptyComponent={<Text style={[s.emptyText, { color: colors.mutedForeground }]}>No {riderLabel.toLowerCase()} yet. Tap + to add one.</Text>}
           renderItem={({ item }) => (
-            <TouchableOpacity onPress={() => { setEditingRider(item); setRiderName(item.name); setRiderPhone(item.phone || ""); setRiderActive(item.active ?? true); setShowRiderModal(true); }}
+            <TouchableOpacity onPress={() => { setEditingRider(item); setRiderName(item.name); setRiderPhone(item.phone || ""); setRiderActive(item.active ?? true); setRiderCommission(String(item.commissionPct ?? 0)); setShowRiderModal(true); }}
               style={[s.listItem, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, opacity: item.active ? 1 : 0.6 }]}>
               <View style={[s.cardIconWrap, { backgroundColor: riderColor + "18" }]}>
                 <Feather name={riderIcon as any} size={18} color={riderColor} />
               </View>
               <View style={s.listItemInfo}>
                 <Text style={[s.listItemTitle, { color: colors.foreground }]}>{item.name}</Text>
-                <Text style={[s.listItemSub, { color: colors.mutedForeground }]}>{item.phone || "No phone"} · {item.active ? "Active" : "Inactive"}</Text>
+                <Text style={[s.listItemSub, { color: colors.mutedForeground }]}>{item.phone || "No phone"} · {item.active ? "Active" : "Inactive"}{(item.commissionPct ?? 0) > 0 ? ` · ${item.commissionPct}% commission` : ""}</Text>
               </View>
               {permissions.deleteRiders && (
                 <TouchableOpacity onPress={() => handleDeleteRider(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -2029,7 +2031,7 @@ export default function BackOfficeScreen() {
             </TouchableOpacity>
           )}
         />
-        <TouchableOpacity onPress={() => { setEditingRider(null); setRiderName(""); setRiderPhone(""); setRiderActive(true); setShowRiderModal(true); }}
+        <TouchableOpacity onPress={() => { setEditingRider(null); setRiderName(""); setRiderPhone(""); setRiderActive(true); setRiderCommission("0"); setShowRiderModal(true); }}
           style={[s.fab, { backgroundColor: colors.primary, borderRadius: 28, bottom: insets.bottom + 20 }]}>
           <Feather name="plus" size={24} color="#fff" />
         </TouchableOpacity>
@@ -2571,6 +2573,7 @@ export default function BackOfficeScreen() {
           <ScrollView contentContainerStyle={s.formContent}>
             {renderField("Name", riderName, setRiderName, isSaloon ? "Stylist name" : "Rider name")}
             {renderField("Phone", riderPhone, setRiderPhone, "050-xxx-xxxx")}
+            {renderField("Commission %", riderCommission, setRiderCommission, "e.g. 10", "decimal-pad")}
             {renderSwitch("Active", riderActive, setRiderActive)}
           </ScrollView>
         </KeyboardAvoidingView>

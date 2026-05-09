@@ -328,6 +328,9 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     "ALTER TABLE products ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE categories ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE customers ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1",
+    // Commission percentage per rider/stylist. Stored as a real (0–100).
+    // Default 0 so existing riders have no commission until explicitly set.
+    "ALTER TABLE riders ADD COLUMN commission_pct REAL NOT NULL DEFAULT 0",
   ];
 
   // Sync event log. Append-only ring buffer (capped to 200 rows by the

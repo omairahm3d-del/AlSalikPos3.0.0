@@ -13,7 +13,7 @@ import {
 import { Feather } from "@expo/vector-icons";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
-import type { Customer, Sale, SaleItem, ZReport } from "@/types";
+import type { Customer, Rider, Sale, SaleItem, ZReport } from "@/types";
 import { formatCurrency } from "@/types";
 import { buildCsv, downloadCsv } from "@/lib/csvExport";
 import { generateZReportHTML } from "@/lib/receiptTemplate";
@@ -85,6 +85,10 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustId, setSelectedCustId] = useState<string | null>(null);
   const [custSearch, setCustSearch] = useState("");
+
+  const [riders, setRiders] = useState<Rider[]>([]);
+  const [stylistFilter, setStylistFilter] = useState<string>("all");
+  const [riderFilter, setRiderFilter] = useState<string>("all");
 
   const [itemDate, setItemDate] = useState(new Date());
   const [expandedSaleId, setExpandedSaleId] = useState<string | null>(null);
@@ -177,7 +181,13 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
   }, [db]);
 
   useEffect(() => {
+    db.loadRiders().then(setRiders).catch(() => setRiders([]));
+  }, [db]);
+
+  useEffect(() => {
     resetState();
+    setStylistFilter("all");
+    setRiderFilter("all");
     if (view === "zhistory") loadZHistory();
     else if (view === "customer") { loadCustomers(); loadRangeData(); }
     else if (view === "items") loadItemDetail(itemDate);
@@ -211,31 +221,39 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
   }, [validSales]);
 
   const riderStats = useMemo(() => {
-    const map = new Map<string, { count: number; amount: number }>();
+    const riderMap = new Map(riders.map(r => [r.id, r]));
+    const map = new Map<string, { count: number; amount: number; commission: number }>();
     validSales.filter(s => s.orderType === "delivery" && s.riderId).forEach(s => {
       const name = s.riderName || s.riderId || "Unknown";
+      const rider = s.riderId ? riderMap.get(s.riderId) : undefined;
+      const commissionAmt = s.total * ((rider?.commissionPct ?? 0) / 100);
       const ex = map.get(name);
-      if (ex) { ex.count++; ex.amount += s.total; } else map.set(name, { count: 1, amount: s.total });
+      if (ex) { ex.count++; ex.amount += s.total; ex.commission += commissionAmt; }
+      else map.set(name, { count: 1, amount: s.total, commission: commissionAmt });
     });
     return Array.from(map.entries())
       .map(([name, v]) => ({ name, ...v, avg: v.count > 0 ? v.amount / v.count : 0 }))
       .sort((a, b) => b.amount - a.amount);
-  }, [validSales]);
+  }, [validSales, riders]);
 
   const stylistStats = useMemo(() => {
+    const riderMap = new Map(riders.map(r => [r.id, r]));
     const validSaleIds = new Set(validSales.map(s => s.id));
-    const map = new Map<string, { count: number; amount: number }>();
+    const map = new Map<string, { count: number; amount: number; commission: number }>();
     for (const it of rangeItems) {
       if (!validSaleIds.has(it.saleId)) continue;
       const name = it.stylistName || "Unassigned";
       const amt = typeof it.lineTotal === "number" ? it.lineTotal : 0;
+      const rider = (it as any).stylistId ? riderMap.get((it as any).stylistId) : undefined;
+      const commissionAmt = amt * ((rider?.commissionPct ?? 0) / 100);
       const ex = map.get(name);
-      if (ex) { ex.count++; ex.amount += amt; } else map.set(name, { count: 1, amount: amt });
+      if (ex) { ex.count++; ex.amount += amt; ex.commission += commissionAmt; }
+      else map.set(name, { count: 1, amount: amt, commission: commissionAmt });
     }
     return Array.from(map.entries())
       .map(([name, v]) => ({ name, ...v, avg: v.count > 0 ? v.amount / v.count : 0 }))
       .sort((a, b) => b.amount - a.amount);
-  }, [validSales, rangeItems]);
+  }, [validSales, rangeItems, riders]);
 
   const filteredCustomers = useMemo(() => {
     const q = custSearch.toLowerCase();
@@ -471,16 +489,90 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
   };
 
   // ─── Rider Report ──────────────────────────────────────────────────────────
+  const handleRiderPdf = useCallback(async (rows: typeof riderStats) => {
+    const totalRev = rows.reduce((s, x) => s + x.amount, 0);
+    const totalCom = rows.reduce((s, x) => s + x.commission, 0);
+    const totalDel = rows.reduce((s, x) => s + x.count, 0);
+    const tableRows = rows.map(r => `
+      <tr>
+        <td>${r.name}</td>
+        <td style="text-align:center">${r.count}</td>
+        <td style="text-align:right">AED ${r.amount.toFixed(2)}</td>
+        <td style="text-align:right">AED ${r.avg.toFixed(2)}</td>
+        <td style="text-align:right;color:#E67E22">AED ${r.commission.toFixed(2)}</td>
+      </tr>`).join("");
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+      <style>
+        body{font-family:Arial,sans-serif;padding:24px;color:#1a1a1a}
+        h2{margin:0 0 4px}p{margin:0 0 16px;color:#666;font-size:13px}
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        th{background:#f4f4f4;padding:8px 10px;text-align:left;font-weight:600;border-bottom:2px solid #ddd}
+        td{padding:7px 10px;border-bottom:1px solid #eee}
+        tr:last-child td{border-bottom:none}
+        .foot{margin-top:16px;font-size:13px;text-align:right}
+        .foot span{font-weight:700}
+      </style></head><body>
+      <h2>Rider Delivery Report</h2>
+      <p>Period: ${rangeLabel}</p>
+      <table>
+        <thead><tr>
+          <th>Rider</th><th style="text-align:center">Deliveries</th>
+          <th style="text-align:right">Revenue</th>
+          <th style="text-align:right">Avg / Delivery</th>
+          <th style="text-align:right">Commission</th>
+        </tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+      <div class="foot">
+        Total Deliveries: <span>${totalDel}</span> &nbsp;|&nbsp;
+        Total Revenue: <span>AED ${totalRev.toFixed(2)}</span> &nbsp;|&nbsp;
+        Total Commission: <span style="color:#E67E22">AED ${totalCom.toFixed(2)}</span>
+      </div>
+      </body></html>`;
+    try {
+      if (Platform.OS === "web") {
+        const w = window.open("", "_blank", "width=700,height=500");
+        if (w) { w.document.write(html); w.document.close(); setTimeout(() => { try { w.print(); } catch {} }, 300); }
+      } else {
+        const Print = await import("expo-print");
+        await Print.printAsync({ html });
+      }
+    } catch (e: any) {
+      Alert.alert("PDF Failed", e?.message || String(e));
+    }
+  }, [rangeLabel]);
+
   const renderRider = () => {
-    const total = riderStats.reduce((s, x) => s + x.amount, 0);
-    const totalDeliveries = riderStats.reduce((s, x) => s + x.count, 0);
+    const filtered = riderFilter === "all" ? riderStats : riderStats.filter(r => r.name === riderFilter);
+    const total = filtered.reduce((s, x) => s + x.amount, 0);
+    const totalDeliveries = filtered.reduce((s, x) => s + x.count, 0);
+    const totalCommission = filtered.reduce((s, x) => s + x.commission, 0);
     return (
       <View style={[st.root, { backgroundColor: colors.background }]}>
-        {renderHdr("Rider Delivery Report", () => setView(null), () => handleExport("rider-deliveries", riderStats.map(r => ({
-          Rider: r.name, Deliveries: r.count, TotalRevenue: r.amount.toFixed(2), AvgPerDelivery: r.avg.toFixed(2),
+        {renderHdr("Rider Delivery Report", () => setView(null), () => handleExport("rider-deliveries", filtered.map(r => ({
+          Rider: r.name, Deliveries: r.count, TotalRevenue: r.amount.toFixed(2), AvgPerDelivery: r.avg.toFixed(2), Commission: r.commission.toFixed(2),
         }))))}
         <ScrollView contentContainerStyle={st.scroll}>
           {renderPresets((p) => loadRangeData(p))}
+          {loaded && riderStats.length > 0 && (
+            <>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4, marginBottom: 8 }} contentContainerStyle={{ paddingHorizontal: 4, gap: 6, flexDirection: "row" }}>
+                {["all", ...riderStats.map(r => r.name)].map(name => (
+                  <TouchableOpacity key={name} onPress={() => setRiderFilter(name)}
+                    style={[st.presetBtn, { backgroundColor: riderFilter === name ? "#3498DB" : colors.secondary, borderColor: riderFilter === name ? "#3498DB" : colors.border, borderRadius: colors.radius }]}>
+                    <Text style={{ color: riderFilter === name ? "#fff" : colors.mutedForeground, fontSize: 11, fontWeight: "600" }}>
+                      {name === "all" ? "All Riders" : name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <TouchableOpacity onPress={() => handleRiderPdf(filtered)}
+                style={[st.exportBtn, { borderColor: "#E67E22", borderRadius: colors.radius, alignSelf: "flex-end", marginBottom: 8, paddingHorizontal: 12 }]}>
+                <Feather name="file-text" size={14} color="#E67E22" />
+                <Text style={{ color: "#E67E22", fontSize: 12, fontWeight: "700" }}>Export PDF</Text>
+              </TouchableOpacity>
+            </>
+          )}
           {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} /> :
             !loaded ? null :
             riderStats.length === 0 ? (
@@ -495,22 +587,26 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
                   {row("Period", rangeLabel)}
                   {row("Total Deliveries", String(totalDeliveries))}
                   {row("Total Revenue", formatCurrency(total), colors.success)}
-                  {row("Active Riders", String(riderStats.length))}
+                  {row("Total Commission", formatCurrency(totalCommission), "#E67E22")}
+                  {row("Active Riders", String(riderFilter === "all" ? riderStats.length : 1))}
                   {row("Avg. per Delivery", formatCurrency(totalDeliveries > 0 ? total / totalDeliveries : 0))}
                 </View>
-                {riderStats.map((r, i) => (
+                {filtered.map((r, i) => (
                   <View key={r.name} style={[st.card, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
                     <View style={st.cardRow}>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
-                        <View style={[st.badge, { backgroundColor: i === 0 ? "#2ECC71" : colors.secondary }]}>
-                          <Feather name="truck" size={12} color={i === 0 ? "#fff" : colors.mutedForeground} />
+                        <View style={[st.badge, { backgroundColor: i === 0 && riderFilter === "all" ? "#2ECC71" : colors.secondary }]}>
+                          <Feather name="truck" size={12} color={i === 0 && riderFilter === "all" ? "#fff" : colors.mutedForeground} />
                         </View>
                         <View style={{ flex: 1 }}>
                           <Text style={[st.cardTitle, { color: colors.foreground }]}>{r.name}</Text>
                           <Text style={[st.cardSub, { color: colors.mutedForeground }]}>{r.count} deliveries · Avg {formatCurrency(r.avg)}</Text>
                         </View>
                       </View>
-                      <Text style={[st.cardAmt, { color: colors.foreground }]}>{formatCurrency(r.amount)}</Text>
+                      <View style={{ alignItems: "flex-end" }}>
+                        <Text style={[st.cardAmt, { color: colors.foreground }]}>{formatCurrency(r.amount)}</Text>
+                        {r.commission > 0 && <Text style={{ color: "#E67E22", fontSize: 11, fontWeight: "600" }}>Commission {formatCurrency(r.commission)}</Text>}
+                      </View>
                     </View>
                     {progressBar(total > 0 ? r.amount / total * 100 : 0)}
                   </View>
@@ -732,15 +828,87 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
   };
 
   // ─── Stylist Report (saloon mode) ──────────────────────────────────────────
+  const handleStylistPdf = useCallback(async (rows: typeof stylistStats) => {
+    const totalRev = rows.reduce((s, x) => s + x.amount, 0);
+    const totalCom = rows.reduce((s, x) => s + x.commission, 0);
+    const tableRows = rows.map((s, i) => `
+      <tr>
+        <td>#${i + 1} ${s.name}</td>
+        <td style="text-align:center">${s.count}</td>
+        <td style="text-align:right">AED ${s.amount.toFixed(2)}</td>
+        <td style="text-align:right">AED ${s.avg.toFixed(2)}</td>
+        <td style="text-align:right;color:#E91E8C">AED ${s.commission.toFixed(2)}</td>
+      </tr>`).join("");
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+      <style>
+        body{font-family:Arial,sans-serif;padding:24px;color:#1a1a1a}
+        h2{margin:0 0 4px}p{margin:0 0 16px;color:#666;font-size:13px}
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        th{background:#f4f4f4;padding:8px 10px;text-align:left;font-weight:600;border-bottom:2px solid #ddd}
+        td{padding:7px 10px;border-bottom:1px solid #eee}
+        tr:last-child td{border-bottom:none}
+        .foot{margin-top:16px;font-size:13px;text-align:right}
+        .foot span{font-weight:700}
+      </style></head><body>
+      <h2>Stylist Report</h2>
+      <p>Period: ${rangeLabel}</p>
+      <table>
+        <thead><tr>
+          <th>Stylist</th><th style="text-align:center">Services</th>
+          <th style="text-align:right">Revenue</th>
+          <th style="text-align:right">Avg / Service</th>
+          <th style="text-align:right">Commission</th>
+        </tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+      <div class="foot">
+        Total Revenue: <span>AED ${totalRev.toFixed(2)}</span> &nbsp;|&nbsp;
+        Total Commission: <span style="color:#E91E8C">AED ${totalCom.toFixed(2)}</span>
+      </div>
+      </body></html>`;
+    try {
+      if (Platform.OS === "web") {
+        const w = window.open("", "_blank", "width=700,height=500");
+        if (w) { w.document.write(html); w.document.close(); setTimeout(() => { try { w.print(); } catch {} }, 300); }
+      } else {
+        const Print = await import("expo-print");
+        await Print.printAsync({ html });
+      }
+    } catch (e: any) {
+      Alert.alert("PDF Failed", e?.message || String(e));
+    }
+  }, [rangeLabel]);
+
   const renderStylist = () => {
-    const total = stylistStats.reduce((s, x) => s + x.amount, 0);
+    const filtered = stylistFilter === "all" ? stylistStats : stylistStats.filter(s => s.name === stylistFilter);
+    const total = filtered.reduce((s, x) => s + x.amount, 0);
+    const totalCommission = filtered.reduce((s, x) => s + x.commission, 0);
     return (
       <View style={[st.root, { backgroundColor: colors.background }]}>
-        {renderHdr("Stylist Report", () => setView(null), () => handleExport("stylist-report", stylistStats.map(s => ({
-          Stylist: s.name, Services: s.count, TotalRevenue: s.amount.toFixed(2), AvgOrder: s.avg.toFixed(2),
+        {renderHdr("Stylist Report", () => setView(null), () => handleExport("stylist-report", filtered.map(s => ({
+          Stylist: s.name, Services: s.count, TotalRevenue: s.amount.toFixed(2), AvgOrder: s.avg.toFixed(2), Commission: s.commission.toFixed(2),
         }))))}
         <ScrollView contentContainerStyle={st.scroll}>
           {renderPresets((p) => loadRangeData(p))}
+          {loaded && stylistStats.length > 0 && (
+            <>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4, marginBottom: 8 }} contentContainerStyle={{ paddingHorizontal: 4, gap: 6, flexDirection: "row" }}>
+                {["all", ...stylistStats.map(s => s.name)].map(name => (
+                  <TouchableOpacity key={name} onPress={() => setStylistFilter(name)}
+                    style={[st.presetBtn, { backgroundColor: stylistFilter === name ? "#E91E8C" : colors.secondary, borderColor: stylistFilter === name ? "#E91E8C" : colors.border, borderRadius: colors.radius }]}>
+                    <Text style={{ color: stylistFilter === name ? "#fff" : colors.mutedForeground, fontSize: 11, fontWeight: "600" }}>
+                      {name === "all" ? "All Stylists" : name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <TouchableOpacity onPress={() => handleStylistPdf(filtered)}
+                style={[st.exportBtn, { borderColor: "#E91E8C", borderRadius: colors.radius, alignSelf: "flex-end", marginBottom: 8, paddingHorizontal: 12 }]}>
+                <Feather name="file-text" size={14} color="#E91E8C" />
+                <Text style={{ color: "#E91E8C", fontSize: 12, fontWeight: "700" }}>Export PDF</Text>
+              </TouchableOpacity>
+            </>
+          )}
           {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} /> :
             !loaded ? null :
             stylistStats.length === 0 ? (
@@ -754,21 +922,25 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
                 <View style={[st.summaryBox, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
                   {row("Period", rangeLabel)}
                   {row("Total Revenue", formatCurrency(total), colors.success)}
-                  {row("Active Stylists", String(stylistStats.filter(s => s.name !== "Unassigned").length))}
+                  {row("Total Commission", formatCurrency(totalCommission), "#E91E8C")}
+                  {row("Active Stylists", String(stylistFilter === "all" ? stylistStats.filter(s => s.name !== "Unassigned").length : 1))}
                 </View>
-                {stylistStats.map((s, i) => (
+                {filtered.map((s, i) => (
                   <View key={s.name} style={[st.card, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
                     <View style={st.cardRow}>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
-                        <View style={[st.badge, { backgroundColor: i === 0 && s.name !== "Unassigned" ? "#E91E8C" : colors.secondary }]}>
-                          <Text style={{ color: i === 0 && s.name !== "Unassigned" ? "#fff" : colors.mutedForeground, fontSize: 11, fontWeight: "700" }}>#{i + 1}</Text>
+                        <View style={[st.badge, { backgroundColor: i === 0 && s.name !== "Unassigned" && stylistFilter === "all" ? "#E91E8C" : colors.secondary }]}>
+                          <Text style={{ color: i === 0 && s.name !== "Unassigned" && stylistFilter === "all" ? "#fff" : colors.mutedForeground, fontSize: 11, fontWeight: "700" }}>#{i + 1}</Text>
                         </View>
                         <View style={{ flex: 1 }}>
                           <Text style={[st.cardTitle, { color: colors.foreground }]}>{s.name}</Text>
                           <Text style={[st.cardSub, { color: colors.mutedForeground }]}>{s.count} service{s.count !== 1 ? "s" : ""} · Avg {formatCurrency(s.avg)}</Text>
                         </View>
                       </View>
-                      <Text style={[st.cardAmt, { color: colors.foreground }]}>{formatCurrency(s.amount)}</Text>
+                      <View style={{ alignItems: "flex-end" }}>
+                        <Text style={[st.cardAmt, { color: colors.foreground }]}>{formatCurrency(s.amount)}</Text>
+                        {s.commission > 0 && <Text style={{ color: "#E91E8C", fontSize: 11, fontWeight: "600" }}>Commission {formatCurrency(s.commission)}</Text>}
+                      </View>
                     </View>
                     {progressBar(total > 0 ? s.amount / total * 100 : 0)}
                   </View>

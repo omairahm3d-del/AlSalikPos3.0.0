@@ -188,6 +188,7 @@ export interface Rider {
   vehicleInfo: string;
   active: boolean;
   createdAt: number;
+  commissionPct?: number;
 }
 
 export type KdsStatus = "new" | "preparing" | "ready" | "bumped";

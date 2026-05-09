@@ -746,20 +746,21 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     return rows.map((r: any) => ({
       id: r.id, name: r.name, phone: r.phone ?? "", vehicleInfo: r.vehicle_info ?? "",
       active: r.active === 1, createdAt: r.created_at,
+      commissionPct: r.commission_pct ?? 0,
     }));
   }, [db]);
 
   const createRider = useCallback(async (rider: Omit<Rider, "id" | "active" | "createdAt">): Promise<Rider> => {
     const id = generateId();
     const createdAt = Date.now();
-    await db.runAsync("INSERT INTO riders (id, name, phone, vehicle_info, active, created_at) VALUES (?,?,?,?,1,?)",
-      [id, rider.name, rider.phone, rider.vehicleInfo, createdAt]);
+    await db.runAsync("INSERT INTO riders (id, name, phone, vehicle_info, active, commission_pct, created_at) VALUES (?,?,?,?,1,?,?)",
+      [id, rider.name, rider.phone, rider.vehicleInfo, rider.commissionPct ?? 0, createdAt]);
     return { ...rider, id, active: true, createdAt };
   }, [db]);
 
   const updateRider = useCallback(async (rider: Rider): Promise<void> => {
-    await db.runAsync("UPDATE riders SET name=?, phone=?, vehicle_info=?, active=? WHERE id=?",
-      [rider.name, rider.phone, rider.vehicleInfo, rider.active ? 1 : 0, rider.id]);
+    await db.runAsync("UPDATE riders SET name=?, phone=?, vehicle_info=?, active=?, commission_pct=? WHERE id=?",
+      [rider.name, rider.phone, rider.vehicleInfo, rider.active ? 1 : 0, rider.commissionPct ?? 0, rider.id]);
   }, [db]);
 
   const deleteRider = useCallback(async (id: string): Promise<void> => {
