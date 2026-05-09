@@ -14,7 +14,7 @@ import {
 import { useFocusEffect } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { useDatabase } from "@/context/DatabaseCore";
-import { Appointment, AppointmentStatus, Customer, PosTable, Product, Staff } from "@/types";
+import { Appointment, AppointmentStatus, Customer, PosTable, Product, Rider } from "@/types";
 
 const STATUS_COLORS: Record<AppointmentStatus, string> = {
   scheduled: "#4F8EF7",
@@ -231,13 +231,13 @@ function AppointmentCard({
 export default function AppointmentsScreen() {
   const {
     loadAppointments, createAppointment, updateAppointment, deleteAppointment,
-    loadStaff, loadCustomers, loadTables, loadProducts,
+    loadRiders, loadCustomers, loadTables, loadProducts,
   } = useDatabase();
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [weekOffset, setWeekOffset] = useState(0);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [staff, setStaff] = useState<Staff[]>([]);
+  const [riders, setRiders] = useState<Rider[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [tables, setTables] = useState<PosTable[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -261,7 +261,7 @@ export default function AppointmentsScreen() {
   useEffect(() => { refresh(); }, [selectedDate]);
 
   useEffect(() => {
-    loadStaff().then(setStaff);
+    loadRiders().then(setRiders);
     loadCustomers().then(setCustomers);
     loadTables().then(setTables);
     loadProducts().then(setProducts);
@@ -582,7 +582,7 @@ export default function AppointmentsScreen() {
               >
                 <Text style={[styles.pillText, !form.stylistId && styles.pillTextSel]}>Any</Text>
               </Pressable>
-              {staff.filter((s) => s.active).map((s) => (
+              {riders.filter((s) => s.active).map((s) => (
                 <Pressable
                   key={s.id}
                   style={[styles.pill, form.stylistId === s.id && styles.pillSel]}
