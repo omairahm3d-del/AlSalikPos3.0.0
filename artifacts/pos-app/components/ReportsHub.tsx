@@ -86,7 +86,7 @@ function fmtTime(ms: number) {
   return new Date(ms).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
-export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?: "standard" | "saloon" }) {
+export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?: "standard" | "saloon" | "laundry" | "retail" }) {
   const isSaloon = workMode === "saloon";
   const colors = useColors();
   const db = useDatabase();

@@ -116,6 +116,8 @@ export interface CartItem {
   /** Saloon mode: stylist assigned to this specific line item. */
   stylistId?: string;
   stylistName?: string;
+  /** Laundry mode: special care instructions for this item (e.g. "Starch", "Handle with care"). */
+  notes?: string;
   /** Restaurant mode: modifier options chosen for this line. */
   selectedModifiers?: SelectedModifier[];
   /** Pre-computed sum of all selectedModifiers[].priceAdjustment. */

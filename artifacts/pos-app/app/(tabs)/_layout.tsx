@@ -9,18 +9,21 @@ import { useColors } from "@/hooks/useColors";
 import { useWorkMode } from "@/context/WorkModeContext";
 
 function NativeTabLayout() {
-  const { tableLabel, isSaloon } = useWorkMode();
+  const { tableLabel, isSaloon, isLaundry, isRetail } = useWorkMode();
+  const hideTablesAndKot = isLaundry || isRetail;
   return (
     <NativeTabs>
       <NativeTabs.Trigger name="index">
         <Icon sf={{ default: "cart", selected: "cart.fill" }} />
         <Label>Register</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="tables">
-        <Icon sf={{ default: "tablecells", selected: "tablecells.fill" }} />
-        <Label>{tableLabel}</Label>
-      </NativeTabs.Trigger>
-      {!isSaloon && (
+      {!hideTablesAndKot && (
+        <NativeTabs.Trigger name="tables">
+          <Icon sf={{ default: "tablecells", selected: "tablecells.fill" }} />
+          <Label>{tableLabel}</Label>
+        </NativeTabs.Trigger>
+      )}
+      {!isSaloon && !hideTablesAndKot && (
         <NativeTabs.Trigger name="kds">
           <Icon sf={{ default: "fork.knife", selected: "fork.knife" }} />
           <Label>Kitchen</Label>
@@ -47,7 +50,8 @@ function NativeTabLayout() {
 function ClassicTabLayout() {
   const colors = useColors();
   const isIOS = Platform.OS === "ios";
-  const { tableLabel, isSaloon } = useWorkMode();
+  const { tableLabel, isSaloon, isLaundry, isRetail } = useWorkMode();
+  const hideTablesAndKot = isLaundry || isRetail;
 
   return (
     <Tabs
@@ -79,6 +83,7 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="tables"
         options={{
+          href: hideTablesAndKot ? null : undefined,
           title: tableLabel,
           tabBarIcon: ({ color }) =>
             isIOS ? (
@@ -91,7 +96,7 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="kds"
         options={{
-          href: isSaloon ? null : undefined,
+          href: (isSaloon || hideTablesAndKot) ? null : undefined,
           title: "Kitchen",
           tabBarIcon: ({ color }) =>
             isIOS ? (

@@ -381,7 +381,7 @@ export function CompanyDetail() {
                   try {
                     await updateCompany.mutateAsync({
                       companyId: company.id,
-                      workMode: e.target.value as "standard" | "saloon",
+                      workMode: e.target.value as "standard" | "saloon" | "laundry" | "retail",
                     });
                     toast({ title: "Work mode updated." });
                   } catch (err: any) {
@@ -389,8 +389,10 @@ export function CompanyDetail() {
                   }
                 }}
               >
-                <option value="standard">Standard (Restaurant / Retail)</option>
+                <option value="standard">Standard (Restaurant)</option>
                 <option value="saloon">Saloon / Beauty</option>
+                <option value="laundry">Laundry / Dry-Cleaning</option>
+                <option value="retail">Retail Shop</option>
               </select>
             </div>
             {company.notes && (

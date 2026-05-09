@@ -13,7 +13,7 @@ const isoDate = z.iso
 
 const licenseTypeEnum = z.enum(["online", "offline"]);
 
-const workModeEnum = z.enum(["standard", "saloon"]);
+const workModeEnum = z.enum(["standard", "saloon", "laundry", "retail"]);
 
 const createCompanyBody = z.object({
   name: z.string().min(1).max(200),

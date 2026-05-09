@@ -50,6 +50,11 @@ const ORDER_TYPES: { key: OrderType; label: string; icon: string }[] = [
   { key: "delivery", label: "Delivery", icon: "truck" },
 ];
 
+const LAUNDRY_ORDER_TYPES: { key: OrderType; label: string; icon: string }[] = [
+  { key: "takeaway", label: "Drop-off", icon: "package" },
+  { key: "delivery", label: "Express", icon: "zap" },
+];
+
 export default function POSScreen() {
   const colors = useColors();
   const { width, height } = useWindowDimensions();
@@ -61,7 +66,7 @@ export default function POSScreen() {
 
   const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder, loadStaff, loadAllModifierGroups } = useDatabase();
   const { currentStaff } = useStaff();
-  const { isSaloon, tableLabelSingular, tableLabel, productLabel } = useWorkMode();
+  const { isSaloon, isLaundry, isRetail, tableLabelSingular, tableLabel, productLabel } = useWorkMode();
   const { session } = useLicense();
   const {
     items: cartItems,
@@ -81,6 +86,7 @@ export default function POSScreen() {
     setItemDiscount,
     setItemPrice,
     setItemStylist,
+    setItemNotes,
     restoreCart,
     clearCart,
   } = useCart();
@@ -142,6 +148,9 @@ export default function POSScreen() {
 
   const [loyaltyRedeemPts, setLoyaltyRedeemPts] = useState("");
   const [loyaltyRate, setLoyaltyRate] = useState(0.01);
+
+  const [showItemNotes, setShowItemNotes] = useState<string | null>(null);
+  const [itemNotesValue, setItemNotesValue] = useState("");
 
   const orderDiscAmt = useMemo(() => {
     const val = parseFloat(orderDiscountValue);
@@ -212,6 +221,12 @@ export default function POSScreen() {
     }
   }, [heldOrderInfo]);
 
+  useEffect(() => {
+    if (!heldOrderInfo && (isLaundry || isRetail)) {
+      setOrderType("takeaway");
+    }
+  }, [isLaundry, isRetail, heldOrderInfo]);
+
   const filteredProducts = useMemo(() => {
     let list = products;
     if (selectedCategory !== "All") list = list.filter((p) => p.category === selectedCategory);
@@ -246,7 +261,7 @@ export default function POSScreen() {
     const rate = vatEnabled
       ? (product.taxGroupId ? (taxGroupMap[product.taxGroupId] ?? VAT_RATE) : VAT_RATE)
       : 0;
-    const groups = !isSaloon ? (modifierGroupsByProduct[product.id] ?? []) : [];
+    const groups = (!isSaloon && !isLaundry) ? (modifierGroupsByProduct[product.id] ?? []) : [];
     if (groups.length > 0) {
       setModifierPickerProduct(product);
       setModifierSelections({});
@@ -316,7 +331,7 @@ export default function POSScreen() {
       // Print Kitchen Order Ticket(s) on HOLD only (not on bill/charge),
       // and only when KOT is enabled in settings. This is the workflow the
       // user wants: hold = order goes to the kitchen; bill = customer pays.
-      if (!isSaloon && kotSettings.enabled) {
+      if (!isSaloon && !isLaundry && !isRetail && kotSettings.enabled) {
         try {
           const ps = businessSettings?.printerSettings;
           const defaultKot = ps?.windowsKOTPrinterName || "";
@@ -461,7 +476,7 @@ export default function POSScreen() {
       //     the kitchen in handleHoldOrder, so we skip to avoid duplicates.
       // All cases require kotSettings.enabled.
       const shouldPrintKOTOnCharge =
-        !isSaloon && kotSettings.enabled &&
+        !isSaloon && !isLaundry && !isRetail && kotSettings.enabled &&
         (orderType === "takeaway" || orderType === "delivery" || (orderType === "dine-in" && !heldOrderInfo));
       if (shouldPrintKOTOnCharge) {
         try {
@@ -728,6 +743,17 @@ export default function POSScreen() {
             </Text>
           </TouchableOpacity>
         )}
+        {isLaundry && (
+          <TouchableOpacity
+            onPress={() => { setShowItemNotes(lineKey); setItemNotesValue(item.notes ?? ""); }}
+            style={{ paddingHorizontal: 12, paddingBottom: 6, flexDirection: "row", alignItems: "center", gap: 4 }}
+          >
+            <Feather name="file-text" size={11} color={item.notes ? colors.primary : colors.mutedForeground} />
+            <Text style={{ fontSize: 11, color: item.notes ? colors.primary : colors.mutedForeground, flex: 1 }} numberOfLines={1}>
+              {item.notes || "Add care instructions…"}
+            </Text>
+          </TouchableOpacity>
+        )}
         {item.discountAmount && item.discountAmount > 0 ? (
           <View style={styles.itemDiscRow}>
             <Text style={{ color: colors.success, fontSize: 11 }}>
@@ -765,7 +791,7 @@ export default function POSScreen() {
         </View>
       </View>
     );
-  }, [colors, isSaloon, setItemDiscount, updateQuantity, removeItem, setItemPrice, setShowStylistPicker]);
+  }, [colors, isSaloon, isLaundry, setItemDiscount, updateQuantity, removeItem, setItemPrice, setShowStylistPicker, setShowItemNotes, setItemNotesValue]);
 
   const cartKeyExtractor = useCallback((item: import("@/types").CartItem) => item.lineId ?? item.product.id, []);
 
@@ -927,9 +953,9 @@ export default function POSScreen() {
               </Text>
             </View>
           )}
-          {!isSaloon && (
+          {!isSaloon && !isRetail && (
             <View style={styles.orderTypeRow}>
-              {ORDER_TYPES.map((ot) => {
+              {(isLaundry ? LAUNDRY_ORDER_TYPES : ORDER_TYPES).map((ot) => {
                 const active = orderType === ot.key;
                 return (
                   <TouchableOpacity
@@ -947,7 +973,11 @@ export default function POSScreen() {
       </View>
 
       {cartItems.length === 0 ? (
-        <EmptyState icon="shopping-cart" title="Cart is empty" subtitle="Tap products or scan a barcode" />
+        <EmptyState
+          icon="shopping-cart"
+          title="Cart is empty"
+          subtitle={isLaundry ? "Tap services or scan a barcode to add laundry items" : "Tap products or scan a barcode"}
+        />
       ) : (
         <FlatList
           data={cartItems}
@@ -1603,6 +1633,60 @@ export default function POSScreen() {
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* Laundry care instructions modal */}
+      <Modal visible={!!showItemNotes} animationType="fade" transparent>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <View style={styles.paymentOverlay}>
+            <View style={[styles.itemDiscSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2 }]}>
+              <Text style={[styles.paymentTitle, { color: colors.foreground, fontSize: 18 }]}>Care Instructions</Text>
+              <Text style={{ color: colors.mutedForeground, fontSize: 12, marginBottom: 10 }}>
+                Add special handling notes for this item (e.g. "Starch", "No tumble dry", "Handle with care").
+              </Text>
+              <TextInput
+                value={itemNotesValue}
+                onChangeText={setItemNotesValue}
+                placeholder="e.g. Starch collar, gentle wash"
+                placeholderTextColor={colors.mutedForeground}
+                autoFocus
+                multiline
+                numberOfLines={3}
+                style={[styles.discInput, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius, height: 72, textAlignVertical: "top" }]}
+              />
+              <View style={[styles.paymentActions, { marginTop: 16 }]}>
+                <TouchableOpacity
+                  onPress={() => { setShowItemNotes(null); setItemNotesValue(""); }}
+                  style={[styles.cancelBtn, { borderColor: colors.border, borderRadius: colors.radius }]}
+                >
+                  <Text style={{ color: colors.mutedForeground, fontWeight: "600" }}>Cancel</Text>
+                </TouchableOpacity>
+                {showItemNotes && itemNotesValue.trim() ? (
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (showItemNotes) setItemNotes(showItemNotes, undefined);
+                      setShowItemNotes(null);
+                      setItemNotesValue("");
+                    }}
+                    style={[styles.cancelBtn, { borderColor: colors.destructive + "60", borderRadius: colors.radius }]}
+                  >
+                    <Text style={{ color: colors.destructive, fontWeight: "600" }}>Clear</Text>
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity
+                  onPress={() => {
+                    if (showItemNotes) setItemNotes(showItemNotes, itemNotesValue.trim() || undefined);
+                    setShowItemNotes(null);
+                    setItemNotesValue("");
+                  }}
+                  style={[styles.confirmBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
+                >
+                  <Text style={{ color: "#fff", fontWeight: "700" }}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={showHoldTablePicker} animationType="fade" transparent>

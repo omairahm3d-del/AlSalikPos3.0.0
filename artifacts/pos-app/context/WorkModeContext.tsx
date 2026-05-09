@@ -1,22 +1,24 @@
 import React, { createContext, useContext, useMemo } from "react";
 import { useLicense } from "./LicenseContext";
 
-export type WorkMode = "standard" | "saloon";
+export type WorkMode = "standard" | "saloon" | "laundry" | "retail";
 
 interface WorkModeContextValue {
   workMode: WorkMode;
   isSaloon: boolean;
-  /** "Products" in standard, "Services" in saloon */
+  isLaundry: boolean;
+  isRetail: boolean;
+  /** "Products" in standard/retail, "Services" in saloon/laundry */
   productLabel: string;
-  /** "Product" in standard, "Service" in saloon */
+  /** "Product" in standard/retail, "Service" in saloon/laundry */
   productLabelSingular: string;
-  /** "Tables" in standard, "Chairs" in saloon */
+  /** "Tables" in standard, "Chairs" in saloon (hidden in laundry/retail) */
   tableLabel: string;
-  /** "Table" in standard, "Chair" in saloon */
+  /** "Table" in standard, "Chair" in saloon (hidden in laundry/retail) */
   tableLabelSingular: string;
-  /** "Dine-in" in standard, "Station" in saloon */
+  /** "Dine-in" in standard, "Station" in saloon, "Drop-off" in laundry, "Sale" in retail */
   dineInLabel: string;
-  /** "KOT" in standard, "SOT" in saloon */
+  /** "KOT" in standard, "SOT" in saloon (hidden in laundry/retail) */
   orderTicketLabel: string;
 }
 
@@ -24,21 +26,25 @@ const WorkModeContext = createContext<WorkModeContextValue | null>(null);
 
 export function WorkModeProvider({ children }: { children: React.ReactNode }) {
   const { session } = useLicense();
-  const workMode: WorkMode = session?.workMode ?? "standard";
+  const workMode: WorkMode = (session?.workMode as WorkMode) ?? "standard";
   const isSaloon = workMode === "saloon";
+  const isLaundry = workMode === "laundry";
+  const isRetail = workMode === "retail";
 
   const value = useMemo<WorkModeContextValue>(
     () => ({
       workMode,
       isSaloon,
-      productLabel: isSaloon ? "Services" : "Products",
-      productLabelSingular: isSaloon ? "Service" : "Product",
+      isLaundry,
+      isRetail,
+      productLabel: isSaloon ? "Services" : isLaundry ? "Services" : "Products",
+      productLabelSingular: isSaloon ? "Service" : isLaundry ? "Service" : "Product",
       tableLabel: isSaloon ? "Chairs" : "Tables",
       tableLabelSingular: isSaloon ? "Chair" : "Table",
-      dineInLabel: isSaloon ? "Station" : "Dine-in",
+      dineInLabel: isSaloon ? "Station" : isLaundry ? "Drop-off" : "Dine-in",
       orderTicketLabel: isSaloon ? "SOT" : "KOT",
     }),
-    [workMode, isSaloon],
+    [workMode, isSaloon, isLaundry, isRetail],
   );
 
   return (

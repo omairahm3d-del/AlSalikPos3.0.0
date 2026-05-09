@@ -13,7 +13,7 @@ export interface Company {
 }
 
 export interface UpdateCompanyInput {
-  workMode: "standard" | "saloon";
+  workMode: "standard" | "saloon" | "laundry" | "retail";
 }
 
 export type LicenseType = "online" | "offline";

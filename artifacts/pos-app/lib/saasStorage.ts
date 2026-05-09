@@ -38,9 +38,10 @@ const K_OWNING_COMPANY = "saas.owningCompanyId";
  */
 const K_CATALOG_CURSOR = "saas.catalogCursor";
 /**
- * Work mode for this device's company: "standard" (restaurant/retail) or
- * "saloon" (beauty). Synced from the cloud on each license validate so the
- * admin can flip it from the admin console without requiring re-activation.
+ * Work mode for this device's company. One of: "standard" (restaurant),
+ * "saloon" (beauty), "laundry" (dry-cleaning), "retail" (shop).
+ * Synced from the cloud on each license validate so the admin can flip it
+ * from the admin console without requiring re-activation.
  * Defaults to "standard" on read for sessions persisted before this existed.
  */
 const K_WORK_MODE = "saas.workMode";
@@ -107,10 +108,11 @@ export interface LicenseSession {
   licenseKey: string;
   deviceUid: string;
   /**
-   * Business type: "standard" (restaurant/retail) or "saloon" (beauty).
+   * Business type: "standard" (restaurant), "saloon" (beauty),
+   * "laundry" (dry-cleaning), or "retail" (shop).
    * Defaults to "standard" for sessions persisted before this field existed.
    */
-  workMode: "standard" | "saloon";
+  workMode: "standard" | "saloon" | "laundry" | "retail";
 }
 
 /**
@@ -221,8 +223,11 @@ export async function loadSession(): Promise<LicenseSession | null> {
     } catch {
       // tolerate
     }
-    const workMode: "standard" | "saloon" =
-      workModeRaw === "saloon" ? "saloon" : "standard";
+    const workMode: "standard" | "saloon" | "laundry" | "retail" =
+      workModeRaw === "saloon" ? "saloon"
+      : workModeRaw === "laundry" ? "laundry"
+      : workModeRaw === "retail" ? "retail"
+      : "standard";
 
     return {
       token,

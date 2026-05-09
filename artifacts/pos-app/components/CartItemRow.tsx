@@ -49,6 +49,11 @@ function CartItemRowInner({ item, onUpdateQuantity, onRemoveItem }: Props) {
             ))}
           </View>
         ) : null}
+        {item.notes ? (
+          <Text style={[styles.notesText, { color: colors.mutedForeground }]} numberOfLines={2}>
+            📝 {item.notes}
+          </Text>
+        ) : null}
         <Text style={[styles.unitPrice, { color: colors.mutedForeground }]}>
           {formatCurrency(effectivePrice)} each
         </Text>
@@ -124,6 +129,11 @@ const styles = StyleSheet.create({
   unitPrice: {
     fontSize: 11,
     marginTop: 2,
+  },
+  notesText: {
+    fontSize: 10,
+    marginTop: 2,
+    fontStyle: "italic",
   },
   qtySection: {
     flexDirection: "row",

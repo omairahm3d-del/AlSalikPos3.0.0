@@ -11,9 +11,12 @@ export const companiesTable = pgTable("saas_companies", {
   notes: text("notes"),
   /**
    * Business type / UI mode for the POS client.
-   * - "standard" (default) — restaurant/retail layout: Products, Tables, KOT.
+   * - "standard" (default) — restaurant layout: Products, Tables, KOT, Dine-in/Takeaway/Delivery.
    * - "saloon" — beauty/saloon layout: Services, Chairs/Stations, per-line
-   *   stylist assignment, Bookings tab, no physical stock on services.
+   *   stylist assignment, Appointments tab, no physical stock on services.
+   * - "laundry" — laundry/dry-cleaning layout: Services, Drop-off/Express order types,
+   *   per-item laundry instructions, no tables, no KOT.
+   * - "retail" — retail shop layout: Products, barcode-first selling, no tables, no KOT.
    */
   workMode: text("work_mode").notNull().default("standard"),
   createdAt: timestamp("created_at", { withTimezone: true })
