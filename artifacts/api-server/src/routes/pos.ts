@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { posPurchasingController } from "../controllers/posPurchasingController";
+import { posKdsController } from "../controllers/posKdsController";
 import { requireDevice } from "../middlewares/requireDevice";
 import { asyncHandler } from "../utils/asyncHandler";
 
@@ -24,5 +25,9 @@ router.post(
   "/pos/stock/adjustments",
   asyncHandler(posPurchasingController.createAdjustment),
 );
+
+router.get("/pos/held-orders", asyncHandler(posKdsController.listHeldOrders));
+router.post("/pos/held-orders", asyncHandler(posKdsController.upsertHeldOrder));
+router.patch("/pos/held-orders/:clientId/kds-status", asyncHandler(posKdsController.updateKdsStatus));
 
 export default router;

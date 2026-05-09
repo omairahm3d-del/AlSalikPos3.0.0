@@ -11,8 +11,9 @@ import {
 import { useFocusEffect } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { useDatabase } from "@/context/DatabaseCore";
+import { useLicense } from "@/context/LicenseContext";
 import { useWorkMode } from "@/context/WorkModeContext";
-import { HeldOrder, KdsStatus } from "@/types";
+import { HeldOrder, KdsStatus, OrderType } from "@/types";
 
 const STATUS_COLORS: Record<Exclude<KdsStatus, "bumped">, string> = {
   new: "#F39C12",
@@ -120,9 +121,25 @@ function OrderCard({ order, onAction, tick }: OrderCardProps) {
   );
 }
 
+function serverRowToHeldOrder(row: Record<string, unknown>): HeldOrder {
+  return {
+    id: row.clientId as string,
+    tableId: "",
+    tableName: row.tableName as string,
+    orderType: row.orderType as OrderType,
+    staffName: (row.staffName as string) ?? undefined,
+    customerName: (row.customerName as string) ?? undefined,
+    kdsStatus: (row.kdsStatus as KdsStatus) ?? "new",
+    items: (row.items as HeldOrder["items"]) ?? [],
+    createdAt: new Date(row.clientCreatedAt as string).getTime(),
+    updatedAt: new Date(row.updatedAt as string).getTime(),
+  };
+}
+
 export default function KdsScreen() {
   const { loadHeldOrders, updateKdsStatus } = useDatabase();
   const { isSaloon } = useWorkMode();
+  const { session } = useLicense();
   const { width } = useWindowDimensions();
   const [orders, setOrders] = useState<HeldOrder[]>([]);
   const [filter, setFilter] = useState<FilterType>("all");
@@ -131,14 +148,34 @@ export default function KdsScreen() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const isOnline = session?.license?.licenseType === "online";
+
   const refresh = useCallback(async () => {
+    if (isOnline && session?.token) {
+      try {
+        const { authedFetch } = await import("@/lib/saasApi");
+        const resp = await authedFetch("/api/pos/held-orders", session.token);
+        if (resp.ok) {
+          const data = await resp.json() as { heldOrders: Record<string, unknown>[] };
+          const pending = data.heldOrders
+            .map(serverRowToHeldOrder)
+            .filter((o) => (o.kdsStatus ?? "new") !== "bumped")
+            .sort((a, b) => a.createdAt - b.createdAt);
+          setOrders(pending);
+          setLastRefreshed(new Date());
+          return;
+        }
+      } catch {
+        // Network error — fall through to local DB
+      }
+    }
     const all = await loadHeldOrders();
     const pending = all
       .filter((o: HeldOrder) => (o.kdsStatus ?? "new") !== "bumped")
       .sort((a: HeldOrder, b: HeldOrder) => a.createdAt - b.createdAt);
     setOrders(pending);
     setLastRefreshed(new Date());
-  }, [loadHeldOrders]);
+  }, [loadHeldOrders, isOnline, session?.token]);
 
   useFocusEffect(
     useCallback(() => {
@@ -155,9 +192,20 @@ export default function KdsScreen() {
   const handleAction = useCallback(
     async (id: string, next: KdsStatus) => {
       await updateKdsStatus(id, next);
+      if (isOnline && session?.token) {
+        try {
+          const { authedFetch } = await import("@/lib/saasApi");
+          await authedFetch(`/api/pos/held-orders/${encodeURIComponent(id)}/kds-status`, session.token, {
+            method: "PATCH",
+            body: JSON.stringify({ kdsStatus: next }),
+          });
+        } catch {
+          // Non-fatal
+        }
+      }
       await refresh();
     },
-    [updateKdsStatus, refresh]
+    [updateKdsStatus, refresh, isOnline, session?.token]
   );
 
   const numCols = width >= 700 ? 2 : 1;

@@ -31,6 +31,7 @@ import { CustomerSelectModal } from "@/components/CustomerSelectModal";
 import { ReceiptModal } from "@/components/ReceiptModal";
 import { useCart } from "@/context/CartContext";
 import { useDatabase } from "@/context/DatabaseCore";
+import { useLicense } from "@/context/LicenseContext";
 import { useStaff } from "@/context/StaffContext";
 import { useWorkMode } from "@/context/WorkModeContext";
 import { useColors } from "@/hooks/useColors";
@@ -61,6 +62,7 @@ export default function POSScreen() {
   const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder, loadStaff } = useDatabase();
   const { currentStaff } = useStaff();
   const { isSaloon, tableLabelSingular, tableLabel, productLabel } = useWorkMode();
+  const { session } = useLicense();
   const {
     items: cartItems,
     itemCount,
@@ -247,6 +249,7 @@ export default function POSScreen() {
   const handleHoldOrder = useCallback(async (table: PosTable) => {
     if (cartItems.length === 0) return;
     try {
+      const clientOrderId = heldOrderInfo?.id ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
       const heldItems = cartItems.map((ci) => ({
         id: "",
         heldOrderId: "",
@@ -263,7 +266,7 @@ export default function POSScreen() {
         imageUri: ci.product.imageUri,
       }));
       await saveHeldOrder({
-        id: heldOrderInfo?.id,
+        id: clientOrderId,
         tableId: table.id,
         tableName: table.name,
         orderType,
@@ -271,6 +274,27 @@ export default function POSScreen() {
         staffName: currentStaff?.name,
         items: heldItems,
       });
+
+      if (session?.license?.licenseType === "online" && session.token) {
+        try {
+          const { authedFetch } = await import("@/lib/saasApi");
+          await authedFetch("/api/pos/held-orders", session.token, {
+            method: "POST",
+            body: JSON.stringify({
+              clientId: clientOrderId,
+              tableName: table.name,
+              orderType,
+              staffName: currentStaff?.name ?? null,
+              customerName: null,
+              kdsStatus: "new",
+              items: heldItems,
+              clientCreatedAt: Date.now(),
+            }),
+          });
+        } catch {
+          // Non-fatal — held order saved locally even if server push fails
+        }
+      }
 
       // Print Kitchen Order Ticket(s) on HOLD only (not on bill/charge),
       // and only when KOT is enabled in settings. This is the workflow the
