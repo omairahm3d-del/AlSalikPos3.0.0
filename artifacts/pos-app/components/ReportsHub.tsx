@@ -223,20 +223,19 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
   }, [validSales]);
 
   const stylistStats = useMemo(() => {
+    const validSaleIds = new Set(validSales.map(s => s.id));
     const map = new Map<string, { count: number; amount: number }>();
-    for (const sale of validSales) {
-      const items: Array<{ stylistName?: string; lineTotal?: number }> = (sale as any).items ?? [];
-      for (const it of items) {
-        const name = it.stylistName || "Unassigned";
-        const amt = typeof it.lineTotal === "number" ? it.lineTotal : 0;
-        const ex = map.get(name);
-        if (ex) { ex.count++; ex.amount += amt; } else map.set(name, { count: 1, amount: amt });
-      }
+    for (const it of rangeItems) {
+      if (!validSaleIds.has(it.saleId)) continue;
+      const name = it.stylistName || "Unassigned";
+      const amt = typeof it.lineTotal === "number" ? it.lineTotal : 0;
+      const ex = map.get(name);
+      if (ex) { ex.count++; ex.amount += amt; } else map.set(name, { count: 1, amount: amt });
     }
     return Array.from(map.entries())
       .map(([name, v]) => ({ name, ...v, avg: v.count > 0 ? v.amount / v.count : 0 }))
       .sort((a, b) => b.amount - a.amount);
-  }, [validSales]);
+  }, [validSales, rangeItems]);
 
   const filteredCustomers = useMemo(() => {
     const q = custSearch.toLowerCase();
