@@ -250,6 +250,7 @@ export interface DatabaseContextValue {
   loadHeldOrders: () => Promise<HeldOrder[]>;
   loadHeldOrderByTable: (tableId: string) => Promise<HeldOrder | null>;
   deleteHeldOrder: (id: string) => Promise<void>;
+  updateKdsStatus: (id: string, status: import("../types").KdsStatus) => Promise<void>;
 
   loadIngredients: () => Promise<Ingredient[]>;
   createIngredient: (ingredient: Omit<Ingredient, "id" | "createdAt">) => Promise<Ingredient>;

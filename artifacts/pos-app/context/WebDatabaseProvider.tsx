@@ -794,10 +794,11 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       updatedAt: now,
     };
 
+    const updatedHeldOrder = isUpdate ? { ...heldOrder, kdsStatus: "new" as const } : heldOrder;
     if (isUpdate) {
-      await setJson(K.heldOrders, existing.map((h) => h.id === id ? heldOrder : h));
+      await setJson(K.heldOrders, existing.map((h) => h.id === id ? updatedHeldOrder : h));
     } else {
-      await setJson(K.heldOrders, [...existing, heldOrder]);
+      await setJson(K.heldOrders, [...existing, updatedHeldOrder]);
     }
 
     const tables = await getJson<PosTable[]>(K.tables, []);
@@ -827,6 +828,11 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
         t.id === order.tableId ? { ...t, status: "available" as const, currentOrderId: undefined } : t
       ));
     }
+  }, []);
+
+  const updateKdsStatus = useCallback(async (id: string, status: import("../types").KdsStatus): Promise<void> => {
+    const existing = await getJson<HeldOrder[]>(K.heldOrders, []);
+    await setJson(K.heldOrders, existing.map((h) => h.id === id ? { ...h, kdsStatus: status } : h));
   }, []);
 
   const loadIngredients = useCallback(async (): Promise<Ingredient[]> => {
@@ -1376,7 +1382,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       loadCategories, createCategory, updateCategory, deleteCategory,
       loadSplitPayments, saveZReport, loadZReports,
       loadRiders, createRider, updateRider, deleteRider,
-      saveHeldOrder, loadHeldOrders, loadHeldOrderByTable, deleteHeldOrder,
+      saveHeldOrder, loadHeldOrders, loadHeldOrderByTable, deleteHeldOrder, updateKdsStatus,
       loadIngredients, createIngredient, updateIngredient, deleteIngredient, updateIngredientStock,
       loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,
       exportData, importData, clearData,

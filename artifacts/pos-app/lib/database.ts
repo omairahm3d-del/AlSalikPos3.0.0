@@ -282,6 +282,8 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     // Saloon mode: stylist assigned to each sale line item. NULL in standard mode.
     "ALTER TABLE sale_items ADD COLUMN stylist_id TEXT DEFAULT NULL",
     "ALTER TABLE sale_items ADD COLUMN stylist_name TEXT DEFAULT NULL",
+    // KDS: kitchen display status per held order.
+    "ALTER TABLE held_orders ADD COLUMN kds_status TEXT NOT NULL DEFAULT 'new'",
   ];
 
   // Sync event log. Append-only ring buffer (capped to 200 rows by the

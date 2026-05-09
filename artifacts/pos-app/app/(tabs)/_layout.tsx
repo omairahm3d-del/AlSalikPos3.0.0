@@ -9,7 +9,7 @@ import { useColors } from "@/hooks/useColors";
 import { useWorkMode } from "@/context/WorkModeContext";
 
 function NativeTabLayout() {
-  const { tableLabel } = useWorkMode();
+  const { tableLabel, isSaloon } = useWorkMode();
   return (
     <NativeTabs>
       <NativeTabs.Trigger name="index">
@@ -20,6 +20,12 @@ function NativeTabLayout() {
         <Icon sf={{ default: "tablecells", selected: "tablecells.fill" }} />
         <Label>{tableLabel}</Label>
       </NativeTabs.Trigger>
+      {!isSaloon && (
+        <NativeTabs.Trigger name="kds">
+          <Icon sf={{ default: "fork.knife", selected: "fork.knife" }} />
+          <Label>Kitchen</Label>
+        </NativeTabs.Trigger>
+      )}
       <NativeTabs.Trigger name="history">
         <Icon sf={{ default: "clock", selected: "clock.fill" }} />
         <Label>History</Label>
@@ -35,7 +41,7 @@ function NativeTabLayout() {
 function ClassicTabLayout() {
   const colors = useColors();
   const isIOS = Platform.OS === "ios";
-  const { tableLabel } = useWorkMode();
+  const { tableLabel, isSaloon } = useWorkMode();
 
   return (
     <Tabs
@@ -73,6 +79,19 @@ function ClassicTabLayout() {
               <SymbolView name="tablecells" tintColor={color} size={24} />
             ) : (
               <Feather name="grid" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="kds"
+        options={{
+          href: isSaloon ? null : undefined,
+          title: "Kitchen",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="fork.knife" tintColor={color} size={24} />
+            ) : (
+              <Feather name="monitor" size={22} color={color} />
             ),
         }}
       />

@@ -760,7 +760,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     const id = order.id || generateId();
 
     if (isUpdate) {
-      await db.runAsync("UPDATE held_orders SET table_id=?, table_name=?, order_type=?, staff_id=?, staff_name=?, customer_id=?, customer_name=?, updated_at=? WHERE id=?",
+      await db.runAsync("UPDATE held_orders SET table_id=?, table_name=?, order_type=?, staff_id=?, staff_name=?, customer_id=?, customer_name=?, kds_status='new', updated_at=? WHERE id=?",
         [order.tableId, order.tableName, order.orderType, order.staffId ?? null, order.staffName ?? null, order.customerId ?? null, order.customerName ?? null, now, id]);
       await db.runAsync("DELETE FROM held_order_items WHERE held_order_id=?", [id]);
     } else {
@@ -792,6 +792,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       staffId: r.staff_id ?? undefined, staffName: r.staff_name ?? undefined,
       customerId: r.customer_id ?? undefined, customerName: r.customer_name ?? undefined,
       createdAt: r.created_at, updatedAt: r.updated_at,
+      kdsStatus: r.kds_status ?? "new",
       items: allItems.filter((i: any) => i.held_order_id === r.id).map((i: any): HeldOrderItem => ({
         id: i.id, heldOrderId: i.held_order_id, productId: i.product_id,
         productName: i.product_name, productPrice: i.product_price, quantity: i.quantity,
@@ -812,6 +813,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       staffId: row.staff_id ?? undefined, staffName: row.staff_name ?? undefined,
       customerId: row.customer_id ?? undefined, customerName: row.customer_name ?? undefined,
       createdAt: row.created_at, updatedAt: row.updated_at,
+      kdsStatus: row.kds_status ?? "new",
       items: items.map((i: any): HeldOrderItem => ({
         id: i.id, heldOrderId: i.held_order_id, productId: i.product_id,
         productName: i.product_name, productPrice: i.product_price, quantity: i.quantity,
@@ -830,6 +832,10 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     if (order) {
       await db.runAsync("UPDATE pos_tables SET status='available', current_order_id=NULL WHERE id=?", [order.table_id]);
     }
+  }, [db]);
+
+  const updateKdsStatus = useCallback(async (id: string, status: import("../types").KdsStatus): Promise<void> => {
+    await db.runAsync("UPDATE held_orders SET kds_status=? WHERE id=?", [status, id]);
   }, [db]);
 
   const loadIngredients = useCallback(async (): Promise<Ingredient[]> => {
@@ -1514,7 +1520,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       loadCategories, createCategory, updateCategory, deleteCategory,
       loadSplitPayments, saveZReport, loadZReports,
       loadRiders, createRider, updateRider, deleteRider,
-      saveHeldOrder, loadHeldOrders, loadHeldOrderByTable, deleteHeldOrder,
+      saveHeldOrder, loadHeldOrders, loadHeldOrderByTable, deleteHeldOrder, updateKdsStatus,
       loadIngredients, createIngredient, updateIngredient, deleteIngredient, updateIngredientStock,
       loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,
       exportData, importData, clearData,

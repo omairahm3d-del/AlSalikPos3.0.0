@@ -134,6 +134,8 @@ export interface Rider {
   createdAt: number;
 }
 
+export type KdsStatus = "new" | "preparing" | "ready" | "bumped";
+
 export interface HeldOrder {
   id: string;
   tableId: string;
@@ -145,6 +147,7 @@ export interface HeldOrder {
   customerName?: string;
   createdAt: number;
   updatedAt: number;
+  kdsStatus?: KdsStatus;
   items: HeldOrderItem[];
 }
 
