@@ -35,7 +35,7 @@ export type ValidateResult =
       license: Pick<License, "id" | "expiresAt" | "maxDevices" | "licenseType">;
       device: Pick<Device, "id" | "deviceUid" | "name" | "platform">;
       branch: Pick<Branch, "id" | "name" | "address">;
-      workMode: "standard" | "saloon";
+      workMode: "standard" | "saloon" | "laundry" | "retail";
     }
   | {
       kind: "needs_branch_selection";
@@ -234,7 +234,9 @@ export const licenseService = {
         name: chosenBranch.name,
         address: chosenBranch.address,
       },
-      workMode: result.company.workMode === "saloon" ? "saloon" : "standard",
+      workMode: (["standard", "saloon", "laundry", "retail"].includes(result.company.workMode ?? "")
+        ? result.company.workMode
+        : "standard") as "standard" | "saloon" | "laundry" | "retail",
     };
   },
 
