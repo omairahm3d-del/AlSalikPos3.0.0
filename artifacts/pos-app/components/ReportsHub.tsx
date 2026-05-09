@@ -20,7 +20,7 @@ import { generateZReportHTML } from "@/lib/receiptTemplate";
 import { printHtml } from "@/lib/printBridge";
 
 type ReportView = null | "zhistory" | "payment" | "staff" | "stylist" | "rider" | "customer" | "items";
-type DatePreset = "today" | "yesterday" | "last7" | "last30" | "thismonth";
+type DatePreset = "today" | "yesterday" | "last7" | "last30" | "thismonth" | "lastmonth" | "thisyear" | "custom";
 
 const PRESETS: { key: DatePreset; label: string }[] = [
   { key: "today", label: "Today" },
@@ -28,7 +28,15 @@ const PRESETS: { key: DatePreset; label: string }[] = [
   { key: "last7", label: "7 Days" },
   { key: "last30", label: "30 Days" },
   { key: "thismonth", label: "This Month" },
+  { key: "lastmonth", label: "Last Month" },
+  { key: "thisyear", label: "This Year" },
+  { key: "custom", label: "Custom ..." },
 ];
+
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 function getPresetRange(preset: DatePreset): { startMs: number; endMs: number; label: string } {
   const now = new Date();
@@ -53,6 +61,18 @@ function getPresetRange(preset: DatePreset): { startMs: number; endMs: number; l
       const s = new Date(now.getFullYear(), now.getMonth(), 1);
       return { startMs: s.getTime(), endMs: eot.getTime(), label: "This Month" };
     }
+    case "lastmonth": {
+      const s = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const e = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+      const label = s.toLocaleString("en-GB", { month: "long", year: "numeric" });
+      return { startMs: s.getTime(), endMs: e.getTime(), label };
+    }
+    case "thisyear": {
+      const s = new Date(now.getFullYear(), 0, 1);
+      return { startMs: s.getTime(), endMs: eot.getTime(), label: `Year ${now.getFullYear()}` };
+    }
+    case "custom":
+      return { startMs: sot.getTime(), endMs: eot.getTime(), label: "Custom Range" };
   }
 }
 
@@ -90,6 +110,9 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
   const [stylistFilter, setStylistFilter] = useState<string>("all");
   const [riderFilter, setRiderFilter] = useState<string>("all");
 
+  const [customFrom, setCustomFrom] = useState<string>(todayStr);
+  const [customTo, setCustomTo] = useState<string>(todayStr);
+
   const [itemDate, setItemDate] = useState(new Date());
   const [expandedSaleId, setExpandedSaleId] = useState<string | null>(null);
 
@@ -113,9 +136,22 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
   }, [db]);
 
   const loadRangeData = useCallback(async (p?: DatePreset) => {
+    const active = p ?? preset;
     setLoading(true);
     setLoaded(false);
-    const range = getPresetRange(p ?? preset);
+    let range: { startMs: number; endMs: number; label: string };
+    if (active === "custom") {
+      const s = customFrom ? new Date(customFrom).getTime() : NaN;
+      const e = customTo ? new Date(customTo + "T23:59:59.999").getTime() : NaN;
+      if (!customFrom || !customTo || isNaN(s) || isNaN(e) || s > e) {
+        setLoading(false);
+        setLoaded(false);
+        return;
+      }
+      range = { startMs: s, endMs: e, label: `${customFrom} → ${customTo}` };
+    } else {
+      range = getPresetRange(active);
+    }
     setRangeLabel(range.label);
     try {
       const result = await db.loadSalesWithItemsByDateRange(range.startMs, range.endMs);
@@ -124,7 +160,7 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
     } catch { setRangeSales([]); setRangeItems([]); }
     setLoaded(true);
     setLoading(false);
-  }, [db, preset]);
+  }, [db, preset, customFrom, customTo]);
 
   const loadItemDetail = useCallback(async (date: Date) => {
     setLoading(true);
@@ -282,14 +318,105 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
   );
 
   const renderPresets = (onLoad: (p: DatePreset) => void) => (
-    <View style={st.presetRow}>
-      {PRESETS.map(p => (
-        <TouchableOpacity key={p.key} onPress={() => { setPreset(p.key); setLoaded(false); onLoad(p.key); }}
-          style={[st.presetBtn, { backgroundColor: preset === p.key ? colors.primary : colors.secondary, borderColor: preset === p.key ? colors.primary : colors.border, borderRadius: colors.radius }]}>
-          <Text style={{ color: preset === p.key ? "#fff" : colors.mutedForeground, fontSize: 11, fontWeight: "600" }}>{p.label}</Text>
-        </TouchableOpacity>
-      ))}
-    </View>
+    <>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        style={{ marginBottom: preset === "custom" ? 8 : 14 }}
+        contentContainerStyle={{ gap: 6, flexDirection: "row" }}>
+        {PRESETS.map(p => (
+          <TouchableOpacity key={p.key}
+            onPress={() => {
+              setPreset(p.key);
+              if (p.key !== "custom") { setLoaded(false); onLoad(p.key); }
+            }}
+            style={[st.presetBtn, {
+              backgroundColor: preset === p.key ? colors.primary : colors.secondary,
+              borderColor: preset === p.key ? colors.primary : colors.border,
+              borderRadius: colors.radius,
+            }]}>
+            <Text style={{ color: preset === p.key ? "#fff" : colors.mutedForeground, fontSize: 11, fontWeight: "600" }}>
+              {p.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {preset === "custom" && (
+        <View style={[st.customPanel, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+          <View style={{ flexDirection: "row", gap: 10, flex: 1 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={[st.customLabel, { color: colors.mutedForeground }]}>From</Text>
+              {Platform.OS === "web" ? (
+                <input
+                  type="date"
+                  value={customFrom}
+                  onChange={(e: any) => setCustomFrom(e.target.value)}
+                  style={{
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: 6,
+                    padding: "7px 10px",
+                    fontSize: 13,
+                    color: colors.foreground,
+                    backgroundColor: colors.background,
+                    width: "100%",
+                    boxSizing: "border-box",
+                  } as any}
+                />
+              ) : (
+                <TextInput
+                  value={customFrom}
+                  onChangeText={setCustomFrom}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={colors.mutedForeground}
+                  style={[st.customInput, { color: colors.foreground, backgroundColor: colors.background, borderColor: colors.border, borderRadius: colors.radius }]}
+                />
+              )}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[st.customLabel, { color: colors.mutedForeground }]}>To</Text>
+              {Platform.OS === "web" ? (
+                <input
+                  type="date"
+                  value={customTo}
+                  onChange={(e: any) => setCustomTo(e.target.value)}
+                  style={{
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: 6,
+                    padding: "7px 10px",
+                    fontSize: 13,
+                    color: colors.foreground,
+                    backgroundColor: colors.background,
+                    width: "100%",
+                    boxSizing: "border-box",
+                  } as any}
+                />
+              ) : (
+                <TextInput
+                  value={customTo}
+                  onChangeText={setCustomTo}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={colors.mutedForeground}
+                  style={[st.customInput, { color: colors.foreground, backgroundColor: colors.background, borderColor: colors.border, borderRadius: colors.radius }]}
+                />
+              )}
+            </View>
+          </View>
+          <TouchableOpacity
+            onPress={() => {
+              const s = customFrom ? new Date(customFrom).getTime() : NaN;
+              const e = customTo ? new Date(customTo + "T23:59:59.999").getTime() : NaN;
+              if (!customFrom || !customTo) { Alert.alert("Missing dates", "Please select both a start and end date."); return; }
+              if (isNaN(s) || isNaN(e)) { Alert.alert("Invalid date", "Please use YYYY-MM-DD format."); return; }
+              if (s > e) { Alert.alert("Invalid range", "Start date must be on or before the end date."); return; }
+              setLoaded(false);
+              onLoad("custom");
+            }}
+            style={[st.applyBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}>
+            <Feather name="check" size={14} color="#fff" />
+            <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>Apply</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </>
   );
 
   const row = (label: string, value: string, accent?: string) => (
@@ -1026,6 +1153,10 @@ const st = StyleSheet.create({
   sectionHead: { fontSize: 10, fontWeight: "700", letterSpacing: 0.6, marginTop: 8, textTransform: "uppercase" },
   presetRow: { flexDirection: "row", gap: 6, flexWrap: "wrap", marginBottom: 14 },
   presetBtn: { paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1 },
+  customPanel: { borderWidth: 1, padding: 12, marginBottom: 14, gap: 10 },
+  customLabel: { fontSize: 11, fontWeight: "600", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.4 },
+  customInput: { borderWidth: 1, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13 },
+  applyBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 14, paddingVertical: 9, alignSelf: "flex-end" },
   barTrack: { height: 4, borderRadius: 2, marginTop: 8, overflow: "hidden" },
   barFill: { height: 4, borderRadius: 2 },
   badge: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
