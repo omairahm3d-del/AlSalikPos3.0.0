@@ -2,7 +2,7 @@ import React, { useCallback } from "react";
 import { useSQLiteContext } from "expo-sqlite";
 import type {
   Appointment, BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment, Customer,
-  Expense, HeldOrder, HeldOrderItem, Ingredient, PosTable, Product,
+  Expense, HeldOrder, HeldOrderItem, Ingredient, ModifierGroup, PosTable, Product,
   RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
 } from "@/types";
@@ -131,10 +131,12 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
 
       for (const item of items) {
         const itemId = generateId();
-        const lineTotal = item.product.price * item.quantity - (item.discountAmount ?? 0);
+        const effectiveUnitPrice = item.product.price + (item.modifierTotal ?? 0);
+        const lineTotal = effectiveUnitPrice * item.quantity - (item.discountAmount ?? 0);
+        const modifiersJson = item.selectedModifiers?.length ? JSON.stringify(item.selectedModifiers) : null;
         await tx.runAsync(
-          "INSERT INTO sale_items (id, sale_id, product_id, product_name, product_price, quantity, line_total, discount_amount, stylist_id, stylist_name) VALUES (?,?,?,?,?,?,?,?,?,?)",
-          [itemId, saleId, item.product.id, item.product.name, item.product.price, item.quantity, lineTotal, item.discountAmount ?? 0, item.stylistId ?? null, item.stylistName ?? null]
+          "INSERT INTO sale_items (id, sale_id, product_id, product_name, product_price, quantity, line_total, discount_amount, stylist_id, stylist_name, modifiers_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+          [itemId, saleId, item.product.id, item.product.name, item.product.price, item.quantity, lineTotal, item.discountAmount ?? 0, item.stylistId ?? null, item.stylistName ?? null, modifiersJson]
         );
         // Only deduct stock for products the merchant is tracking
         // (stock_tracking=1). Untracked products (default stock_tracking=0)
@@ -256,12 +258,19 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     loyaltyPointsRedeemed: r.loyalty_points_redeemed ?? 0,
   });
 
-  const mapItemRow = (i: any): SaleItem => ({
-    id: i.id, saleId: i.sale_id, productId: i.product_id,
-    productName: i.product_name, productPrice: i.product_price,
-    quantity: i.quantity, lineTotal: i.line_total, discountAmount: i.discount_amount ?? 0,
-    stylistId: i.stylist_id ?? undefined, stylistName: i.stylist_name ?? undefined,
-  });
+  const mapItemRow = (i: any): SaleItem => {
+    const modifiers = i.modifiers_json ? JSON.parse(i.modifiers_json) : undefined;
+    return {
+      id: i.id, saleId: i.sale_id, productId: i.product_id,
+      productName: i.product_name, productPrice: i.product_price,
+      quantity: i.quantity, lineTotal: i.line_total, discountAmount: i.discount_amount ?? 0,
+      stylistId: i.stylist_id ?? undefined, stylistName: i.stylist_name ?? undefined,
+      modifiers,
+      modifierTotal: modifiers
+        ? modifiers.reduce((s: number, m: { priceAdjustment: number }) => s + m.priceAdjustment, 0)
+        : undefined,
+    };
+  };
 
   const loadSales = useCallback(async (): Promise<Sale[]> => {
     const rows = await db.getAllAsync<any>("SELECT * FROM sales ORDER BY created_at DESC");
@@ -945,6 +954,69 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     await db.runAsync("DELETE FROM recipe_ingredients WHERE product_id=?", [productId]);
   }, [db]);
 
+  const loadModifierGroups = useCallback(async (productId: string): Promise<ModifierGroup[]> => {
+    const groups = await db.getAllAsync<any>(
+      "SELECT * FROM modifier_groups WHERE product_id=? ORDER BY sort_order", [productId]);
+    const result: ModifierGroup[] = [];
+    for (const g of groups) {
+      const opts = await db.getAllAsync<any>(
+        "SELECT * FROM modifier_options WHERE group_id=? ORDER BY sort_order", [g.id]);
+      result.push({
+        id: g.id, productId: g.product_id, name: g.name,
+        required: g.required === 1, minSelections: g.min_selections,
+        maxSelections: g.max_selections, sortOrder: g.sort_order,
+        options: opts.map((o: any) => ({
+          id: o.id, groupId: o.group_id, name: o.name,
+          priceAdjustment: o.price_adjustment, sortOrder: o.sort_order,
+        })),
+      });
+    }
+    return result;
+  }, [db]);
+
+  const loadAllModifierGroups = useCallback(async (): Promise<ModifierGroup[]> => {
+    const groups = await db.getAllAsync<any>(
+      "SELECT * FROM modifier_groups ORDER BY product_id, sort_order");
+    const optRows = await db.getAllAsync<any>(
+      "SELECT * FROM modifier_options ORDER BY group_id, sort_order");
+    const optsByGroup: Record<string, any[]> = {};
+    for (const o of optRows) {
+      (optsByGroup[o.group_id] ??= []).push(o);
+    }
+    return groups.map((g: any) => ({
+      id: g.id, productId: g.product_id, name: g.name,
+      required: g.required === 1, minSelections: g.min_selections,
+      maxSelections: g.max_selections, sortOrder: g.sort_order,
+      options: (optsByGroup[g.id] ?? []).map((o: any) => ({
+        id: o.id, groupId: o.group_id, name: o.name,
+        priceAdjustment: o.price_adjustment, sortOrder: o.sort_order,
+      })),
+    }));
+  }, [db]);
+
+  const saveModifierGroups = useCallback(async (
+    productId: string,
+    groups: Omit<ModifierGroup, "id" | "options">[],
+    options: { groupIdx: number; name: string; priceAdjustment: number; sortOrder: number }[][],
+  ): Promise<void> => {
+    await db.runAsync(
+      "DELETE FROM modifier_options WHERE group_id IN (SELECT id FROM modifier_groups WHERE product_id=?)",
+      [productId]);
+    await db.runAsync("DELETE FROM modifier_groups WHERE product_id=?", [productId]);
+    for (let i = 0; i < groups.length; i++) {
+      const g = groups[i];
+      const groupId = generateId();
+      await db.runAsync(
+        "INSERT INTO modifier_groups (id, product_id, name, required, min_selections, max_selections, sort_order) VALUES (?,?,?,?,?,?,?)",
+        [groupId, productId, g.name, g.required ? 1 : 0, g.minSelections, g.maxSelections, g.sortOrder]);
+      for (const opt of (options[i] ?? [])) {
+        await db.runAsync(
+          "INSERT INTO modifier_options (id, group_id, name, price_adjustment, sort_order) VALUES (?,?,?,?,?)",
+          [generateId(), groupId, opt.name, opt.priceAdjustment, opt.sortOrder]);
+      }
+    }
+  }, [db]);
+
   const ALL_TABLES = [
     "products", "categories", "sales", "sale_items", "settings", "customers",
     "credit_payments", "staff", "pos_tables", "tax_groups", "split_payments",
@@ -1578,6 +1650,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       saveHeldOrder, loadHeldOrders, loadHeldOrderByTable, deleteHeldOrder, updateKdsStatus,
       loadIngredients, createIngredient, updateIngredient, deleteIngredient, updateIngredientStock,
       loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,
+      loadModifierGroups, loadAllModifierGroups, saveModifierGroups,
       exportData, importData, clearData,
       loadExpenses, createExpense, deleteExpense,
       enqueueSync, reconcilePendingSync, loadSyncBatch, markSyncResults, countPendingSync,

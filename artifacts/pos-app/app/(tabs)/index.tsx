@@ -37,7 +37,7 @@ import { useWorkMode } from "@/context/WorkModeContext";
 import { useColors } from "@/hooks/useColors";
 import { generateKitchenTicketHTML, getUniqueStations } from "@/lib/kitchenTicketTemplate";
 import { generateBillHTML } from "@/lib/billTemplate";
-import type { BusinessSettings, Category, Customer, KOTSettings, OrderType, PosTable, Product, Rider, Sale, SplitPaymentEntry, TaxGroup } from "@/types";
+import type { BusinessSettings, Category, Customer, KOTSettings, ModifierGroup, OrderType, PosTable, Product, Rider, Sale, SelectedModifier, SplitPaymentEntry, TaxGroup } from "@/types";
 import { DEFAULT_KOT_SETTINGS, VAT_RATE, formatCurrency } from "@/types";
 
 type PaymentMethod = "Card" | "Cash" | "Credit" | "Split";
@@ -59,7 +59,7 @@ export default function POSScreen() {
   const phoneColumns = isLandscape ? 3 : 2;
   const cartPaneWidth = Math.max(260, Math.min(Math.floor(width * 0.36), 380));
 
-  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder, loadStaff } = useDatabase();
+  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder, loadStaff, loadAllModifierGroups } = useDatabase();
   const { currentStaff } = useStaff();
   const { isSaloon, tableLabelSingular, tableLabel, productLabel } = useWorkMode();
   const { session } = useLicense();
@@ -75,6 +75,7 @@ export default function POSScreen() {
     quantityMap,
     heldOrderInfo,
     addItem,
+    addItemWithModifiers,
     removeItem,
     updateQuantity,
     setItemDiscount,
@@ -132,6 +133,10 @@ export default function POSScreen() {
   const [priceEditInput, setPriceEditInput] = useState("");
   const [voidConfirm, setVoidConfirm] = useState(false);
 
+  const [modifierGroupsByProduct, setModifierGroupsByProduct] = useState<Record<string, ModifierGroup[]>>({});
+  const [modifierPickerProduct, setModifierPickerProduct] = useState<Product | null>(null);
+  const [modifierSelections, setModifierSelections] = useState<Record<string, string[]>>({});
+
   const [loyaltyRedeemPts, setLoyaltyRedeemPts] = useState("");
   const [loyaltyRate, setLoyaltyRate] = useState(0.01);
 
@@ -172,7 +177,7 @@ export default function POSScreen() {
   const splitRemaining = finalTotal - splitEntries.reduce((s, e) => s + e.amount, 0);
 
   const fetchData = useCallback(async () => {
-    const [prods, tbls, biz, tgs, cats, rdrs, staff] = await Promise.all([loadProducts(), loadTables(), loadBusinessSettings(), loadTaxGroups(), loadCategories(), loadRiders(), loadStaff()]);
+    const [prods, tbls, biz, tgs, cats, rdrs, staff, allGroups] = await Promise.all([loadProducts(), loadTables(), loadBusinessSettings(), loadTaxGroups(), loadCategories(), loadRiders(), loadStaff(), loadAllModifierGroups()]);
     setProducts(prods);
     setTables(tbls);
     setRiders(rdrs.filter((r: Rider) => r.active));
@@ -185,8 +190,13 @@ export default function POSScreen() {
     setTaxGroupMap(map);
     const catNames = cats.length > 0 ? ["All", ...cats.map((c: Category) => c.name)] : ["All"];
     setDynamicCategories(catNames);
+    const byProduct: Record<string, ModifierGroup[]> = {};
+    for (const g of allGroups) {
+      (byProduct[g.productId] ??= []).push(g);
+    }
+    setModifierGroupsByProduct(byProduct);
     setLoading(false);
-  }, [loadProducts, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, loadRiders, loadStaff]);
+  }, [loadProducts, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, loadRiders, loadStaff, loadAllModifierGroups]);
 
   // Fetches on first focus AND every time the Register tab regains focus,
   // so newly added/edited products, categories, tables, riders and business
@@ -229,18 +239,22 @@ export default function POSScreen() {
       Alert.alert("Out of Stock", `${product.name} is out of stock.`);
       return;
     }
-    // When VAT is disabled in Business Settings, always pass 0 so the cart
-    // never adds any tax regardless of tax groups or the global VAT_RATE.
     const vatEnabled = businessSettings?.vatEnabled !== false;
     const rate = vatEnabled
       ? (product.taxGroupId ? (taxGroupMap[product.taxGroupId] ?? VAT_RATE) : VAT_RATE)
       : 0;
+    const groups = !isSaloon ? (modifierGroupsByProduct[product.id] ?? []) : [];
+    if (groups.length > 0) {
+      setModifierPickerProduct(product);
+      setModifierSelections({});
+      return;
+    }
     addItem(product, rate);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (isSaloon) {
       setShowStylistPicker(product.id);
     }
-  }, [productById, taxGroupMap, addItem, businessSettings, isSaloon]);
+  }, [productById, taxGroupMap, addItem, businessSettings, isSaloon, modifierGroupsByProduct]);
 
   const handleAddItem = useCallback((product: Product) => {
     handleAddById(product.id);
@@ -593,58 +607,61 @@ export default function POSScreen() {
 
   const productKeyExtractor = useCallback((item: Product) => item.id, []);
 
-  const renderCartItem = useCallback(({ item }: { item: import("@/types").CartItem }) => (
-    <View>
-      <CartItemRow item={item} onUpdateQuantity={updateQuantity} onRemoveItem={removeItem} />
-      {isSaloon && (
-        <TouchableOpacity
-          onPress={() => setShowStylistPicker(item.product.id)}
-          style={{ paddingHorizontal: 12, paddingBottom: 2 }}
-        >
-          <Text style={{ fontSize: 11, color: item.stylistName ? "#E91E8C" : colors.mutedForeground }}>
-            {item.stylistName ? `✂ ${item.stylistName}` : "✂ Assign stylist…"}
-          </Text>
-        </TouchableOpacity>
-      )}
-      {item.discountAmount && item.discountAmount > 0 ? (
-        <View style={styles.itemDiscRow}>
-          <Text style={{ color: colors.success, fontSize: 11 }}>
-            Discount: -{formatCurrency(item.discountAmount)}
-          </Text>
-          <TouchableOpacity onPress={() => setItemDiscount(item.product.id, undefined, undefined)}>
-            <Feather name="x" size={12} color={colors.mutedForeground} />
-          </TouchableOpacity>
-        </View>
-      ) : null}
-      <View style={styles.itemActionRow}>
-        <TouchableOpacity
-          onPress={() => {
-            setShowItemDiscount(item.product.id);
-            setItemDiscType(item.discountType || "percentage");
-            setItemDiscValue(item.discountValue ? String(item.discountValue) : "");
-          }}
-          style={[styles.itemDiscBtn, { borderColor: colors.primary + "60" }]}
-        >
-          <Feather name="percent" size={13} color={colors.primary} />
-          <Text style={{ fontSize: 12, color: colors.primary, fontWeight: "700" }}>Disc</Text>
-        </TouchableOpacity>
-        {item.product.priceChangeAllowed && (
+  const renderCartItem = useCallback(({ item }: { item: import("@/types").CartItem }) => {
+    const lineKey = item.lineId ?? item.product.id;
+    return (
+      <View>
+        <CartItemRow item={item} onUpdateQuantity={updateQuantity} onRemoveItem={removeItem} />
+        {isSaloon && (
           <TouchableOpacity
-            onPress={() => {
-              setShowPriceEdit(item.product.id);
-              setPriceEditInput(String(item.product.price));
-            }}
-            style={[styles.itemDiscBtn, { borderColor: "#F39C12" + "80" }]}
+            onPress={() => setShowStylistPicker(lineKey)}
+            style={{ paddingHorizontal: 12, paddingBottom: 2 }}
           >
-            <Feather name="edit-2" size={13} color="#F39C12" />
-            <Text style={{ fontSize: 12, color: "#F39C12", fontWeight: "700" }}>Price</Text>
+            <Text style={{ fontSize: 11, color: item.stylistName ? "#E91E8C" : colors.mutedForeground }}>
+              {item.stylistName ? `✂ ${item.stylistName}` : "✂ Assign stylist…"}
+            </Text>
           </TouchableOpacity>
         )}
+        {item.discountAmount && item.discountAmount > 0 ? (
+          <View style={styles.itemDiscRow}>
+            <Text style={{ color: colors.success, fontSize: 11 }}>
+              Discount: -{formatCurrency(item.discountAmount)}
+            </Text>
+            <TouchableOpacity onPress={() => setItemDiscount(lineKey, undefined, undefined)}>
+              <Feather name="x" size={12} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+        <View style={styles.itemActionRow}>
+          <TouchableOpacity
+            onPress={() => {
+              setShowItemDiscount(lineKey);
+              setItemDiscType(item.discountType || "percentage");
+              setItemDiscValue(item.discountValue ? String(item.discountValue) : "");
+            }}
+            style={[styles.itemDiscBtn, { borderColor: colors.primary + "60" }]}
+          >
+            <Feather name="percent" size={13} color={colors.primary} />
+            <Text style={{ fontSize: 12, color: colors.primary, fontWeight: "700" }}>Disc</Text>
+          </TouchableOpacity>
+          {item.product.priceChangeAllowed && (
+            <TouchableOpacity
+              onPress={() => {
+                setShowPriceEdit(lineKey);
+                setPriceEditInput(String(item.product.price));
+              }}
+              style={[styles.itemDiscBtn, { borderColor: "#F39C12" + "80" }]}
+            >
+              <Feather name="edit-2" size={13} color="#F39C12" />
+              <Text style={{ fontSize: 12, color: "#F39C12", fontWeight: "700" }}>Price</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
-    </View>
-  ), [colors, isSaloon, setItemDiscount, updateQuantity, removeItem, setItemPrice, setShowStylistPicker]);
+    );
+  }, [colors, isSaloon, setItemDiscount, updateQuantity, removeItem, setItemPrice, setShowStylistPicker]);
 
-  const cartKeyExtractor = useCallback((item: import("@/types").CartItem) => item.product.id, []);
+  const cartKeyExtractor = useCallback((item: import("@/types").CartItem) => item.lineId ?? item.product.id, []);
 
   const SearchBar = useMemo(() => (
     <View style={[styles.searchWrap, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius }]}>
@@ -1411,6 +1428,112 @@ export default function POSScreen() {
         onNotFound={handleScanNotFound}
         onClose={() => setShowScanner(false)}
       />
+
+      {/* Modifier Picker Modal */}
+      {modifierPickerProduct && (() => {
+        const pickerGroups = modifierGroupsByProduct[modifierPickerProduct.id] ?? [];
+        const modifierTotal = pickerGroups.reduce((sum, g) => {
+          const selIds = modifierSelections[g.id] ?? [];
+          return sum + g.options.filter((o) => selIds.includes(o.id)).reduce((s, o) => s + o.priceAdjustment, 0);
+        }, 0);
+        const vatEnabled = businessSettings?.vatEnabled !== false;
+        const rate = vatEnabled
+          ? (modifierPickerProduct.taxGroupId ? (taxGroupMap[modifierPickerProduct.taxGroupId] ?? VAT_RATE) : VAT_RATE)
+          : 0;
+        const canAdd = pickerGroups.every((g) => {
+          if (!g.required) return true;
+          return (modifierSelections[g.id] ?? []).length >= (g.minSelections || 1);
+        });
+        const handleConfirm = () => {
+          const selected: SelectedModifier[] = [];
+          for (const g of pickerGroups) {
+            const selIds = modifierSelections[g.id] ?? [];
+            for (const optId of selIds) {
+              const opt = g.options.find((o) => o.id === optId);
+              if (opt) selected.push({ groupId: g.id, groupName: g.name, optionId: opt.id, optionName: opt.name, priceAdjustment: opt.priceAdjustment });
+            }
+          }
+          addItemWithModifiers(modifierPickerProduct, rate, selected);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setModifierPickerProduct(null);
+          setModifierSelections({});
+        };
+        const toggleOption = (groupId: string, optionId: string, maxSel: number) => {
+          setModifierSelections((prev) => {
+            const cur = prev[groupId] ?? [];
+            if (cur.includes(optionId)) {
+              return { ...prev, [groupId]: cur.filter((id) => id !== optionId) };
+            }
+            if (maxSel === 1) return { ...prev, [groupId]: [optionId] };
+            if (cur.length >= maxSel) return prev;
+            return { ...prev, [groupId]: [...cur, optionId] };
+          });
+        };
+        return (
+          <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModifierPickerProduct(null)}>
+            <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
+              <View style={[styles.modalTopBar, { paddingTop: insets.top + 12, borderBottomColor: colors.border }]}>
+                <TouchableOpacity onPress={() => setModifierPickerProduct(null)}>
+                  <Feather name="x" size={22} color={colors.foreground} />
+                </TouchableOpacity>
+                <Text style={[styles.modalTitle, { color: colors.foreground }]}>{modifierPickerProduct.name}</Text>
+                <Text style={{ color: colors.mutedForeground, fontSize: 14 }}>{formatCurrency(modifierPickerProduct.price)}</Text>
+              </View>
+              <ScrollView contentContainerStyle={{ padding: 16 }} keyboardShouldPersistTaps="handled">
+                {pickerGroups.map((g) => {
+                  const selIds = modifierSelections[g.id] ?? [];
+                  return (
+                    <View key={g.id} style={{ marginBottom: 20 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                        <Text style={{ color: colors.foreground, fontSize: 16, fontWeight: "700", flex: 1 }}>{g.name}</Text>
+                        <View style={{ backgroundColor: g.required ? colors.primary + "20" : colors.secondary, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                          <Text style={{ color: g.required ? colors.primary : colors.mutedForeground, fontSize: 11, fontWeight: "600" }}>{g.required ? "Required" : "Optional"}</Text>
+                        </View>
+                        <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{g.maxSelections === 1 ? "Single" : `Pick up to ${g.maxSelections}`}</Text>
+                      </View>
+                      {g.options.map((opt) => {
+                        const selected = selIds.includes(opt.id);
+                        return (
+                          <TouchableOpacity
+                            key={opt.id}
+                            onPress={() => toggleOption(g.id, opt.id, g.maxSelections)}
+                            style={{ flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingHorizontal: 14, marginBottom: 6, borderRadius: colors.radius, borderWidth: 1.5, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + "10" : colors.card }}
+                          >
+                            <View style={{ width: 22, height: 22, borderRadius: g.maxSelections === 1 ? 11 : 4, borderWidth: 2, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary : "transparent", alignItems: "center", justifyContent: "center", marginRight: 12 }}>
+                              {selected && <Feather name="check" size={12} color="#fff" />}
+                            </View>
+                            <Text style={{ flex: 1, color: colors.foreground, fontSize: 15, fontWeight: "500" }}>{opt.name}</Text>
+                            <Text style={{ color: opt.priceAdjustment === 0 ? colors.mutedForeground : colors.primary, fontSize: 14, fontWeight: "600" }}>
+                              {opt.priceAdjustment === 0 ? "Free" : `${opt.priceAdjustment > 0 ? "+" : ""}${formatCurrency(opt.priceAdjustment)}`}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  );
+                })}
+              </ScrollView>
+              <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: colors.border }}>
+                {modifierTotal !== 0 && (
+                  <Text style={{ textAlign: "center", color: colors.mutedForeground, fontSize: 13, marginBottom: 8 }}>
+                    Base {formatCurrency(modifierPickerProduct.price)} + Extras {modifierTotal > 0 ? "+" : ""}{formatCurrency(modifierTotal)} = <Text style={{ fontWeight: "700", color: colors.foreground }}>{formatCurrency(modifierPickerProduct.price + modifierTotal)}</Text>
+                  </Text>
+                )}
+                <TouchableOpacity
+                  onPress={handleConfirm}
+                  disabled={!canAdd}
+                  style={{ backgroundColor: canAdd ? colors.success : colors.border, borderRadius: colors.radius, paddingVertical: 15, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }}
+                >
+                  <Feather name="shopping-cart" size={18} color="#fff" />
+                  <Text style={{ color: "#fff", fontSize: 16, fontWeight: "700" }}>
+                    Add to Order · {formatCurrency(modifierPickerProduct.price + modifierTotal)}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+        );
+      })()}
 
       <Modal visible={!!creditPaySale} animationType="fade" transparent>
         <View style={styles.paymentOverlay}>

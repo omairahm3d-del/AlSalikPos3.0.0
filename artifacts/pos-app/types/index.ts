@@ -63,6 +63,42 @@ export interface Category {
   updatedAt?: number;
 }
 
+/** One selectable option within a modifier group (e.g. "Extra Cheese +2.00"). */
+export interface ModifierOption {
+  id: string;
+  groupId: string;
+  name: string;
+  /** Positive = add to price, 0 = free, negative = subtract. */
+  priceAdjustment: number;
+  sortOrder: number;
+}
+
+/**
+ * A named group of options attached to a product (e.g. "Size", "Add-ons").
+ * `maxSelections = 1` renders as radio buttons; >1 as checkboxes.
+ * `required = true` forces at least `minSelections` (default 1) choice.
+ * Restaurant mode only — not used in saloon mode.
+ */
+export interface ModifierGroup {
+  id: string;
+  productId: string;
+  name: string;
+  required: boolean;
+  minSelections: number;
+  maxSelections: number;
+  sortOrder: number;
+  options: ModifierOption[];
+}
+
+/** The specific modifier option chosen for one cart / sale line item. */
+export interface SelectedModifier {
+  groupId: string;
+  groupName: string;
+  optionId: string;
+  optionName: string;
+  priceAdjustment: number;
+}
+
 export interface CartItem {
   product: Product;
   quantity: number;
@@ -73,6 +109,16 @@ export interface CartItem {
   /** Saloon mode: stylist assigned to this specific line item. */
   stylistId?: string;
   stylistName?: string;
+  /** Restaurant mode: modifier options chosen for this line. */
+  selectedModifiers?: SelectedModifier[];
+  /** Pre-computed sum of all selectedModifiers[].priceAdjustment. */
+  modifierTotal?: number;
+  /**
+   * Unique key for this cart line. Set when modifiers are present so two
+   * lines for the same product but different modifier choices coexist.
+   * When undefined, the product.id is used as the line key (legacy behaviour).
+   */
+  lineId?: string;
 }
 
 export interface SaleItem {
@@ -87,6 +133,9 @@ export interface SaleItem {
   /** Saloon mode: stylist who performed this service. */
   stylistId?: string;
   stylistName?: string;
+  /** Restaurant mode: snapshot of modifier choices at time of sale. */
+  modifiers?: SelectedModifier[];
+  modifierTotal?: number;
 }
 
 export interface SplitPaymentEntry {

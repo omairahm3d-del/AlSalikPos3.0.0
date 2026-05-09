@@ -30,12 +30,20 @@ export function generateKitchenTicketHTML(
 
   const itemRows = filteredItems
     .map(
-      (item) => `
+      (item) => {
+        const modRows = item.selectedModifiers && item.selectedModifiers.length > 0
+          ? item.selectedModifiers.map((m) =>
+            `<tr><td></td><td colspan="2" style="padding:1px 8px;font-size:${fs.body - 1}px;color:#555;">· ${m.optionName}${m.priceAdjustment !== 0 ? ` (+${CURRENCY} ${Math.abs(m.priceAdjustment).toFixed(2)})` : ""}</td></tr>`
+          ).join("")
+          : "";
+        const effectivePrice = item.product.price + (item.modifierTotal ?? 0);
+        return `
       <tr>
         <td style="padding:6px 0;font-size:${fs.item}px;font-weight:bold;">${item.quantity}x</td>
         <td style="padding:6px 8px;font-size:${fs.item}px;font-weight:bold;">${item.product.name}</td>
-        ${ks.showPrice ? `<td style="padding:6px 0;font-size:${fs.body}px;text-align:right;">${CURRENCY} ${(item.product.price * item.quantity).toFixed(2)}</td>` : ""}
-      </tr>`
+        ${ks.showPrice ? `<td style="padding:6px 0;font-size:${fs.body}px;text-align:right;">${CURRENCY} ${(effectivePrice * item.quantity).toFixed(2)}</td>` : ""}
+      </tr>${modRows}`;
+      }
     )
     .join("");
 

@@ -25,8 +25,11 @@ import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useWorkMode } from "@/context/WorkModeContext";
-import type { Category, Ingredient, PrinterConfig, Product, TaxGroup } from "@/types";
+import type { Category, Ingredient, ModifierGroup, PrinterConfig, Product, TaxGroup } from "@/types";
 import { CURRENCY, PRODUCT_COLORS, formatCurrency } from "@/types";
+
+type ModifierOptionDraft = { name: string; priceAdjustment: number };
+type ModifierGroupDraft = { id?: string; name: string; required: boolean; maxSelections: number; options: ModifierOptionDraft[] };
 
 export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
   const colors = useColors();
@@ -38,6 +41,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     loadProducts, createProduct, updateProduct, deleteProduct,
     loadTaxGroups, loadCategories, loadBusinessSettings,
     loadIngredients, loadRecipeIngredients, saveRecipeIngredients,
+    loadModifierGroups, saveModifierGroups,
   } = useDatabase();
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -75,6 +79,17 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
   const [recipeItems, setRecipeItems] = useState<{ ingredientId: string; ingredientName: string; quantity: number }[]>([]);
   const [recipeIngId, setRecipeIngId] = useState("");
   const [recipeIngQty, setRecipeIngQty] = useState("");
+
+  // Modifier groups state
+  const [modifierDrafts, setModifierDrafts] = useState<ModifierGroupDraft[]>([]);
+  const [showGroupForm, setShowGroupForm] = useState(false);
+  const [editingGroupIdx, setEditingGroupIdx] = useState<number | null>(null);
+  const [groupFormName, setGroupFormName] = useState("");
+  const [groupFormRequired, setGroupFormRequired] = useState(true);
+  const [groupFormMaxSel, setGroupFormMaxSel] = useState(1);
+  const [groupFormOptions, setGroupFormOptions] = useState<ModifierOptionDraft[]>([]);
+  const [optionDraftName, setOptionDraftName] = useState("");
+  const [optionDraftPrice, setOptionDraftPrice] = useState("0");
 
   const pickImage = async () => {
     try {
@@ -132,6 +147,49 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     return list;
   })();
 
+  const resetGroupForm = () => {
+    setGroupFormName(""); setGroupFormRequired(true); setGroupFormMaxSel(1);
+    setGroupFormOptions([]); setOptionDraftName(""); setOptionDraftPrice("0");
+    setEditingGroupIdx(null); setShowGroupForm(false);
+  };
+
+  const openGroupForm = (idx: number | null) => {
+    if (idx === null) {
+      setGroupFormName(""); setGroupFormRequired(true); setGroupFormMaxSel(1);
+      setGroupFormOptions([]); setOptionDraftName(""); setOptionDraftPrice("0");
+      setEditingGroupIdx(null);
+    } else {
+      const g = modifierDrafts[idx];
+      setGroupFormName(g.name); setGroupFormRequired(g.required); setGroupFormMaxSel(g.maxSelections);
+      setGroupFormOptions([...g.options]); setOptionDraftName(""); setOptionDraftPrice("0");
+      setEditingGroupIdx(idx);
+    }
+    setShowGroupForm(true);
+  };
+
+  const handleSaveGroupForm = () => {
+    if (!groupFormName.trim()) { Alert.alert("Required", "Enter a group name."); return; }
+    if (groupFormOptions.length === 0) { Alert.alert("Required", "Add at least one option."); return; }
+    const draft: ModifierGroupDraft = {
+      name: groupFormName.trim(), required: groupFormRequired,
+      maxSelections: groupFormMaxSel, options: groupFormOptions,
+    };
+    if (editingGroupIdx === null) {
+      setModifierDrafts((prev) => [...prev, draft]);
+    } else {
+      setModifierDrafts((prev) => prev.map((g, i) => i === editingGroupIdx ? draft : g));
+    }
+    resetGroupForm();
+  };
+
+  const handleAddOptionDraft = () => {
+    const n = optionDraftName.trim();
+    if (!n) return;
+    const price = parseFloat(optionDraftPrice);
+    setGroupFormOptions((prev) => [...prev, { name: n, priceAdjustment: isNaN(price) ? 0 : price }]);
+    setOptionDraftName(""); setOptionDraftPrice("0");
+  };
+
   const openAdd = () => {
     setEditingProduct(null);
     setName(""); setCategory(categoryOptions[0] ?? ""); setPrice(""); setDescription("");
@@ -141,6 +199,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     setPriceChangeAllowed(false); setVatInclusive(false);
     setDurationMinutes("");
     setRecipeItems([]); setRecipeIngId(""); setRecipeIngQty("");
+    setModifierDrafts([]); resetGroupForm();
     setModalVisible(true);
   };
 
@@ -155,9 +214,17 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     setPriceChangeAllowed(!!product.priceChangeAllowed);
     setVatInclusive(!!product.vatInclusive);
     setDurationMinutes(product.durationMinutes != null ? String(product.durationMinutes) : "");
-    const items = await loadRecipeIngredients(product.id);
+    const [items, groups] = await Promise.all([
+      loadRecipeIngredients(product.id),
+      loadModifierGroups(product.id),
+    ]);
     setRecipeItems(items.map((ri) => ({ ingredientId: ri.ingredientId, ingredientName: ri.ingredientName ?? "", quantity: ri.quantity })));
     setRecipeIngId(""); setRecipeIngQty("");
+    setModifierDrafts(groups.map((g) => ({
+      id: g.id, name: g.name, required: g.required, maxSelections: g.maxSelections,
+      options: g.options.map((o) => ({ name: o.name, priceAdjustment: o.priceAdjustment })),
+    })));
+    resetGroupForm();
     setModalVisible(true);
   };
 
@@ -210,6 +277,16 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
       ingredientName: ri.ingredientName,
       quantity: ri.quantity,
     })));
+    if (!isSaloon) {
+      await saveModifierGroups(
+        productId,
+        modifierDrafts.map((g, i) => ({
+          productId, name: g.name, required: g.required,
+          maxSelections: g.maxSelections, minSelections: g.required ? 1 : 0, sortOrder: i,
+        })),
+        modifierDrafts.map((g) => g.options.map((o, j) => ({ groupIdx: 0, name: o.name, priceAdjustment: o.priceAdjustment, sortOrder: j }))),
+      );
+    }
     setModalVisible(false);
     await fetchProducts();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -472,6 +549,151 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
                 <TouchableOpacity onPress={() => setBarcode("")} style={{ marginLeft: "auto" }}><Feather name="x" size={13} color={colors.mutedForeground} /></TouchableOpacity>
               </View>
             ) : null}
+
+            {!isSaloon && (
+              <View style={[styles.ingredientSection, { borderColor: colors.border, borderRadius: colors.radius, marginTop: 24 }]}>
+                <View style={styles.ingredientHeader}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <View style={[styles.ingredientIconWrap, { backgroundColor: "#E67E22" + "18" }]}>
+                      <Feather name="sliders" size={14} color="#E67E22" />
+                    </View>
+                    <Text style={[styles.ingredientTitle, { color: colors.foreground }]}>Modifier Groups</Text>
+                  </View>
+                  <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{modifierDrafts.length} group{modifierDrafts.length !== 1 ? "s" : ""}</Text>
+                </View>
+
+                {modifierDrafts.length > 0 && (
+                  <View style={{ paddingHorizontal: 12 }}>
+                    {modifierDrafts.map((g, idx) => (
+                      <View key={idx} style={[styles.recipeItemRow, { borderColor: colors.border }]}>
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: "600" }}>{g.name}</Text>
+                            <View style={{ backgroundColor: g.required ? colors.primary + "20" : colors.secondary, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                              <Text style={{ color: g.required ? colors.primary : colors.mutedForeground, fontSize: 10, fontWeight: "600" }}>{g.required ? "Required" : "Optional"}</Text>
+                            </View>
+                            <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>{g.maxSelections === 1 ? "Single" : "Multi"}</Text>
+                          </View>
+                          <Text style={{ color: colors.mutedForeground, fontSize: 11, marginTop: 2 }} numberOfLines={1}>
+                            {g.options.map((o) => o.name).join(", ")}
+                          </Text>
+                        </View>
+                        <View style={{ flexDirection: "row", gap: 12 }}>
+                          <TouchableOpacity onPress={() => openGroupForm(idx)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                            <Feather name="edit-2" size={14} color={colors.primary} />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => setModifierDrafts((prev) => prev.filter((_, i) => i !== idx))} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                            <Feather name="trash-2" size={14} color={colors.destructive} />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {!showGroupForm ? (
+                  <TouchableOpacity
+                    onPress={() => openGroupForm(null)}
+                    style={[styles.addIngBtn, { borderColor: colors.border, borderRadius: colors.radius }]}
+                  >
+                    <Feather name="plus" size={14} color="#E67E22" />
+                    <Text style={{ color: "#E67E22", fontSize: 13, fontWeight: "600", marginLeft: 6 }}>Add Group</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={{ padding: 12 }}>
+                    <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Group Name</Text>
+                    <TextInput
+                      value={groupFormName}
+                      onChangeText={setGroupFormName}
+                      placeholder="e.g. Size, Add-ons, Extras"
+                      placeholderTextColor={colors.mutedForeground}
+                      style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
+                    />
+
+                    <View style={[styles.toggleRow, { borderColor: colors.border, borderRadius: colors.radius }]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.toggleLabel, { color: colors.foreground }]}>Required</Text>
+                        <Text style={[styles.toggleHint, { color: colors.mutedForeground }]}>Customer must choose from this group</Text>
+                      </View>
+                      <Switch value={groupFormRequired} onValueChange={setGroupFormRequired} />
+                    </View>
+
+                    <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Selection Type</Text>
+                    <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+                      <TouchableOpacity
+                        onPress={() => setGroupFormMaxSel(1)}
+                        style={[styles.chip, { flex: 1, justifyContent: "center", backgroundColor: groupFormMaxSel === 1 ? colors.primary : colors.secondary, borderColor: groupFormMaxSel === 1 ? colors.primary : colors.border, borderRadius: colors.radius }]}
+                      >
+                        <Text style={{ color: groupFormMaxSel === 1 ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 12 }}>Single choice</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => setGroupFormMaxSel(99)}
+                        style={[styles.chip, { flex: 1, justifyContent: "center", backgroundColor: groupFormMaxSel > 1 ? colors.primary : colors.secondary, borderColor: groupFormMaxSel > 1 ? colors.primary : colors.border, borderRadius: colors.radius }]}
+                      >
+                        <Text style={{ color: groupFormMaxSel > 1 ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 12 }}>Multi-select</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {groupFormOptions.length > 0 && (
+                      <View style={{ marginBottom: 8 }}>
+                        {groupFormOptions.map((opt, i) => (
+                          <View key={i} style={[styles.recipeItemRow, { borderColor: colors.border }]}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: "600" }}>{opt.name}</Text>
+                              <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{opt.priceAdjustment === 0 ? "Free" : `${opt.priceAdjustment > 0 ? "+" : ""}${CURRENCY} ${Math.abs(opt.priceAdjustment).toFixed(2)}`}</Text>
+                            </View>
+                            <TouchableOpacity onPress={() => setGroupFormOptions((prev) => prev.filter((_, j) => j !== i))} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                              <Feather name="x" size={14} color={colors.destructive} />
+                            </TouchableOpacity>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+
+                    <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+                      <TextInput
+                        value={optionDraftName}
+                        onChangeText={setOptionDraftName}
+                        placeholder="Option name"
+                        placeholderTextColor={colors.mutedForeground}
+                        style={[styles.input, { flex: 2, margin: 0, backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
+                        onSubmitEditing={handleAddOptionDraft}
+                        returnKeyType="done"
+                      />
+                      <TextInput
+                        value={optionDraftPrice}
+                        onChangeText={setOptionDraftPrice}
+                        placeholder="±0.00"
+                        placeholderTextColor={colors.mutedForeground}
+                        keyboardType="decimal-pad"
+                        style={[styles.input, { width: 70, margin: 0, backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
+                      />
+                      <TouchableOpacity
+                        onPress={handleAddOptionDraft}
+                        style={{ backgroundColor: "#E67E22", paddingHorizontal: 12, borderRadius: colors.radius, justifyContent: "center" }}
+                      >
+                        <Feather name="plus" size={16} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
+                      <TouchableOpacity
+                        onPress={resetGroupForm}
+                        style={{ flex: 1, padding: 10, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, alignItems: "center" }}
+                      >
+                        <Text style={{ color: colors.mutedForeground, fontWeight: "600" }}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={handleSaveGroupForm}
+                        style={{ flex: 2, padding: 10, borderRadius: colors.radius, backgroundColor: colors.primary, alignItems: "center" }}
+                      >
+                        <Text style={{ color: "#fff", fontWeight: "700" }}>{editingGroupIdx === null ? "Add Group" : "Update Group"}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
 
             <View style={[styles.ingredientSection, { borderColor: colors.border, borderRadius: colors.radius, marginTop: 24 }]}>
               <View style={styles.ingredientHeader}>

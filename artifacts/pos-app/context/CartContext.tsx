@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useMemo, useReducer, useState } from "react";
-import type { CartItem, Product } from "@/types";
+import type { CartItem, Product, SelectedModifier } from "@/types";
 import { VAT_RATE } from "@/types";
 
 export interface HeldOrderInfo {
@@ -9,13 +9,18 @@ export interface HeldOrderInfo {
   orderType?: "dine-in" | "takeaway" | "delivery";
 }
 
+/** Returns the line key for a cart item: lineId when present (modifier items), product.id otherwise. */
+export function cartLineKey(item: CartItem): string {
+  return item.lineId ?? item.product.id;
+}
+
 type CartAction =
-  | { type: "ADD_ITEM"; product: Product; taxRate?: number }
-  | { type: "REMOVE_ITEM"; productId: string }
-  | { type: "UPDATE_QUANTITY"; productId: string; quantity: number }
-  | { type: "SET_ITEM_DISCOUNT"; productId: string; discountType?: "percentage" | "fixed"; discountValue?: number }
-  | { type: "SET_ITEM_PRICE"; productId: string; price: number }
-  | { type: "SET_ITEM_STYLIST"; productId: string; stylistId?: string; stylistName?: string }
+  | { type: "ADD_ITEM"; product: Product; taxRate?: number; selectedModifiers?: SelectedModifier[]; lineId?: string }
+  | { type: "REMOVE_ITEM"; itemKey: string }
+  | { type: "UPDATE_QUANTITY"; itemKey: string; quantity: number }
+  | { type: "SET_ITEM_DISCOUNT"; itemKey: string; discountType?: "percentage" | "fixed"; discountValue?: number }
+  | { type: "SET_ITEM_PRICE"; itemKey: string; price: number }
+  | { type: "SET_ITEM_STYLIST"; itemKey: string; stylistId?: string; stylistName?: string }
   | { type: "RESTORE"; items: CartItem[] }
   | { type: "CLEAR" };
 
@@ -35,19 +40,25 @@ interface CartContextValue {
   quantityMap: Record<string, number>;
   heldOrderInfo: HeldOrderInfo | null;
   addItem: (product: Product, taxRate?: number) => void;
-  removeItem: (productId: string) => void;
-  updateQuantity: (productId: string, quantity: number) => void;
-  setItemDiscount: (productId: string, discountType?: "percentage" | "fixed", discountValue?: number) => void;
-  setItemPrice: (productId: string, price: number) => void;
-  setItemStylist: (productId: string, stylistId?: string, stylistName?: string) => void;
+  addItemWithModifiers: (product: Product, taxRate: number | undefined, selectedModifiers: SelectedModifier[]) => void;
+  removeItem: (itemKey: string) => void;
+  updateQuantity: (itemKey: string, quantity: number) => void;
+  setItemDiscount: (itemKey: string, discountType?: "percentage" | "fixed", discountValue?: number) => void;
+  setItemPrice: (itemKey: string, price: number) => void;
+  setItemStylist: (itemKey: string, stylistId?: string, stylistName?: string) => void;
   restoreCart: (items: CartItem[], heldInfo?: HeldOrderInfo) => void;
   clearCart: () => void;
   getItemQuantity: (productId: string) => number;
 }
 
+/** Effective unit price including modifier adjustments. */
+function effectiveUnitPrice(item: CartItem): number {
+  return item.product.price + (item.modifierTotal ?? 0);
+}
+
 function computeItemDiscount(item: CartItem): number {
   if (!item.discountType || !item.discountValue) return 0;
-  const lineBase = item.product.price * item.quantity;
+  const lineBase = effectiveUnitPrice(item) * item.quantity;
   if (item.discountType === "percentage") {
     return Math.min(lineBase, lineBase * item.discountValue / 100);
   }
@@ -62,7 +73,8 @@ function computeItemDiscount(item: CartItem): number {
  * line). When off, VAT is added on top.
  */
 export function computeLineNetVat(item: CartItem): { net: number; vat: number; gross: number } {
-  const lineBase = item.product.price * item.quantity;
+  const unitPrice = effectiveUnitPrice(item);
+  const lineBase = unitPrice * item.quantity;
   const disc = item.discountAmount ?? 0;
   const lineGross = Math.max(0, lineBase - disc);
   const rate = Math.max(0, item.taxRate ?? VAT_RATE);
@@ -77,28 +89,46 @@ export function computeLineNetVat(item: CartItem): { net: number; vat: number; g
 function cartReducer(state: CartState, action: CartAction): CartState {
   switch (action.type) {
     case "ADD_ITEM": {
-      const existing = state.items.find((i) => i.product.id === action.product.id);
-      if (existing) {
-        return {
-          items: state.items.map((i) => {
-            if (i.product.id !== action.product.id) return i;
-            const updated = { ...i, quantity: i.quantity + 1 };
-            updated.discountAmount = computeItemDiscount(updated);
-            return updated;
-          }),
-        };
+      const incomingLineId = action.lineId;
+      const hasModifiers = !!incomingLineId;
+
+      if (!hasModifiers) {
+        // Legacy behavior: merge by product.id for modifier-free items.
+        const existing = state.items.find((i) => !i.lineId && i.product.id === action.product.id);
+        if (existing) {
+          return {
+            items: state.items.map((i) => {
+              if (i.product.id !== action.product.id || i.lineId) return i;
+              const updated = { ...i, quantity: i.quantity + 1 };
+              updated.discountAmount = computeItemDiscount(updated);
+              return updated;
+            }),
+          };
+        }
+        return { items: [...state.items, { product: action.product, quantity: 1, taxRate: action.taxRate }] };
       }
-      return { items: [...state.items, { product: action.product, quantity: 1, taxRate: action.taxRate }] };
+
+      // Modifier item: always a new unique line — never merges.
+      const modifierTotal = (action.selectedModifiers ?? []).reduce((s, m) => s + m.priceAdjustment, 0);
+      const newItem: CartItem = {
+        product: action.product,
+        quantity: 1,
+        taxRate: action.taxRate,
+        selectedModifiers: action.selectedModifiers,
+        modifierTotal,
+        lineId: incomingLineId,
+      };
+      return { items: [...state.items, newItem] };
     }
     case "REMOVE_ITEM":
-      return { items: state.items.filter((i) => i.product.id !== action.productId) };
+      return { items: state.items.filter((i) => cartLineKey(i) !== action.itemKey) };
     case "UPDATE_QUANTITY": {
       if (action.quantity <= 0) {
-        return { items: state.items.filter((i) => i.product.id !== action.productId) };
+        return { items: state.items.filter((i) => cartLineKey(i) !== action.itemKey) };
       }
       return {
         items: state.items.map((i) => {
-          if (i.product.id !== action.productId) return i;
+          if (cartLineKey(i) !== action.itemKey) return i;
           const updated = { ...i, quantity: action.quantity };
           updated.discountAmount = computeItemDiscount(updated);
           return updated;
@@ -108,7 +138,7 @@ function cartReducer(state: CartState, action: CartAction): CartState {
     case "SET_ITEM_DISCOUNT": {
       return {
         items: state.items.map((i) => {
-          if (i.product.id !== action.productId) return i;
+          if (cartLineKey(i) !== action.itemKey) return i;
           const updated = { ...i, discountType: action.discountType, discountValue: action.discountValue };
           updated.discountAmount = computeItemDiscount(updated);
           return updated;
@@ -116,12 +146,9 @@ function cartReducer(state: CartState, action: CartAction): CartState {
       };
     }
     case "SET_ITEM_PRICE": {
-      // Clone the product so the override is scoped to THIS cart line —
-      // the underlying catalog row is never mutated. Recompute the
-      // existing item discount against the new price.
       return {
         items: state.items.map((i) => {
-          if (i.product.id !== action.productId) return i;
+          if (cartLineKey(i) !== action.itemKey) return i;
           const newPrice = Math.max(0, action.price);
           const updated: CartItem = {
             ...i,
@@ -135,7 +162,7 @@ function cartReducer(state: CartState, action: CartAction): CartState {
     case "SET_ITEM_STYLIST":
       return {
         items: state.items.map((i) =>
-          i.product.id !== action.productId
+          cartLineKey(i) !== action.itemKey
             ? i
             : { ...i, stylistId: action.stylistId, stylistName: action.stylistName },
         ),
@@ -160,12 +187,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     [state.items]
   );
 
-  // `subtotal` is the gross sum (price × qty before any discount). Kept
-  // as a display-only value for the cart UI's "Subtotal" line so users
-  // see the total they typed in. The accounting subtotal (net of VAT)
-  // is computed in saveSale() via computeLineNetVat per line.
+  // `subtotal` is the gross sum (effective price × qty before any discount).
   const subtotal = useMemo(
-    () => state.items.reduce((sum, i) => sum + i.product.price * i.quantity, 0),
+    () => state.items.reduce((sum, i) => sum + effectiveUnitPrice(i) * i.quantity, 0),
     [state.items]
   );
 
@@ -178,14 +202,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const perLine = useMemo(() => state.items.map(computeLineNetVat), [state.items]);
   const vatAmount = useMemo(() => perLine.reduce((s, p) => s + p.vat, 0), [perLine]);
-  // Net amount excl. VAT, after per-line item discounts. For vatInclusive items
-  // this is price/1.05; for vatExclusive items it equals the line gross after discount.
-  // Satisfies: netSubtotal + vatAmount === total (always, for any mix of vatInclusive/exclusive).
   const netSubtotal = useMemo(() => perLine.reduce((s, p) => s + p.net, 0), [perLine]);
 
-  // For inclusive items the gross already contains VAT, so total =
-  // gross. For exclusive items, total = net + vat = gross + vat. Doing
-  // it per-line keeps mixed carts correct.
   const total = useMemo(
     () => state.items.reduce((sum, i, idx) => {
       const line = perLine[idx];
@@ -194,24 +212,38 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     [state.items, perLine]
   );
 
+  // quantityMap keys on product.id so ProductCard badges show total units across
+  // all modifier variants of the same product.
   const quantityMap = useMemo(() => {
     const map: Record<string, number> = {};
     for (const item of state.items) {
-      map[item.product.id] = item.quantity;
+      map[item.product.id] = (map[item.product.id] ?? 0) + item.quantity;
     }
     return map;
   }, [state.items]);
 
-  const addItem = useCallback((product: Product, taxRate?: number) => dispatch({ type: "ADD_ITEM", product, taxRate }), []);
-  const removeItem = useCallback((productId: string) => dispatch({ type: "REMOVE_ITEM", productId }), []);
-  const updateQuantity = useCallback((productId: string, quantity: number) =>
-    dispatch({ type: "UPDATE_QUANTITY", productId, quantity }), []);
-  const setItemDiscount = useCallback((productId: string, discountType?: "percentage" | "fixed", discountValue?: number) =>
-    dispatch({ type: "SET_ITEM_DISCOUNT", productId, discountType, discountValue }), []);
-  const setItemPrice = useCallback((productId: string, price: number) =>
-    dispatch({ type: "SET_ITEM_PRICE", productId, price }), []);
-  const setItemStylist = useCallback((productId: string, stylistId?: string, stylistName?: string) =>
-    dispatch({ type: "SET_ITEM_STYLIST", productId, stylistId, stylistName }), []);
+  const addItem = useCallback((product: Product, taxRate?: number) =>
+    dispatch({ type: "ADD_ITEM", product, taxRate }), []);
+
+  const addItemWithModifiers = useCallback((
+    product: Product,
+    taxRate: number | undefined,
+    selectedModifiers: SelectedModifier[],
+  ) => {
+    const lineId = `${product.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    dispatch({ type: "ADD_ITEM", product, taxRate, selectedModifiers, lineId });
+  }, []);
+
+  const removeItem = useCallback((itemKey: string) =>
+    dispatch({ type: "REMOVE_ITEM", itemKey }), []);
+  const updateQuantity = useCallback((itemKey: string, quantity: number) =>
+    dispatch({ type: "UPDATE_QUANTITY", itemKey, quantity }), []);
+  const setItemDiscount = useCallback((itemKey: string, discountType?: "percentage" | "fixed", discountValue?: number) =>
+    dispatch({ type: "SET_ITEM_DISCOUNT", itemKey, discountType, discountValue }), []);
+  const setItemPrice = useCallback((itemKey: string, price: number) =>
+    dispatch({ type: "SET_ITEM_PRICE", itemKey, price }), []);
+  const setItemStylist = useCallback((itemKey: string, stylistId?: string, stylistName?: string) =>
+    dispatch({ type: "SET_ITEM_STYLIST", itemKey, stylistId, stylistName }), []);
   const restoreCart = useCallback((items: CartItem[], heldInfo?: HeldOrderInfo) => {
     dispatch({ type: "RESTORE", items });
     setHeldOrderInfo(heldInfo ?? null);
@@ -225,9 +257,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(() => ({
     items: state.items, itemCount, subtotal, netSubtotal, itemDiscountTotal, effectiveSubtotal,
-    vatAmount, total, quantityMap, heldOrderInfo, addItem, removeItem, updateQuantity, setItemDiscount, setItemPrice, setItemStylist, restoreCart, clearCart, getItemQuantity,
+    vatAmount, total, quantityMap, heldOrderInfo,
+    addItem, addItemWithModifiers, removeItem, updateQuantity,
+    setItemDiscount, setItemPrice, setItemStylist,
+    restoreCart, clearCart, getItemQuantity,
   }), [state.items, itemCount, subtotal, netSubtotal, itemDiscountTotal, effectiveSubtotal,
-    vatAmount, total, quantityMap, heldOrderInfo, addItem, removeItem, updateQuantity, setItemDiscount, setItemPrice, setItemStylist, restoreCart, clearCart, getItemQuantity]);
+    vatAmount, total, quantityMap, heldOrderInfo,
+    addItem, addItemWithModifiers, removeItem, updateQuantity,
+    setItemDiscount, setItemPrice, setItemStylist,
+    restoreCart, clearCart, getItemQuantity]);
 
   return (
     <CartContext.Provider value={value}>

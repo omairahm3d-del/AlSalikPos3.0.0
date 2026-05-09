@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react";
 import type {
   Appointment, BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment, Customer,
-  Expense, HeldOrder, Ingredient, OrderType, PosTable, Product,
+  Expense, HeldOrder, Ingredient, ModifierGroup, OrderType, PosTable, Product,
   RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
 } from "@/types";
@@ -266,6 +266,20 @@ export interface DatabaseContextValue {
   loadRecipeIngredients: (productId: string) => Promise<RecipeIngredient[]>;
   saveRecipeIngredients: (productId: string, items: Omit<RecipeIngredient, "id">[]) => Promise<void>;
   deleteRecipeIngredients: (productId: string) => Promise<void>;
+
+  // ---- Restaurant modifier groups ----
+  /** Load all modifier groups (with their options) for ONE product. */
+  loadModifierGroups: (productId: string) => Promise<ModifierGroup[]>;
+  /**
+   * Load modifier groups for ALL products in one call. Returns a flat array;
+   * callers typically reduce to a Record<productId, ModifierGroup[]>.
+   */
+  loadAllModifierGroups: () => Promise<ModifierGroup[]>;
+  /**
+   * Replace all modifier groups (and their options) for a product.
+   * Deletes existing rows first, then inserts the new set.
+   */
+  saveModifierGroups: (productId: string, groups: Omit<ModifierGroup, "id" | "options">[], options: { groupIdx: number; name: string; priceAdjustment: number; sortOrder: number }[][]) => Promise<void>;
 
   exportData: () => Promise<BackupData>;
   importData: (data: BackupData) => Promise<void>;

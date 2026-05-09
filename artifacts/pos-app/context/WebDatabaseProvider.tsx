@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback } from "react";
 import type {
   Appointment, BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment, Customer,
-  Expense, HeldOrder, HeldOrderItem, Ingredient, PosTable, Product,
+  Expense, HeldOrder, HeldOrderItem, Ingredient, ModifierGroup, PosTable, Product,
   RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
 } from "@/types";
@@ -22,6 +22,8 @@ const K = {
   categories: "@pos_categories", riders: "@pos_riders",
   heldOrders: "@pos_held_orders", ingredients: "@pos_ingredients",
   recipeIngredients: "@pos_recipe_ingredients",
+  modifierGroups: "@pos_modifier_groups",
+  modifierOptions: "@pos_modifier_options",
   syncQueue: "@pos_sync_queue",
   catalogOutbox: "@pos_catalog_outbox",
   expenses: "@pos_expenses",
@@ -272,15 +274,20 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       splitPayments,
     };
 
-    const saleItems: SaleItem[] = items.map((item) => ({
-      id: generateId(), saleId, productId: item.product.id,
-      productName: item.product.name, productPrice: item.product.price,
-      quantity: item.quantity,
-      lineTotal: item.product.price * item.quantity - (item.discountAmount ?? 0),
-      discountAmount: item.discountAmount ?? 0,
-      stylistId: item.stylistId,
-      stylistName: item.stylistName,
-    }));
+    const saleItems: SaleItem[] = items.map((item) => {
+      const effectiveUnitPrice = item.product.price + (item.modifierTotal ?? 0);
+      return {
+        id: generateId(), saleId, productId: item.product.id,
+        productName: item.product.name, productPrice: item.product.price,
+        quantity: item.quantity,
+        lineTotal: effectiveUnitPrice * item.quantity - (item.discountAmount ?? 0),
+        discountAmount: item.discountAmount ?? 0,
+        stylistId: item.stylistId,
+        stylistName: item.stylistName,
+        modifiers: item.selectedModifiers?.length ? item.selectedModifiers : undefined,
+        modifierTotal: item.modifierTotal ?? undefined,
+      };
+    });
 
     await setJson(K.sales, [sale, ...existing]);
     const existingItems = await getJson<SaleItem[]>(K.saleItems, []);
@@ -917,6 +924,42 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     await setJson(K.recipeIngredients, all.filter((r) => r.productId !== productId));
   }, []);
 
+  const loadModifierGroups = useCallback(async (productId: string): Promise<ModifierGroup[]> => {
+    const groups = await getJson<ModifierGroup[]>(K.modifierGroups, []);
+    return groups.filter((g) => g.productId === productId).sort((a, b) => a.sortOrder - b.sortOrder);
+  }, []);
+
+  const loadAllModifierGroups = useCallback(async (): Promise<ModifierGroup[]> => {
+    return getJson<ModifierGroup[]>(K.modifierGroups, []);
+  }, []);
+
+  const saveModifierGroups = useCallback(async (
+    productId: string,
+    groups: Omit<ModifierGroup, "id" | "options">[],
+    options: { groupIdx: number; name: string; priceAdjustment: number; sortOrder: number }[][],
+  ): Promise<void> => {
+    const all = await getJson<ModifierGroup[]>(K.modifierGroups, []);
+    const retained = all.filter((g) => g.productId !== productId);
+    const newGroups: ModifierGroup[] = groups.map((g, i) => ({
+      ...g,
+      id: generateId(),
+      options: (options[i] ?? []).map((opt) => ({
+        id: generateId(),
+        groupId: "",
+        name: opt.name,
+        priceAdjustment: opt.priceAdjustment,
+        sortOrder: opt.sortOrder,
+      })),
+    }));
+    // Fix groupId references in options after id assignment
+    for (const g of newGroups) {
+      for (const o of g.options) {
+        o.groupId = g.id;
+      }
+    }
+    await setJson(K.modifierGroups, [...retained, ...newGroups]);
+  }, []);
+
   const exportData = useCallback(async (): Promise<BackupData> => {
     const tables: Record<string, unknown[]> = {};
     const meta: Record<string, unknown> = {};
@@ -1417,6 +1460,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       saveHeldOrder, loadHeldOrders, loadHeldOrderByTable, deleteHeldOrder, updateKdsStatus,
       loadIngredients, createIngredient, updateIngredient, deleteIngredient, updateIngredientStock,
       loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,
+      loadModifierGroups, loadAllModifierGroups, saveModifierGroups,
       exportData, importData, clearData,
       loadExpenses, createExpense, deleteExpense,
       enqueueSync, reconcilePendingSync, loadSyncBatch, markSyncResults, countPendingSync,

@@ -68,11 +68,18 @@ export function generateReceiptText(
   lines.push(sep);
   for (const it of items) {
     const name = asciiSafe(it.productName);
+    const effectivePrice = it.productPrice + (it.modifierTotal ?? 0);
     if (name.length <= nameWidth) {
-      lines.push(`${pad(name, nameWidth)} ${padRight(String(Math.abs(it.quantity)), 3)} ${padRight(it.productPrice.toFixed(2), 6)} ${padRight(it.lineTotal.toFixed(2), 6)}`);
+      lines.push(`${pad(name, nameWidth)} ${padRight(String(Math.abs(it.quantity)), 3)} ${padRight(effectivePrice.toFixed(2), 6)} ${padRight(it.lineTotal.toFixed(2), 6)}`);
     } else {
       lines.push(name);
-      lines.push(`${pad("", nameWidth)} ${padRight(String(Math.abs(it.quantity)), 3)} ${padRight(it.productPrice.toFixed(2), 6)} ${padRight(it.lineTotal.toFixed(2), 6)}`);
+      lines.push(`${pad("", nameWidth)} ${padRight(String(Math.abs(it.quantity)), 3)} ${padRight(effectivePrice.toFixed(2), 6)} ${padRight(it.lineTotal.toFixed(2), 6)}`);
+    }
+    if (it.modifiers && it.modifiers.length > 0) {
+      for (const m of it.modifiers) {
+        const adj = m.priceAdjustment !== 0 ? ` (${m.priceAdjustment > 0 ? "+" : ""}${m.priceAdjustment.toFixed(2)})` : "";
+        lines.push(`  > ${asciiSafe(m.optionName)}${adj}`);
+      }
     }
     if ((it.discountAmount ?? 0) > 0) {
       lines.push(`  Discount: -${fmt(it.discountAmount!)}`);

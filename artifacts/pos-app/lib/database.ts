@@ -213,6 +213,26 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
       quantity REAL NOT NULL DEFAULT 1
     );
 
+    -- Restaurant modifier groups: named groups of options attached to a product.
+    CREATE TABLE IF NOT EXISTS modifier_groups (
+      id TEXT PRIMARY KEY,
+      product_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      required INTEGER NOT NULL DEFAULT 0,
+      min_selections INTEGER NOT NULL DEFAULT 0,
+      max_selections INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    -- Restaurant modifier options: individual choices within a modifier group.
+    CREATE TABLE IF NOT EXISTS modifier_options (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      price_adjustment REAL NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
     -- Phase 3b: outbound sync queue. One row per (entity_type, entity_id) that
     -- still needs to be pushed to the cloud. The actual data lives in the
     -- existing tables (sales, sale_items, ...); this is just bookkeeping.
@@ -301,6 +321,8 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     "ALTER TABLE sale_items ADD COLUMN stylist_name TEXT DEFAULT NULL",
     // KDS: kitchen display status per held order.
     "ALTER TABLE held_orders ADD COLUMN kds_status TEXT NOT NULL DEFAULT 'new'",
+    // Restaurant modifiers: snapshot of selected modifier options stored per sale line.
+    "ALTER TABLE sale_items ADD COLUMN modifiers_json TEXT DEFAULT NULL",
   ];
 
   // Sync event log. Append-only ring buffer (capped to 200 rows by the

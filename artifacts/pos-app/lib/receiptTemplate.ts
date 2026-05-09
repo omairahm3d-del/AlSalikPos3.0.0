@@ -56,13 +56,24 @@ export function generateReceiptHTML(
 
   const itemRows = items
     .map(
-      (item) => `
+      (item) => {
+        const modifierLines = item.modifiers && item.modifiers.length > 0
+          ? item.modifiers.map((m) =>
+            `<br/><small style="color:#555;font-size:${fs.body - 2}px;margin-left:8px;">· ${m.optionName}${m.priceAdjustment !== 0 ? ` (${m.priceAdjustment > 0 ? "+" : ""}${fmt(m.priceAdjustment)})` : ""}</small>`
+          ).join("")
+          : "";
+        const stylistLine = item.stylistName
+          ? `<br/><small style="color:#555;font-size:${fs.body - 2}px;">✂ ${item.stylistName}</small>`
+          : "";
+        const effectivePrice = item.productPrice + (item.modifierTotal ?? 0);
+        return `
       <tr>
-        <td style="padding:4px 0;text-align:left;">${item.productName}${item.stylistName ? `<br/><small style="color:#555;font-size:${fs.body - 2}px;">✂ ${item.stylistName}</small>` : ""}</td>
+        <td style="padding:4px 0;text-align:left;">${item.productName}${modifierLines}${stylistLine}</td>
         <td style="padding:4px 8px;text-align:center;">${Math.abs(item.quantity)}</td>
-        <td style="padding:4px 8px;text-align:right;">${fmt(item.productPrice)}</td>
+        <td style="padding:4px 8px;text-align:right;">${fmt(effectivePrice)}</td>
         <td style="padding:4px 0;text-align:right;">${fmt(item.lineTotal)}${(item.discountAmount ?? 0) > 0 ? `<br/><small style="color:#000;">-${fmt(item.discountAmount!)}</small>` : ""}</td>
-      </tr>`
+      </tr>`;
+      }
     )
     .join("");
 
