@@ -559,7 +559,7 @@ export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
 };
 
 export const DEFAULT_KOT_SETTINGS: KOTSettings = {
-  enabled: true,
+  enabled: false,
   showPrice: false,
   showNotes: true,
   fontSize: "medium",

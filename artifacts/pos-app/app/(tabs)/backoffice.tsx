@@ -1614,7 +1614,7 @@ export default function BackOfficeScreen() {
         </View>
 
         {renderSwitch("Auto-print Receipt on Sale", printerSettings.autoPrintReceipt, (v) => setPrinterSettings({ ...printerSettings, autoPrintReceipt: v }))}
-        {renderSwitch("Auto-print Kitchen Ticket", printerSettings.autoPrintKOT, (v) => setPrinterSettings({ ...printerSettings, autoPrintKOT: v }))}
+        {!isSaloon && renderSwitch("Auto-print Kitchen Ticket", printerSettings.autoPrintKOT, (v) => setPrinterSettings({ ...printerSettings, autoPrintKOT: v }))}
 
         <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 16 }]}>Print Method</Text>
         <View style={s.chipRow}>
@@ -1682,23 +1682,27 @@ export default function BackOfficeScreen() {
               ))}
             </ScrollView>
 
-            <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 16 }]}>Default KOT Printer</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}>
-              <TouchableOpacity
-                onPress={() => setPrinterSettings({ ...printerSettings, defaultKOTPrinterId: "" })}
-                style={[s.chip, { backgroundColor: !printerSettings.defaultKOTPrinterId ? colors.primary : colors.secondary, borderColor: !printerSettings.defaultKOTPrinterId ? colors.primary : colors.border, borderRadius: colors.radius, marginRight: 8 }]}
-              >
-                <Text style={{ color: !printerSettings.defaultKOTPrinterId ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 13 }}>None</Text>
-              </TouchableOpacity>
-              {printerList.filter((p) => p.type === "kitchen" || p.type === "both").map((p) => (
-                <TouchableOpacity key={p.id}
-                  onPress={() => setPrinterSettings({ ...printerSettings, defaultKOTPrinterId: p.id })}
-                  style={[s.chip, { backgroundColor: printerSettings.defaultKOTPrinterId === p.id ? colors.primary : colors.secondary, borderColor: printerSettings.defaultKOTPrinterId === p.id ? colors.primary : colors.border, borderRadius: colors.radius, marginRight: 8 }]}
-                >
-                  <Text style={{ color: printerSettings.defaultKOTPrinterId === p.id ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 13 }}>{p.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            {!isSaloon && (
+              <>
+                <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 16 }]}>Default KOT Printer</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}>
+                  <TouchableOpacity
+                    onPress={() => setPrinterSettings({ ...printerSettings, defaultKOTPrinterId: "" })}
+                    style={[s.chip, { backgroundColor: !printerSettings.defaultKOTPrinterId ? colors.primary : colors.secondary, borderColor: !printerSettings.defaultKOTPrinterId ? colors.primary : colors.border, borderRadius: colors.radius, marginRight: 8 }]}
+                  >
+                    <Text style={{ color: !printerSettings.defaultKOTPrinterId ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 13 }}>None</Text>
+                  </TouchableOpacity>
+                  {printerList.filter((p) => p.type === "kitchen" || p.type === "both").map((p) => (
+                    <TouchableOpacity key={p.id}
+                      onPress={() => setPrinterSettings({ ...printerSettings, defaultKOTPrinterId: p.id })}
+                      style={[s.chip, { backgroundColor: printerSettings.defaultKOTPrinterId === p.id ? colors.primary : colors.secondary, borderColor: printerSettings.defaultKOTPrinterId === p.id ? colors.primary : colors.border, borderRadius: colors.radius, marginRight: 8 }]}
+                    >
+                      <Text style={{ color: printerSettings.defaultKOTPrinterId === p.id ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 13 }}>{p.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            )}
           </>
         )}
 

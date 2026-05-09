@@ -275,7 +275,7 @@ export default function POSScreen() {
       // Print Kitchen Order Ticket(s) on HOLD only (not on bill/charge),
       // and only when KOT is enabled in settings. This is the workflow the
       // user wants: hold = order goes to the kitchen; bill = customer pays.
-      if (kotSettings.enabled) {
+      if (!isSaloon && kotSettings.enabled) {
         try {
           const ps = businessSettings?.printerSettings;
           const defaultKot = ps?.windowsKOTPrinterName || "";
@@ -317,7 +317,7 @@ export default function POSScreen() {
       setShowHoldTablePicker(false);
       setShowCart(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert("Order Held", `Order held on ${table.name}${kotSettings.enabled ? " · Kitchen ticket sent" : ""}`);
+      Alert.alert("Order Held", `Order held on ${table.name}${!isSaloon && kotSettings.enabled ? " · Kitchen ticket sent" : ""}`);
       await fetchData();
     } catch (e: any) {
       Alert.alert("Error", e.message || "Failed to hold order");
@@ -413,7 +413,7 @@ export default function POSScreen() {
       //     the kitchen in handleHoldOrder, so we skip to avoid duplicates.
       // All cases require kotSettings.enabled.
       const shouldPrintKOTOnCharge =
-        kotSettings.enabled &&
+        !isSaloon && kotSettings.enabled &&
         (orderType === "takeaway" || orderType === "delivery" || (orderType === "dine-in" && !heldOrderInfo));
       if (shouldPrintKOTOnCharge) {
         try {
