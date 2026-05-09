@@ -18,7 +18,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useStaff } from "@/context/StaffContext";
 import { useColors } from "@/hooks/useColors";
-import { ScreenWrapper } from "@/components/ScreenWrapper";
 import type { Expense } from "@/types";
 import { CURRENCY, formatCurrency } from "@/types";
 
@@ -109,7 +108,7 @@ export default function ExpensesScreen() {
   const total = expenses.reduce((s, e) => s + e.amount, 0);
 
   return (
-    <ScreenWrapper style={[s.root, { backgroundColor: colors.background, paddingTop: Platform.OS === "web" ? insets.top + 8 : insets.top }]}>
+    <View style={[s.root, { backgroundColor: colors.background, paddingTop: Platform.OS === "web" ? insets.top + 8 : insets.top }]}>
       <View style={[s.topBar, { borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Feather name="arrow-left" size={22} color={colors.foreground} />
@@ -209,7 +208,7 @@ export default function ExpensesScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </ScreenWrapper>
+    </View>
   );
 }
 

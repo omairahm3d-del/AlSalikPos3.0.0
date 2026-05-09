@@ -37,7 +37,7 @@ function AppContent() {
 
   return (
     <>
-      <Stack screenOptions={{ headerShown: false, animation: "none" }}>
+      <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       </Stack>
       <VirtualKeyboard />

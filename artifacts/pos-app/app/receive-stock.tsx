@@ -17,7 +17,6 @@ import { Stack, router } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
-import { ScreenWrapper } from "@/components/ScreenWrapper";
 import { useLicense } from "@/context/LicenseContext";
 import { useDatabase } from "@/context/DatabaseCore";
 import { posApi, type PosSupplier } from "@/lib/posPurchasing";
@@ -226,7 +225,6 @@ export default function ReceiveStockScreen() {
   }
 
   return (
-    <ScreenWrapper>
     <KeyboardAvoidingView
       style={[s.root, { backgroundColor: colors.background, paddingTop: insets.top }]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -436,7 +434,6 @@ export default function ReceiveStockScreen() {
         onPick={addProduct}
       />
     </KeyboardAvoidingView>
-    </ScreenWrapper>
   );
 }
 

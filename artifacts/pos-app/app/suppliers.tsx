@@ -20,7 +20,6 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
-import { ScreenWrapper } from "@/components/ScreenWrapper";
 import { useLicense } from "@/context/LicenseContext";
 import { useDatabase } from "@/context/DatabaseCore";
 import { posApi, type PosSupplier, type PosPurchaseRow } from "@/lib/posPurchasing";
@@ -438,7 +437,7 @@ export default function SuppliersScreen() {
   };
 
   return (
-    <ScreenWrapper style={[styles.root, { backgroundColor: colors.background }]}>
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
       <Stack.Screen
         options={{
           title: "Suppliers",
@@ -806,7 +805,7 @@ export default function SuppliersScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </ScreenWrapper>
+    </View>
   );
 }
 
