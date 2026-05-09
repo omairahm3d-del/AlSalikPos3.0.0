@@ -67,10 +67,41 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
   const handlePrint = async () => {
     if (!sale || !business) return;
     try {
-      const html = generateReceiptHTML(sale, items, business);
       const { printHtml } = await import("@/lib/printBridge");
       const ps = business.printerSettings;
-      const needRawText = ps?.rawTextMode || !!ps?.androidPrinterEnabled || !!ps?.sunmiEnabled || !!ps?.networkPrinterEnabled || !!ps?.bluetoothPrinterEnabled;
+      const isDirect = (ps?.printMethod ?? "system") === "direct";
+
+      if (isDirect) {
+        const { generateReceiptText } = await import("@/lib/textReceipt");
+        const rawText = generateReceiptText(sale, items, business);
+        if (Platform.OS === "web" && !window.electronPOS) {
+          const w = window.open("", "_blank");
+          if (w) {
+            w.document.write(`<html><head><title>Receipt</title><style>body{font-family:monospace;white-space:pre;font-size:13px;padding:16px;}</style></head><body>${rawText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</body></html>`);
+            w.document.close();
+            w.focus();
+            setTimeout(() => { w.print(); }, 400);
+          }
+          return;
+        }
+        await printHtml("", {
+          deviceName: ps?.windowsReceiptPrinterName || "",
+          paperWidth: ps?.paperWidth || "80mm",
+          rawMode: true,
+          rawText,
+          autoCut: true,
+          codepage: ps?.rawCodepage || "cp1252",
+          sunmiEnabled: !!ps?.sunmiEnabled,
+          androidDevicePath: ps?.androidPrinterEnabled ? (ps?.androidPrinterPath || "/dev/prnt") : undefined,
+          networkPrinterIp: ps?.networkPrinterEnabled ? ps?.networkPrinterIp : undefined,
+          networkPrinterPort: ps?.networkPrinterPort,
+          bluetoothAddress: ps?.bluetoothPrinterEnabled ? ps?.bluetoothPrinterAddress : undefined,
+        });
+        return;
+      }
+
+      const html = generateReceiptHTML(sale, items, business);
+      const needRawText = !!ps?.rawTextMode || !!ps?.androidPrinterEnabled || !!ps?.sunmiEnabled || !!ps?.networkPrinterEnabled || !!ps?.bluetoothPrinterEnabled;
       let rawText: string | undefined;
       if (needRawText) {
         const { generateReceiptText } = await import("@/lib/textReceipt");
@@ -80,40 +111,6 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
         deviceName: ps?.windowsReceiptPrinterName || "",
         paperWidth: ps?.paperWidth || "80mm",
         rawMode: !!ps?.rawTextMode,
-        rawText,
-        autoCut: ps?.autoCutPaper !== false,
-        codepage: ps?.rawCodepage || "cp1252",
-        sunmiEnabled: !!ps?.sunmiEnabled,
-        androidDevicePath: ps?.androidPrinterEnabled ? (ps?.androidPrinterPath || "/dev/prnt") : undefined,
-        networkPrinterIp: ps?.networkPrinterEnabled ? ps?.networkPrinterIp : undefined,
-        networkPrinterPort: ps?.networkPrinterPort,
-        bluetoothAddress: ps?.bluetoothPrinterEnabled ? ps?.bluetoothPrinterAddress : undefined,
-      });
-    } catch {
-    }
-  };
-
-  const handleTextPrint = async () => {
-    if (!sale || !business) return;
-    try {
-      const { generateReceiptText } = await import("@/lib/textReceipt");
-      const rawText = generateReceiptText(sale, items, business);
-      if (Platform.OS === "web") {
-        const w = window.open("", "_blank");
-        if (w) {
-          w.document.write(`<html><head><title>Receipt</title><style>body{font-family:monospace;white-space:pre;font-size:13px;padding:16px;}</style></head><body>${rawText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</body></html>`);
-          w.document.close();
-          w.focus();
-          setTimeout(() => { w.print(); }, 400);
-        }
-        return;
-      }
-      const { printHtml } = await import("@/lib/printBridge");
-      const ps = business.printerSettings;
-      await printHtml("", {
-        deviceName: ps?.windowsReceiptPrinterName || "",
-        paperWidth: ps?.paperWidth || "80mm",
-        rawMode: true,
         rawText,
         autoCut: ps?.autoCutPaper !== false,
         codepage: ps?.rawCodepage || "cp1252",
@@ -353,13 +350,6 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
                 <Text style={[styles.actionBtnText, { color: colors.foreground }]}>PDF</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                onPress={handleTextPrint}
-                style={[styles.actionBtn, { backgroundColor: colors.secondary, borderColor: colors.border, borderWidth: 1, borderRadius: colors.radius }]}
-              >
-                <Feather name="align-left" size={18} color={colors.foreground} />
-                <Text style={[styles.actionBtnText, { color: colors.foreground }]}>Text Print</Text>
-              </TouchableOpacity>
             </View>
           </ScrollView>
         )}

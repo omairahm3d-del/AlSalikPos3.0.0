@@ -1172,6 +1172,34 @@ export default function BackOfficeScreen() {
     <View style={s.sectionContent}>
       {renderHeader("Printer Settings")}
       <ScrollView contentContainerStyle={s.formContent} showsVerticalScrollIndicator={false}>
+
+        {/* ── Receipt Print Method ─────────────────────────────────── */}
+        <View style={{ marginBottom: 16, padding: 12, backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}>
+          <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 14, marginBottom: 4 }}>Receipt Print Method</Text>
+          <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 10, lineHeight: 15 }}>
+            Choose how the Print button on the receipt behaves.{"\n"}
+            <Text style={{ fontWeight: "600" }}>Generic / Text Print</Text> — sends ESC/POS raw text directly (thermal, auto paper-cut).{"\n"}
+            <Text style={{ fontWeight: "600" }}>Windows Printer</Text> — renders HTML and prints silently via the Windows print system.
+          </Text>
+          <View style={s.chipRow}>
+            {([
+              { label: "Generic / Text Print", value: "direct" as const },
+              { label: "Windows Printer", value: "system" as const },
+            ]).map(({ label, value }) => {
+              const selected = (printerSettings.printMethod ?? "system") === value;
+              return (
+                <TouchableOpacity
+                  key={value}
+                  onPress={() => setPrinterSettings({ ...printerSettings, printMethod: value })}
+                  style={[s.chip, { backgroundColor: selected ? colors.primary : colors.secondary, borderColor: selected ? colors.primary : colors.border, borderRadius: colors.radius }]}
+                >
+                  <Text style={{ color: selected ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 12 }}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
         {isElectron() && (
           <View style={{ marginBottom: 16, padding: 12, backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
