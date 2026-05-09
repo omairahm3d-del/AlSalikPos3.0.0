@@ -96,7 +96,14 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
   const handleShare = async () => {
     if (!sale || !business) return;
     if (Platform.OS === "web") {
-      handlePrint();
+      const html = generateReceiptHTML(sale, items, business);
+      const w = window.open("", "_blank");
+      if (w) {
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        setTimeout(() => { w.print(); }, 400);
+      }
       return;
     }
     try {
@@ -104,7 +111,7 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
       const Sharing = await import("expo-sharing");
       const html = generateReceiptHTML(sale, items, business);
       const { uri } = await Print.printToFileAsync({ html, base64: false });
-      await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: "Share Receipt" });
+      await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: "Save Receipt as PDF" });
     } catch {
     }
   };

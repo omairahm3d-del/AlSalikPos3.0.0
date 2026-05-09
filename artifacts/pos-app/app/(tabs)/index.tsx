@@ -60,7 +60,7 @@ export default function POSScreen() {
 
   const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder, loadStaff } = useDatabase();
   const { currentStaff } = useStaff();
-  const { isSaloon, tableLabelSingular, tableLabel } = useWorkMode();
+  const { isSaloon, tableLabelSingular, tableLabel, productLabel } = useWorkMode();
   const {
     items: cartItems,
     itemCount,
@@ -628,7 +628,7 @@ export default function POSScreen() {
       <TextInput
         value={searchQuery}
         onChangeText={setSearchQuery}
-        placeholder="Search products..."
+        placeholder={`Search ${productLabel.toLowerCase()}...`}
         placeholderTextColor={colors.mutedForeground}
         style={[styles.searchInput, { color: colors.foreground }]}
       />

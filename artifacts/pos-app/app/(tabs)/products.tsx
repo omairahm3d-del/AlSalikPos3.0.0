@@ -304,7 +304,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
 
       <View style={[styles.searchWrap, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius }]}>
         <Feather name="search" size={16} color={colors.mutedForeground} />
-        <TextInput value={search} onChangeText={setSearch} placeholder="Search products..." placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} />
+        <TextInput value={search} onChangeText={setSearch} placeholder={`Search ${productLabel.toLowerCase()}...`} placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} />
         {search.length > 0 && <TouchableOpacity onPress={() => setSearch("")}><Feather name="x" size={16} color={colors.mutedForeground} /></TouchableOpacity>}
       </View>
 
@@ -324,7 +324,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
         <KeyboardAvoidingView style={[styles.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <View style={[styles.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={() => setModalVisible(false)}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>{editingProduct ? "Edit Product" : "New Product"}</Text>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>{editingProduct ? `Edit ${productLabel}` : `New ${productLabel}`}</Text>
             <TouchableOpacity onPress={handleSave}><Text style={{ color: colors.primary, fontWeight: "700", fontSize: 16 }}>Save</Text></TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>

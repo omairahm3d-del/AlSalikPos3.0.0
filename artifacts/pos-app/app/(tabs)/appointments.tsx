@@ -14,7 +14,7 @@ import {
 import { useFocusEffect } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { useDatabase } from "@/context/DatabaseCore";
-import { Appointment, AppointmentStatus, Customer, PosTable, Staff } from "@/types";
+import { Appointment, AppointmentStatus, Customer, PosTable, Product, Staff } from "@/types";
 
 const STATUS_COLORS: Record<AppointmentStatus, string> = {
   scheduled: "#4F8EF7",
@@ -231,7 +231,7 @@ function AppointmentCard({
 export default function AppointmentsScreen() {
   const {
     loadAppointments, createAppointment, updateAppointment, deleteAppointment,
-    loadStaff, loadCustomers, loadTables,
+    loadStaff, loadCustomers, loadTables, loadProducts,
   } = useDatabase();
 
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -240,6 +240,7 @@ export default function AppointmentsScreen() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [tables, setTables] = useState<PosTable[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingAppt, setEditingAppt] = useState<Appointment | null>(null);
   const [form, setForm] = useState<FormState>(defaultForm());
@@ -247,6 +248,8 @@ export default function AppointmentsScreen() {
   const [formWeekOffset, setFormWeekOffset] = useState(0);
   const [showCustSearch, setShowCustSearch] = useState(false);
   const [custQuery, setCustQuery] = useState("");
+  const [showServicePicker, setShowServicePicker] = useState(false);
+  const [serviceQuery, setServiceQuery] = useState("");
   const [saving, setSaving] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -261,6 +264,7 @@ export default function AppointmentsScreen() {
     loadStaff().then(setStaff);
     loadCustomers().then(setCustomers);
     loadTables().then(setTables);
+    loadProducts().then(setProducts);
   }, []);
 
   const weekDays = useMemo(() => weekDaysFor(weekOffset), [weekOffset]);
@@ -280,6 +284,7 @@ export default function AppointmentsScreen() {
     setFormDate(new Date(selectedDate));
     setFormWeekOffset(weekOffset);
     setCustQuery(""); setShowCustSearch(false);
+    setServiceQuery(""); setShowServicePicker(false);
     setShowModal(true);
   };
 
@@ -301,6 +306,7 @@ export default function AppointmentsScreen() {
       notes: appt.notes,
     });
     setCustQuery(""); setShowCustSearch(false);
+    setServiceQuery(""); setShowServicePicker(false);
     setShowModal(true);
   };
 
@@ -357,6 +363,22 @@ export default function AppointmentsScreen() {
         c.name.toLowerCase().includes(custQuery.toLowerCase()) || c.phone.includes(custQuery)
       )
     : customers.slice(0, 12);
+
+  const filteredServices = useMemo(() => {
+    const q = serviceQuery.trim().toLowerCase();
+    if (!q) return products.slice(0, 20);
+    return products.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 20);
+  }, [products, serviceQuery]);
+
+  const selectService = useCallback((p: Product) => {
+    setForm((f) => ({
+      ...f,
+      serviceName: p.name,
+      ...(p.durationMinutes ? { durationMinutes: p.durationMinutes } : {}),
+    }));
+    setShowServicePicker(false);
+    setServiceQuery("");
+  }, []);
 
   const pendingCount = appointments.filter(
     (a) => a.status === "scheduled" || a.status === "in-progress"
@@ -575,13 +597,56 @@ export default function AppointmentsScreen() {
 
             <Text style={styles.sectionLabel}>SERVICE</Text>
             <View style={styles.formCard}>
-              <TextInput
-                style={styles.serviceInput}
-                value={form.serviceName}
-                onChangeText={(v) => setForm((f) => ({ ...f, serviceName: v }))}
-                placeholder="e.g. Haircut, Colour, Manicure…"
-                placeholderTextColor="#555"
-              />
+              {showServicePicker ? (
+                <>
+                  <View style={styles.searchRow}>
+                    <Feather name="search" size={15} color="#666" />
+                    <TextInput
+                      style={styles.searchInput}
+                      value={serviceQuery}
+                      onChangeText={setServiceQuery}
+                      placeholder="Search services…"
+                      placeholderTextColor="#555"
+                      autoFocus
+                    />
+                    <Pressable onPress={() => { setShowServicePicker(false); setServiceQuery(""); }}>
+                      <Feather name="x" size={15} color="#666" />
+                    </Pressable>
+                  </View>
+                  <View>
+                    {filteredServices.map((p) => (
+                      <Pressable key={p.id} style={styles.custRow} onPress={() => selectService(p)}>
+                        <Feather name="scissors" size={13} color="#555" />
+                        <View style={{ flex: 1, marginLeft: 8 }}>
+                          <Text style={styles.custName}>{p.name}</Text>
+                          {p.durationMinutes ? (
+                            <Text style={styles.custPhone}>{p.durationMinutes} min</Text>
+                          ) : null}
+                        </View>
+                        <Feather name="chevron-right" size={13} color="#444" />
+                      </Pressable>
+                    ))}
+                    {filteredServices.length === 0 && (
+                      <Text style={styles.noResults}>No services found</Text>
+                    )}
+                  </View>
+                </>
+              ) : (
+                <View style={styles.formRow}>
+                  <Text style={styles.formLabel}>Service</Text>
+                  <View style={styles.formInputRow}>
+                    <Text
+                      style={[styles.formInput, { flex: 1, paddingVertical: 0, color: form.serviceName ? "#FFF" : "#555" }]}
+                      numberOfLines={1}
+                    >
+                      {form.serviceName || "Select a service…"}
+                    </Text>
+                    <Pressable onPress={() => setShowServicePicker(true)} style={styles.searchIconBtn}>
+                      <Feather name="search" size={15} color="#4F8EF7" />
+                    </Pressable>
+                  </View>
+                </View>
+              )}
             </View>
 
             <Text style={styles.sectionLabel}>DATE</Text>

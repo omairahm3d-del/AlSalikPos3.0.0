@@ -114,18 +114,6 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen
-        name="backoffice"
-        options={{
-          title: "Back Office",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="gearshape" tintColor={color} size={24} />
-            ) : (
-              <Feather name="settings" size={22} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
         name="appointments"
         options={{
           href: isSaloon ? undefined : null,
@@ -135,6 +123,18 @@ function ClassicTabLayout() {
               <SymbolView name="calendar" tintColor={color} size={24} />
             ) : (
               <Feather name="calendar" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="backoffice"
+        options={{
+          title: "Back Office",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="gearshape" tintColor={color} size={24} />
+            ) : (
+              <Feather name="settings" size={22} color={color} />
             ),
         }}
       />
