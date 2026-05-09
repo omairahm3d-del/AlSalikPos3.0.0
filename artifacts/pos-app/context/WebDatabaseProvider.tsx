@@ -8,14 +8,14 @@ import type {
 } from "@/types";
 import { DEFAULT_BUSINESS_SETTINGS, SEED_CATEGORIES, SEED_PRODUCTS, SEED_STAFF, SEED_TABLES, SEED_TAX_GROUPS, SEED_CUSTOMERS, VAT_RATE } from "@/types";
 import { computeLineNetVat } from "./CartContext";
-import { generateId, generateInvoiceNumber } from "@/lib/database";
+import { generateId, generateInvoiceNumber, generateOrderNumber } from "@/lib/database";
 import { notifySyncQueueChanged } from "@/lib/syncEvents";
-import { clearOwningCompanyId } from "@/lib/saasStorage";
+import { clearOwningCompanyId, getDeviceCode } from "@/lib/saasStorage";
 import { DatabaseContext, type CatalogApplyInput, type CatalogEntityType, type CatalogOutboxItem, type CatalogOutboxRow, type CatalogResultUpdate, type LocalPurchase, type LocalPurchaseItem, type LocalStockMovement, type LocalSupplier, type SaleOptions, type SyncEntityType, type SyncLogEntry, type SyncLogKind, type SyncQueueItem, type SyncQueueRow, type SyncResultUpdate } from "./DatabaseCore";
 
 const K = {
   products: "@pos_products", sales: "@pos_sales", saleItems: "@pos_sale_items",
-  settings: "@pos_settings", counter: "@pos_invoice_counter",
+  settings: "@pos_settings", counter: "@pos_invoice_counter", orderCounter: "@pos_order_counter",
   customers: "@pos_customers", creditPayments: "@pos_credit_payments",
   staff: "@pos_staff", tables: "@pos_tables", taxGroups: "@pos_tax_groups",
   splitPayments: "@pos_split_payments", zReports: "@pos_z_reports",
@@ -259,18 +259,23 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     const createdAt = Date.now();
     const pointsEarned = customerId ? Math.floor(total) : 0;
 
-    const existing = await getJson<Sale[]>(K.sales, []);
+    const [deviceCode, existing] = await Promise.all([getDeviceCode(), getJson<Sale[]>(K.sales, [])]);
     const raw = await AsyncStorage.getItem(K.counter);
     const seq = raw ? parseInt(raw, 10) : existing.length + 1;
-    const invoiceNumber = generateInvoiceNumber(seq - 1);
+    const invoiceNumber = generateInvoiceNumber(seq - 1, deviceCode);
     await AsyncStorage.setItem(K.counter, String(seq + 1));
+
+    const orderRaw = await AsyncStorage.getItem(K.orderCounter);
+    const orderSeq = orderRaw ? parseInt(orderRaw, 10) : 1;
+    const orderNumber = generateOrderNumber(orderSeq - 1, deviceCode);
+    await AsyncStorage.setItem(K.orderCounter, String(orderSeq + 1));
 
     const effectiveVatRate = subtotal > 0 ? vatAmount / subtotal : VAT_RATE;
     const changeDue = paymentMethod === "Cash" && (cashTendered ?? 0) > 0
       ? Math.max(0, (cashTendered ?? 0) - total)
       : undefined;
     const sale: Sale = {
-      id: saleId, invoiceNumber, createdAt, subtotal, vatRate: effectiveVatRate, vatAmount, total, paymentMethod,
+      id: saleId, invoiceNumber, orderNumber, createdAt, subtotal, vatRate: effectiveVatRate, vatAmount, total, paymentMethod,
       orderType, customerId, customerName, staffId, staffName, tableId, tableName, riderId, riderName,
       discountType, discountValue, discountAmount: orderDiscount ?? 0,
       loyaltyPointsEarned: pointsEarned, loyaltyPointsRedeemed: loyaltyPointsRedeemed ?? 0,
@@ -411,7 +416,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const processRefund = useCallback(async (originalSaleId: string, staffId?: string, staffName?: string): Promise<Sale> => {
-    const sales = await getJson<Sale[]>(K.sales, []);
+    const [deviceCode, sales] = await Promise.all([getDeviceCode(), getJson<Sale[]>(K.sales, [])]);
     const orig = sales.find((s) => s.id === originalSaleId);
     if (!orig) throw new Error("Sale not found");
     if (orig.isRefund) throw new Error("Cannot refund a refund");
@@ -421,7 +426,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     const createdAt = Date.now();
     const raw = await AsyncStorage.getItem(K.counter);
     const seq = raw ? parseInt(raw, 10) : sales.length + 1;
-    const invoiceNumber = generateInvoiceNumber(seq - 1);
+    const invoiceNumber = generateInvoiceNumber(seq - 1, deviceCode);
     await AsyncStorage.setItem(K.counter, String(seq + 1));
 
     const refund: Sale = {

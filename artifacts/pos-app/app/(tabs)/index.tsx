@@ -484,7 +484,7 @@ export default function POSScreen() {
               return labels.length === 1 ? labels[0] : (labels.join(" / ") || undefined);
             })();
             const ticketHtml = generateKitchenTicketHTML(
-              items as any, sale.invoiceNumber, kotRef, currentStaff?.name, kotSettings, stationLabel as any
+              items as any, sale.orderNumber || sale.invoiceNumber, kotRef, currentStaff?.name, kotSettings, stationLabel as any
             );
             if (!ticketHtml) continue;
             await ph(ticketHtml, {

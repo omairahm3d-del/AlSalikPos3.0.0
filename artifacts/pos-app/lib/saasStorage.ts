@@ -142,6 +142,23 @@ export function getOrCreateDeviceUid(): Promise<string> {
   return deviceUidPromise;
 }
 
+/**
+ * Returns a stable 4-character uppercase device tag derived from the last
+ * 4 hex chars of the device UID (e.g. "C3A1"). Used to prefix invoice and
+ * order numbers so that two devices on the same online licence never
+ * produce the same sequential number.
+ *
+ * Result is cached in memory — the same value is returned for the lifetime
+ * of the process without touching AsyncStorage again.
+ */
+let _deviceCode: string | null = null;
+export async function getDeviceCode(): Promise<string> {
+  if (_deviceCode) return _deviceCode;
+  const uid = await getOrCreateDeviceUid();
+  _deviceCode = uid.replace(/-/g, "").slice(-4).toUpperCase();
+  return _deviceCode;
+}
+
 export async function loadSession(): Promise<LicenseSession | null> {
   const [token, exp, companyRaw, licenseRaw, key, deviceUid, branchRaw] =
     await Promise.all([

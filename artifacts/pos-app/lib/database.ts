@@ -58,6 +58,13 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
 
     INSERT OR IGNORE INTO invoice_counter (id, next_value) VALUES (1, 1);
 
+    CREATE TABLE IF NOT EXISTS order_counter (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      next_value INTEGER NOT NULL DEFAULT 1
+    );
+
+    INSERT OR IGNORE INTO order_counter (id, next_value) VALUES (1, 1);
+
     CREATE TABLE IF NOT EXISTS sale_items (
       id TEXT PRIMARY KEY,
       sale_id TEXT NOT NULL,
@@ -525,11 +532,28 @@ export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 }
 
-export function generateInvoiceNumber(count: number): string {
+/**
+ * Generates a tax-invoice number.
+ * Single-device format  : INV-20260509-0001
+ * Multi-device format   : INV-20260509-C3A1-0001  (deviceCode = last-4 of UID)
+ */
+export function generateInvoiceNumber(count: number, deviceCode?: string): string {
   const now = new Date();
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, "0");
   const d = String(now.getDate()).padStart(2, "0");
   const seq = String(count + 1).padStart(4, "0");
-  return `INV-${y}${m}${d}-${seq}`;
+  return deviceCode
+    ? `INV-${y}${m}${d}-${deviceCode}-${seq}`
+    : `INV-${y}${m}${d}-${seq}`;
+}
+
+/**
+ * Generates a short kitchen/order-screen order number.
+ * Format: #C3A1-0042
+ * Each device has its own sequence so numbers never collide across tablets.
+ */
+export function generateOrderNumber(count: number, deviceCode?: string): string {
+  const seq = String(count + 1).padStart(4, "0");
+  return deviceCode ? `#${deviceCode}-${seq}` : `#${seq}`;
 }

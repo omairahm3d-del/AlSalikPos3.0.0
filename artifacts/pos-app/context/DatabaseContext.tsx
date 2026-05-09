@@ -8,9 +8,9 @@ import type {
 } from "@/types";
 import { DEFAULT_BUSINESS_SETTINGS, VAT_RATE } from "@/types";
 import { computeLineNetVat } from "./CartContext";
-import { generateId, generateInvoiceNumber } from "@/lib/database";
+import { generateId, generateInvoiceNumber, generateOrderNumber } from "@/lib/database";
 import { notifySyncQueueChanged } from "@/lib/syncEvents";
-import { clearOwningCompanyId } from "@/lib/saasStorage";
+import { clearOwningCompanyId, getDeviceCode } from "@/lib/saasStorage";
 import { DatabaseContext, type CatalogApplyInput, type CatalogEntityType, type CatalogOutboxItem, type CatalogOutboxRow, type CatalogResultUpdate, type LocalPurchase, type LocalPurchaseItem, type LocalStockMovement, type LocalSupplier, type SaleOptions, type SyncEntityType, type SyncLogEntry, type SyncLogKind, type SyncQueueItem, type SyncQueueRow, type SyncResultUpdate } from "./DatabaseCore";
 
 export function NativeDatabaseProvider({ children }: { children: React.ReactNode }) {
@@ -106,6 +106,9 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     const total = subtotal + vatAmount;
     const saleId = generateId();
     const createdAt = Date.now();
+    // Resolve the device code before entering the SQLite transaction (async
+    // operations cannot be awaited inside withExclusiveTransactionAsync).
+    const deviceCode = await getDeviceCode();
 
     // Capture the result through a closure — expo-sqlite's
     // withExclusiveTransactionAsync is typed `() => Promise<void>`.
@@ -113,8 +116,13 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     await db.withExclusiveTransactionAsync(async (tx) => {
       const counterRow = await tx.getFirstAsync<{ next_value: number }>("SELECT next_value FROM invoice_counter WHERE id=1");
       const seq = counterRow?.next_value ?? 1;
-      const invoiceNumber = generateInvoiceNumber(seq - 1);
+      const invoiceNumber = generateInvoiceNumber(seq - 1, deviceCode);
       await tx.runAsync("UPDATE invoice_counter SET next_value=next_value+1 WHERE id=1");
+
+      const orderCounterRow = await tx.getFirstAsync<{ next_value: number }>("SELECT next_value FROM order_counter WHERE id=1");
+      const orderSeq = orderCounterRow?.next_value ?? 1;
+      const orderNumber = generateOrderNumber(orderSeq - 1, deviceCode);
+      await tx.runAsync("UPDATE order_counter SET next_value=next_value+1 WHERE id=1");
 
       const pointsEarned = customerId ? Math.floor(total) : 0;
       const effectiveVatRate = subtotal > 0 ? vatAmount / subtotal : VAT_RATE;
@@ -237,7 +245,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       }
 
       savedSale = {
-        id: saleId, invoiceNumber, createdAt, subtotal, vatRate: effectiveVatRate, vatAmount, total, paymentMethod,
+        id: saleId, invoiceNumber, orderNumber, createdAt, subtotal, vatRate: effectiveVatRate, vatAmount, total, paymentMethod,
         orderType, customerId, customerName, staffId, staffName, tableId, tableName, riderId, riderName,
         discountType, discountValue, discountAmount: orderDiscAmt,
         loyaltyPointsEarned: pointsEarned, loyaltyPointsRedeemed: loyaltyPointsRedeemed ?? 0,
@@ -313,6 +321,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
   }, [db]);
 
   const processRefund = useCallback(async (originalSaleId: string, staffId?: string, staffName?: string): Promise<Sale> => {
+    const deviceCode = await getDeviceCode();
     let refundSale: Sale | null = null;
     await db.withExclusiveTransactionAsync(async (tx) => {
       const orig = await tx.getFirstAsync<any>("SELECT * FROM sales WHERE id=?", [originalSaleId]);
@@ -326,7 +335,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       const createdAt = Date.now();
       const counterRow = await tx.getFirstAsync<{ next_value: number }>("SELECT next_value FROM invoice_counter WHERE id=1");
       const seq = counterRow?.next_value ?? 1;
-      const invoiceNumber = generateInvoiceNumber(seq - 1);
+      const invoiceNumber = generateInvoiceNumber(seq - 1, deviceCode);
       await tx.runAsync("UPDATE invoice_counter SET next_value=next_value+1 WHERE id=1");
 
       await tx.runAsync(
