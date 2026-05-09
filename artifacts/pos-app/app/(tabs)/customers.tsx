@@ -7,6 +7,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -146,6 +147,7 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [company, setCompany] = useState("");
+  const [isActive, setIsActive] = useState(true);
 
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [creditHistory, setCreditHistory] = useState<CreditPayment[]>([]);
@@ -179,7 +181,7 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
 
   const openAdd = () => {
     setEditingCustomer(null);
-    setName(""); setPhone(""); setEmail(""); setCompany("");
+    setName(""); setPhone(""); setEmail(""); setCompany(""); setIsActive(true);
     setShowEditor(true);
   };
 
@@ -187,15 +189,16 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
     setEditingCustomer(customer);
     setName(customer.name); setPhone(customer.phone);
     setEmail(customer.email); setCompany(customer.company);
+    setIsActive(customer.isActive !== false);
     setShowEditor(true);
   };
 
   const handleSave = async () => {
     if (!name.trim()) { Alert.alert("Required", "Customer name is required."); return; }
     if (editingCustomer) {
-      await updateCustomer({ ...editingCustomer, name: name.trim(), phone: phone.trim(), email: email.trim(), company: company.trim() });
+      await updateCustomer({ ...editingCustomer, name: name.trim(), phone: phone.trim(), email: email.trim(), company: company.trim(), isActive });
     } else {
-      await createCustomer({ name: name.trim(), phone: phone.trim(), email: email.trim(), company: company.trim() });
+      await createCustomer({ name: name.trim(), phone: phone.trim(), email: email.trim(), company: company.trim(), isActive });
     }
     setShowEditor(false);
     await fetchCustomers();
@@ -280,18 +283,27 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
     return result.reverse();
   };
 
-  const renderCustomer = ({ item }: { item: Customer }) => (
+  const renderCustomer = ({ item }: { item: Customer }) => {
+    const inactive = item.isActive === false;
+    return (
     <TouchableOpacity
       onPress={() => openCustomerDetail(item)}
       onLongPress={permissions.deleteCustomers ? () => handleDelete(item) : undefined}
       activeOpacity={0.8}
-      style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
+      style={[styles.card, { backgroundColor: colors.card, borderColor: inactive ? colors.mutedForeground + "40" : colors.border, borderRadius: colors.radius, opacity: inactive ? 0.6 : 1 }]}
     >
-      <View style={[styles.avatar, { backgroundColor: colors.primary + "20" }]}>
-        <Text style={[styles.avatarText, { color: colors.primary }]}>{item.name.charAt(0).toUpperCase()}</Text>
+      <View style={[styles.avatar, { backgroundColor: inactive ? colors.mutedForeground + "20" : colors.primary + "20" }]}>
+        <Text style={[styles.avatarText, { color: inactive ? colors.mutedForeground : colors.primary }]}>{item.name.charAt(0).toUpperCase()}</Text>
       </View>
       <View style={styles.cardInfo}>
-        <Text style={[styles.cardName, { color: colors.foreground }]} numberOfLines={1}>{item.name}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          <Text style={[styles.cardName, { color: colors.foreground }]} numberOfLines={1}>{item.name}</Text>
+          {inactive && (
+            <View style={{ backgroundColor: colors.mutedForeground + "25", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+              <Text style={{ color: colors.mutedForeground, fontSize: 9, fontWeight: "700", letterSpacing: 0.5 }}>INACTIVE</Text>
+            </View>
+          )}
+        </View>
         {item.company ? <Text style={[styles.cardSub, { color: colors.mutedForeground }]} numberOfLines={1}>{item.company}</Text> : null}
         {item.phone ? <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>{item.phone}</Text> : null}
         {(item.loyaltyPoints || 0) > 0 && (
@@ -314,6 +326,7 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
       <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
     </TouchableOpacity>
   );
+  };
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background, paddingTop: topPadding }]}>
@@ -368,6 +381,14 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
             <TextInput value={email} onChangeText={setEmail} placeholder="email@example.com" placeholderTextColor={colors.mutedForeground} keyboardType="email-address" style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]} />
             <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Company</Text>
             <TextInput value={company} onChangeText={setCompany} placeholder="Company name (optional)" placeholderTextColor={colors.mutedForeground} style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]} />
+
+            <View style={[styles.toggleRow, { borderColor: isActive ? colors.border : colors.destructive + "60", borderRadius: colors.radius, backgroundColor: isActive ? undefined : colors.destructive + "08", marginTop: 20 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.toggleLabel, { color: isActive ? colors.foreground : colors.destructive }]}>Active</Text>
+                <Text style={[styles.toggleHint, { color: colors.mutedForeground }]}>{isActive ? "Visible in customer picker." : "Inactive — hidden from POS picker. Still saved for history."}</Text>
+              </View>
+              <Switch value={isActive} onValueChange={setIsActive} trackColor={{ false: colors.destructive + "80", true: colors.primary }} />
+            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
@@ -556,6 +577,9 @@ const styles = StyleSheet.create({
   historyAmount: { fontSize: 15, fontWeight: "700", fontFamily: "Inter_700Bold" },
   historyDate: { fontSize: 11, marginTop: 2 },
   historyNote: { fontSize: 12, maxWidth: 150, textAlign: "right" },
+  toggleRow: { flexDirection: "row", alignItems: "center", padding: 12, borderWidth: 1, gap: 12 },
+  toggleLabel: { fontSize: 14, fontWeight: "600" },
+  toggleHint: { fontSize: 11, marginTop: 2 },
   txRow: { flexDirection: "row", alignItems: "flex-start", paddingVertical: 12, borderBottomWidth: 1, gap: 10 },
   txIcon: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", marginTop: 1 },
   txMiddle: { flex: 1, minWidth: 0, gap: 3 },

@@ -29,6 +29,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       vatInclusive: r.vat_inclusive === 1,
       updatedAt: r.updated_at ?? undefined,
       durationMinutes: r.duration_minutes ?? undefined,
+      isActive: r.is_active !== 0,
     }));
   }, [db]);
 
@@ -40,8 +41,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     // misses a creation that survived the local commit.
     await db.withExclusiveTransactionAsync(async (tx) => {
       await tx.runAsync(
-        "INSERT INTO products (id, name, category, price, description, color_hex, barcode, stock_quantity, stock_tracking, tax_group_id, low_stock_threshold, image_uri, printer_id, price_change_allowed, vat_inclusive, duration_minutes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [id, product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.stockTracked ? 1 : 0, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, product.priceChangeAllowed ? 1 : 0, product.vatInclusive ? 1 : 0, product.durationMinutes ?? null, updatedAt]
+        "INSERT INTO products (id, name, category, price, description, color_hex, barcode, stock_quantity, stock_tracking, tax_group_id, low_stock_threshold, image_uri, printer_id, price_change_allowed, vat_inclusive, duration_minutes, updated_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [id, product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.stockTracked ? 1 : 0, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, product.priceChangeAllowed ? 1 : 0, product.vatInclusive ? 1 : 0, product.durationMinutes ?? null, updatedAt, product.isActive === false ? 0 : 1]
       );
       await enqueueCatalogTx(tx, "product", id, created, false, updatedAt);
     });
@@ -53,8 +54,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     const next: Product = { ...product, updatedAt };
     await db.withExclusiveTransactionAsync(async (tx) => {
       await tx.runAsync(
-        "UPDATE products SET name=?, category=?, price=?, description=?, color_hex=?, barcode=?, stock_quantity=?, stock_tracking=?, tax_group_id=?, low_stock_threshold=?, image_uri=?, printer_id=?, price_change_allowed=?, vat_inclusive=?, duration_minutes=?, updated_at=? WHERE id=?",
-        [product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.stockTracked ? 1 : 0, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, product.priceChangeAllowed ? 1 : 0, product.vatInclusive ? 1 : 0, product.durationMinutes ?? null, updatedAt, product.id]
+        "UPDATE products SET name=?, category=?, price=?, description=?, color_hex=?, barcode=?, stock_quantity=?, stock_tracking=?, tax_group_id=?, low_stock_threshold=?, image_uri=?, printer_id=?, price_change_allowed=?, vat_inclusive=?, duration_minutes=?, updated_at=?, is_active=? WHERE id=?",
+        [product.name, product.category, product.price, product.description, product.colorHex, product.barcode ?? null, product.stockQuantity, product.stockTracked ? 1 : 0, product.taxGroupId ?? null, product.lowStockThreshold, product.imageUri ?? null, product.printerId ?? null, product.priceChangeAllowed ? 1 : 0, product.vatInclusive ? 1 : 0, product.durationMinutes ?? null, updatedAt, product.isActive === false ? 0 : 1, product.id]
       );
       await enqueueCatalogTx(tx, "product", product.id, next, false, updatedAt);
     });
@@ -491,6 +492,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       company: r.company ?? "", creditBalance: r.credit_balance,
       loyaltyPoints: r.loyalty_points ?? 0, createdAt: r.created_at,
       updatedAt: r.updated_at ?? undefined,
+      isActive: r.is_active !== 0,
     }));
   }, [db]);
 
@@ -498,11 +500,11 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     const id = generateId();
     const createdAt = Date.now();
     const updatedAt = createdAt;
-    const created: Customer = { ...customer, id, creditBalance: 0, loyaltyPoints: 0, createdAt, updatedAt };
+    const created: Customer = { ...customer, id, creditBalance: 0, loyaltyPoints: 0, createdAt, updatedAt, isActive: customer.isActive !== false };
     await db.withExclusiveTransactionAsync(async (tx) => {
       await tx.runAsync(
-        "INSERT INTO customers (id, name, phone, email, company, credit_balance, loyalty_points, created_at, updated_at) VALUES (?,?,?,?,?,0,0,?,?)",
-        [id, customer.name, customer.phone, customer.email, customer.company, createdAt, updatedAt]
+        "INSERT INTO customers (id, name, phone, email, company, credit_balance, loyalty_points, created_at, updated_at, is_active) VALUES (?,?,?,?,?,0,0,?,?,?)",
+        [id, customer.name, customer.phone, customer.email, customer.company, createdAt, updatedAt, customer.isActive === false ? 0 : 1]
       );
       await enqueueCatalogTx(tx, "customer", id, created, false, updatedAt);
     });
@@ -513,8 +515,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     const updatedAt = Date.now();
     const next: Customer = { ...customer, updatedAt };
     await db.withExclusiveTransactionAsync(async (tx) => {
-      await tx.runAsync("UPDATE customers SET name=?, phone=?, email=?, company=?, updated_at=? WHERE id=?",
-        [customer.name, customer.phone, customer.email, customer.company, updatedAt, customer.id]);
+      await tx.runAsync("UPDATE customers SET name=?, phone=?, email=?, company=?, updated_at=?, is_active=? WHERE id=?",
+        [customer.name, customer.phone, customer.email, customer.company, updatedAt, customer.isActive === false ? 0 : 1, customer.id]);
       await enqueueCatalogTx(tx, "customer", customer.id, next, false, updatedAt);
     });
   }, [db]);
@@ -679,6 +681,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       id: r.id, name: r.name, colorHex: r.color_hex ?? "#4F8EF7",
       imageUri: r.image_uri ?? undefined, sortOrder: r.sort_order ?? 0,
       updatedAt: r.updated_at ?? undefined,
+      isActive: r.is_active !== 0,
     }));
   }, [db]);
 
@@ -688,8 +691,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     const created: Category = { ...category, id, updatedAt };
     await db.withExclusiveTransactionAsync(async (tx) => {
       await tx.runAsync(
-        "INSERT INTO categories (id, name, color_hex, image_uri, sort_order, updated_at) VALUES (?,?,?,?,?,?)",
-        [id, category.name, category.colorHex, category.imageUri ?? null, category.sortOrder, updatedAt]
+        "INSERT INTO categories (id, name, color_hex, image_uri, sort_order, updated_at, is_active) VALUES (?,?,?,?,?,?,?)",
+        [id, category.name, category.colorHex, category.imageUri ?? null, category.sortOrder, updatedAt, category.isActive === false ? 0 : 1]
       );
       await enqueueCatalogTx(tx, "category", id, created, false, updatedAt);
     });
@@ -701,8 +704,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     const next: Category = { ...category, updatedAt };
     await db.withExclusiveTransactionAsync(async (tx) => {
       await tx.runAsync(
-        "UPDATE categories SET name=?, color_hex=?, image_uri=?, sort_order=?, updated_at=? WHERE id=?",
-        [category.name, category.colorHex, category.imageUri ?? null, category.sortOrder, updatedAt, category.id]
+        "UPDATE categories SET name=?, color_hex=?, image_uri=?, sort_order=?, updated_at=?, is_active=? WHERE id=?",
+        [category.name, category.colorHex, category.imageUri ?? null, category.sortOrder, updatedAt, category.isActive === false ? 0 : 1, category.id]
       );
       await enqueueCatalogTx(tx, "category", category.id, next, false, updatedAt);
     });

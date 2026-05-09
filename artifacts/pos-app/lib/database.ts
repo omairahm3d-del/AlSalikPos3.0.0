@@ -323,6 +323,11 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     "ALTER TABLE held_orders ADD COLUMN kds_status TEXT NOT NULL DEFAULT 'new'",
     // Restaurant modifiers: snapshot of selected modifier options stored per sale line.
     "ALTER TABLE sale_items ADD COLUMN modifiers_json TEXT DEFAULT NULL",
+    // Active/Inactive status for products, categories, and customers.
+    // Default 1 (active) so every existing row stays visible without data migration.
+    "ALTER TABLE products ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE categories ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE customers ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1",
   ];
 
   // Sync event log. Append-only ring buffer (capped to 200 rows by the

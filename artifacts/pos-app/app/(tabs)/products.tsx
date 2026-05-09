@@ -72,6 +72,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
   // (default) to back-calculated from the displayed price.
   const [priceChangeAllowed, setPriceChangeAllowed] = useState(false);
   const [vatInclusive, setVatInclusive] = useState(false);
+  const [isActive, setIsActive] = useState(true);
   const [durationMinutes, setDurationMinutes] = useState<string>("");
 
   const [printerConfigs, setPrinterConfigs] = useState<PrinterConfig[]>([]);
@@ -196,7 +197,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     setSelectedColor(PRODUCT_COLORS[0]); setBarcode(""); setStockTracked(false); setStockQty("0");
     setLowStockThreshold("10"); setSelectedTaxGroupId(undefined); setImageUri(undefined);
     setSelectedPrinterId(undefined);
-    setPriceChangeAllowed(false); setVatInclusive(false);
+    setPriceChangeAllowed(false); setVatInclusive(false); setIsActive(true);
     setDurationMinutes("");
     setRecipeItems([]); setRecipeIngId(""); setRecipeIngQty("");
     setModifierDrafts([]); resetGroupForm();
@@ -213,6 +214,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     setSelectedPrinterId(product.printerId);
     setPriceChangeAllowed(!!product.priceChangeAllowed);
     setVatInclusive(!!product.vatInclusive);
+    setIsActive(product.isActive !== false);
     setDurationMinutes(product.durationMinutes != null ? String(product.durationMinutes) : "");
     const [items, groups] = await Promise.all([
       loadRecipeIngredients(product.id),
@@ -258,7 +260,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
         colorHex: selectedColor, barcode: barcodeVal, stockQuantity: stock, stockTracked,
         lowStockThreshold: threshold, taxGroupId: selectedTaxGroupId, imageUri,
         printerId: selectedPrinterId,
-        priceChangeAllowed, vatInclusive, durationMinutes: durationVal,
+        priceChangeAllowed, vatInclusive, durationMinutes: durationVal, isActive,
       });
       productId = editingProduct.id;
     } else {
@@ -267,7 +269,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
         colorHex: selectedColor, barcode: barcodeVal, stockQuantity: stock, stockTracked,
         lowStockThreshold: threshold, taxGroupId: selectedTaxGroupId, imageUri,
         printerId: selectedPrinterId,
-        priceChangeAllowed, vatInclusive, durationMinutes: durationVal,
+        priceChangeAllowed, vatInclusive, durationMinutes: durationVal, isActive,
       });
       productId = created.id;
     }
@@ -310,13 +312,14 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
   const renderProduct = ({ item }: { item: Product }) => {
     const isLow = !!item.stockTracked && item.stockQuantity <= item.lowStockThreshold && item.stockQuantity > 0;
     const isOut = !!item.stockTracked && item.stockQuantity <= 0;
+    const inactive = item.isActive === false;
     const pName = getPrinterName(item.printerId);
     return (
       <TouchableOpacity
         onPress={() => openEdit(item)}
         onLongPress={permissions.deleteProducts ? () => handleDelete(item) : undefined}
         activeOpacity={0.8}
-        style={[styles.productCard, { backgroundColor: colors.card, borderRadius: colors.radius, borderColor: isOut ? colors.destructive + "60" : isLow ? "#F39C12" + "60" : colors.border }]}
+        style={[styles.productCard, { backgroundColor: colors.card, borderRadius: colors.radius, borderColor: inactive ? colors.mutedForeground + "40" : isOut ? colors.destructive + "60" : isLow ? "#F39C12" + "60" : colors.border, opacity: inactive ? 0.6 : 1 }]}
       >
         <View style={[styles.productColorBand, { backgroundColor: item.imageUri ? "transparent" : item.colorHex, opacity: isOut ? 0.5 : 1 }]}>
           {item.imageUri ? (
@@ -334,12 +337,17 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
               <Feather name="printer" size={8} color="rgba(255,255,255,0.9)" />
             </View>
           )}
-          {isOut && (
+          {inactive && (
+            <View style={[styles.outBadge, { backgroundColor: colors.mutedForeground }]}>
+              <Text style={styles.outBadgeText}>OFF</Text>
+            </View>
+          )}
+          {isOut && !inactive && (
             <View style={styles.outBadge}>
               <Text style={styles.outBadgeText}>OUT</Text>
             </View>
           )}
-          {isLow && !isOut && (
+          {isLow && !isOut && !inactive && (
             <View style={[styles.outBadge, { backgroundColor: "#F39C12" }]}>
               <Text style={styles.outBadgeText}>LOW</Text>
             </View>
@@ -504,6 +512,14 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
                 <Text style={[styles.toggleHint, { color: colors.mutedForeground }]}>Treat the entered price as gross (includes VAT). Default: VAT is added on top.</Text>
               </View>
               <Switch value={vatInclusive} onValueChange={setVatInclusive} />
+            </View>
+
+            <View style={[styles.toggleRow, { borderColor: isActive ? colors.border : colors.destructive + "60", borderRadius: colors.radius, backgroundColor: isActive ? undefined : colors.destructive + "08" }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.toggleLabel, { color: isActive ? colors.foreground : colors.destructive }]}>Active</Text>
+                <Text style={[styles.toggleHint, { color: colors.mutedForeground }]}>{isActive ? "Visible in POS and pickers." : "Inactive — hidden from POS. Still saved for history."}</Text>
+              </View>
+              <Switch value={isActive} onValueChange={setIsActive} trackColor={{ false: colors.destructive + "80", true: colors.primary }} />
             </View>
 
             <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Product Image</Text>

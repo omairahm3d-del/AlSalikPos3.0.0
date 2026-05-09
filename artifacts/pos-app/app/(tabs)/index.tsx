@@ -178,7 +178,7 @@ export default function POSScreen() {
 
   const fetchData = useCallback(async () => {
     const [prods, tbls, biz, tgs, cats, rdrs, staff, allGroups] = await Promise.all([loadProducts(), loadTables(), loadBusinessSettings(), loadTaxGroups(), loadCategories(), loadRiders(), loadStaff(), loadAllModifierGroups()]);
-    setProducts(prods);
+    setProducts(prods.filter((p: Product) => p.isActive !== false));
     setTables(tbls);
     setRiders(rdrs.filter((r: Rider) => r.active));
     setAllStaff(staff.filter((s) => s.active));
@@ -188,7 +188,7 @@ export default function POSScreen() {
     const map: Record<string, number> = {};
     tgs.forEach((g: TaxGroup) => { map[g.id] = g.rate; });
     setTaxGroupMap(map);
-    const catNames = cats.length > 0 ? ["All", ...cats.map((c: Category) => c.name)] : ["All"];
+    const catNames = cats.length > 0 ? ["All", ...cats.filter((c: Category) => c.isActive !== false).map((c: Category) => c.name)] : ["All"];
     setDynamicCategories(catNames);
     const byProduct: Record<string, ModifierGroup[]> = {};
     for (const g of allGroups) {

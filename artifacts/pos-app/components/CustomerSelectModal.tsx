@@ -52,9 +52,10 @@ export function CustomerSelectModal({ visible, onSelect, onClose }: Props) {
   }, [visible, fetchCustomers]);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return customers;
+    const active = customers.filter((c) => c.isActive !== false);
+    if (!search.trim()) return active;
     const q = search.toLowerCase().trim();
-    return customers.filter(
+    return active.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
         c.phone.toLowerCase().includes(q) ||

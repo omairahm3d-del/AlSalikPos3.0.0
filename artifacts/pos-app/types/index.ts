@@ -44,6 +44,11 @@ export interface Product {
    * in standard mode; ignored for stock-tracked retail items in saloon mode.
    */
   durationMinutes?: number;
+  /**
+   * When false the product is inactive and hidden from POS pickers/grids.
+   * Absent on legacy rows is treated as true (active). Stored as 0/1 in SQLite.
+   */
+  isActive?: boolean;
 }
 
 export interface PrinterConfig {
@@ -61,6 +66,8 @@ export interface Category {
   sortOrder: number;
   /** See Product.updatedAt — same LWW semantics. */
   updatedAt?: number;
+  /** When false the category is inactive and hidden from POS. Absent = active. */
+  isActive?: boolean;
 }
 
 /** One selectable option within a modifier group (e.g. "Extra Cheese +2.00"). */
@@ -269,6 +276,8 @@ export interface Customer {
    * so any real cloud edit wins over those rows).
    */
   updatedAt?: number;
+  /** When false the customer is inactive and hidden from POS pickers. Absent = active. */
+  isActive?: boolean;
 }
 
 export interface CreditPayment {
