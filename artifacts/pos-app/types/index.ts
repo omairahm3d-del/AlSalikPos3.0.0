@@ -314,7 +314,14 @@ export interface CreditPayment {
 export interface Staff {
   id: string;
   name: string;
-  role: "admin" | "cashier";
+  /**
+   * - "admin"   — full back office access, ADMIN_PERMISSIONS
+   * - "cashier" — register only, permissions governed by rolePermissions.cashier
+   * - "driver"  — laundry / delivery pickup role; uses cashier permissions.
+   *               Designed for staff who visit customers, create orders on-device,
+   *               and send the receipt via WhatsApp.
+   */
+  role: "admin" | "cashier" | "driver";
   pin: string;
   active: boolean;
   createdAt: number;
@@ -739,4 +746,15 @@ export const DEFAULT_CASHIER_PERMISSIONS: StaffPermissions = {
   deleteRiders: false, deleteIngredients: false, deleteStaff: false,
   deleteTax: false, deleteTables: false,
   canRefund: false, canApplyDiscount: true, canManageTables: true,
+};
+
+/**
+ * Default permissions for the "driver" role (laundry pickup / delivery staff).
+ * Drivers use cashier permissions by default. The key difference from a cashier
+ * is the role label — managers can grant additional permissions via the
+ * Permissions screen just like any cashier.
+ */
+export const DRIVER_PERMISSIONS: StaffPermissions = {
+  ...DEFAULT_CASHIER_PERMISSIONS,
+  boCustomers: true,
 };

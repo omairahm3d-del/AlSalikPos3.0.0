@@ -173,7 +173,7 @@ export default function BackOfficeScreen() {
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [staffName, setStaffName] = useState("");
   const [staffPin, setStaffPin] = useState("");
-  const [staffRole, setStaffRole] = useState<"admin" | "cashier">("cashier");
+  const [staffRole, setStaffRole] = useState<"admin" | "cashier" | "driver">("cashier");
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
   const [showStaffModal, setShowStaffModal] = useState(false);
 
@@ -882,6 +882,12 @@ export default function BackOfficeScreen() {
           products: { title: productLabel, subtitle: `Manage ${productLabel.toLowerCase()}, pricing & stock` },
           categories: { title: "Service Categories", subtitle: "Manage service categories" },
           riders: { title: "Stylists", subtitle: "Manage your stylists", icon: "scissors" },
+        }
+      : isLaundry
+      ? {
+          products: { title: productLabel, subtitle: `Manage ${productLabel.toLowerCase()}, pricing & rates` },
+          categories: { title: "Service Categories", subtitle: "Manage laundry service categories" },
+          riders: { title: "Drivers", subtitle: "Manage pickup & delivery drivers", icon: "truck" },
         }
       : {};
 
@@ -2633,7 +2639,7 @@ export default function BackOfficeScreen() {
           {cashierPerms.canAccessBackOffice && (
             <>
               <SectionHead title="Back Office Sections" />
-              {renderSwitch("Products", cashierPerms.boProducts, (v) => toggle("boProducts", v))}
+              {renderSwitch(productLabel, cashierPerms.boProducts, (v) => toggle("boProducts", v))}
               {renderSwitch("Customers", cashierPerms.boCustomers, (v) => toggle("boCustomers", v))}
               {renderSwitch("Reports", cashierPerms.boReports, (v) => toggle("boReports", v))}
               {renderSwitch("Categories", cashierPerms.boCategories, (v) => toggle("boCategories", v))}
@@ -2683,7 +2689,7 @@ export default function BackOfficeScreen() {
       case "menu": return renderMenu();
       case "products": return (
         <View style={s.sectionContent}>
-          {renderHeader("Products")}
+          {renderHeader(productLabel)}
           <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card, gap: 8 }}>
             {productCsvMsg ? (
               <TouchableOpacity style={{ flex: 1 }} onPress={() => setProductCsvMsg(null)}>
@@ -2800,13 +2806,21 @@ export default function BackOfficeScreen() {
             {renderField("PIN (4+ digits)", staffPin, setStaffPin, "1234", "number-pad")}
             <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 16 }]}>Role</Text>
             <View style={s.chipRow}>
-              {(["cashier", "admin"] as const).map((r) => (
+              {(["cashier", "driver", "admin"] as const).map((r) => (
                 <TouchableOpacity key={r} onPress={() => setStaffRole(r)}
                   style={[s.chip, { backgroundColor: staffRole === r ? colors.primary : colors.secondary, borderColor: staffRole === r ? colors.primary : colors.border, borderRadius: colors.radius }]}>
                   <Text style={{ color: staffRole === r ? "#fff" : colors.mutedForeground, fontWeight: "600", textTransform: "capitalize" }}>{r}</Text>
                 </TouchableOpacity>
               ))}
             </View>
+            {staffRole === "driver" && (
+              <View style={[{ backgroundColor: "#25D36618", borderRadius: colors.radius, padding: 10, marginTop: 8, flexDirection: "row", gap: 8, alignItems: "flex-start" }]}>
+                <Feather name="truck" size={14} color="#25D366" style={{ marginTop: 1 }} />
+                <Text style={{ color: "#25D366", fontSize: 12, flex: 1, lineHeight: 17 }}>
+                  Drivers can log in, create pickup orders, and send receipts via WhatsApp. They have access to the Customers section by default.
+                </Text>
+              </View>
+            )}
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
