@@ -70,6 +70,7 @@
     "expo-mail-composer": "^15.0.8",
     "expo-print": "~15.0.8",
     "expo-sharing": "^14.0.8",
+    "expo-updates": "~29.0.17",
     "qrcode": "^1.5.4",
     "react-native-bluetooth-escpos-printer": "^0.0.5",
     "react-native-fs": "^2.20.0",

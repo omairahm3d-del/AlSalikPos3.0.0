@@ -8,7 +8,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -109,6 +109,9 @@ function LicenseGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Maximum time to wait for fonts before proceeding without them.
+const FONT_TIMEOUT_MS = 5000;
+
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
@@ -116,14 +119,23 @@ export default function RootLayout() {
     Inter_600SemiBold,
     Inter_700Bold,
   });
+  const [fontTimedOut, setFontTimedOut] = useState(false);
+
+  // Safety net: hide the splash and proceed even if useFonts never resolves.
+  useEffect(() => {
+    const t = setTimeout(() => setFontTimedOut(true), FONT_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, []);
+
+  const fontsReady = fontsLoaded || !!fontError || fontTimedOut;
 
   useEffect(() => {
-    if (fontsLoaded || fontError) {
+    if (fontsReady) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, fontError]);
+  }, [fontsReady]);
 
-  if (!fontsLoaded && !fontError) return null;
+  if (!fontsReady) return null;
 
   return (
     <SafeAreaProvider>
