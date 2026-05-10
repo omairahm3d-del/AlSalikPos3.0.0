@@ -19,4 +19,9 @@ config.resolver.blockList = [
   tmpDirPattern,
 ];
 
+config.resolver.extraNodeModules = {
+  ...config.resolver.extraNodeModules,
+  "react-native-ping": path.resolve(__dirname, "stubs/react-native-ping.js"),
+};
+
 module.exports = config;
