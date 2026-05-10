@@ -138,7 +138,23 @@ export async function syncOnce(
     let msg = `HTTP ${res.status}`;
     try {
       const body = await res.json();
-      msg = body?.error?.message ?? msg;
+      const baseMsg = body?.error?.message ?? msg;
+      // Surface field-level Zod issues (details array) so the sync queue
+      // shows exactly which field failed instead of the generic "Invalid
+      // request body" string — critical for diagnosing legacy-data problems.
+      const details = body?.error?.details;
+      if (Array.isArray(details) && details.length > 0) {
+        const fieldSummary = details
+          .slice(0, 3)
+          .map((d: { path?: unknown[]; message?: string }) => {
+            const path = Array.isArray(d.path) ? d.path.join(".") : "?";
+            return `${path}: ${d.message ?? "invalid"}`;
+          })
+          .join("; ");
+        msg = `${baseMsg} — ${fieldSummary}`;
+      } else {
+        msg = baseMsg;
+      }
     } catch {
       // ignore
     }

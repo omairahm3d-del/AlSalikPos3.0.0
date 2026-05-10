@@ -261,7 +261,13 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
   }, [db]);
 
   const mapSaleRow = (r: any): Sale => ({
-    id: r.id, invoiceNumber: r.invoice_number ?? "", createdAt: r.created_at,
+    id: r.id,
+    // invoice_number was added via ALTER TABLE with DEFAULT ''. Rows created
+    // before that migration have an empty string. Substitute a stable legacy
+    // placeholder so these old sales pass server-side min(1) validation and
+    // appear in cloud reports with a recognisable label instead of blank.
+    invoiceNumber: r.invoice_number || `LEGACY-${r.id.slice(0, 16)}`,
+    createdAt: r.created_at,
     subtotal: r.subtotal, vatRate: r.vat_rate, vatAmount: r.vat_amount,
     total: r.total, paymentMethod: r.payment_method,
     orderType: r.order_type ?? undefined,

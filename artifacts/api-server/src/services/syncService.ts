@@ -49,7 +49,10 @@ const incomingSaleItemSchema = z
 
 export const incomingSaleSchema = z.object({
   id: z.string().min(1).max(128),
-  invoiceNumber: z.string().min(1).max(64),
+  // Allow empty string: devices running a schema before invoice_number was
+  // introduced (migration DEFAULT '') will send '' for old sales. The server
+  // stores whatever the client provides; cloud reports label these as legacy.
+  invoiceNumber: z.string().max(64),
   createdAt: createdAtMs,
   total: moneyAmount,
   vatAmount: moneyAmount,
