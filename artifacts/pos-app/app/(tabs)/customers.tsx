@@ -25,6 +25,64 @@ import { formatCurrency } from "@/types";
 import { printHtml } from "@/lib/printBridge";
 import { ReceiptModal } from "@/components/ReceiptModal";
 
+function buildPaymentReceiptHtml(
+  customer: Customer,
+  payment: { date: number; amount: number; method: string; ref: string },
+  remainingBalance: number,
+  companyName: string,
+): string {
+  const now = new Date(payment.date).toLocaleString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+  const printedAt = new Date().toLocaleString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+<title>Payment Receipt — ${customer.name}</title>
+<style>
+  body{font-family:Arial,sans-serif;font-size:12px;color:#111;margin:0;padding:0}
+  .page{max-width:320px;margin:0 auto;padding:24px 20px}
+  h1{font-size:15px;margin:0 0 2px;font-weight:700}
+  .sub{color:#666;font-size:11px;margin-bottom:18px}
+  .title{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#374151;border-bottom:2px solid #111;padding-bottom:8px;margin-bottom:18px}
+  .row{display:flex;justify-content:space-between;margin-bottom:8px;font-size:12px}
+  .label{color:#888}
+  .value{font-weight:600}
+  .amount-box{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;text-align:center;margin:18px 0}
+  .amount-label{font-size:10px;text-transform:uppercase;color:#16a34a;letter-spacing:0.5px;margin-bottom:4px}
+  .amount-value{font-size:28px;font-weight:700;color:#16a34a}
+  .balance-row{display:flex;justify-content:space-between;background:#fef9c3;border:1px solid #fef08a;border-radius:6px;padding:10px 14px;margin-top:4px;font-size:12px}
+  .footer{margin-top:24px;text-align:center;font-size:10px;color:#999;border-top:1px dashed #e5e7eb;padding-top:14px}
+  @media print{body{padding:0}.page{padding:12px 10px}}
+</style></head><body>
+<div class="page">
+  <h1>${companyName}</h1>
+  <div class="sub">Printed ${printedAt}</div>
+  <div class="title">Payment Receipt</div>
+
+  <div class="row"><span class="label">Customer</span><span class="value">${customer.name}</span></div>
+  ${customer.phone ? `<div class="row"><span class="label">Phone</span><span class="value">${customer.phone}</span></div>` : ""}
+  <div class="row"><span class="label">Date &amp; Time</span><span class="value">${now}</span></div>
+  <div class="row"><span class="label">Method</span><span class="value">${payment.method}</span></div>
+  ${payment.ref ? `<div class="row"><span class="label">Reference</span><span class="value">${payment.ref}</span></div>` : ""}
+
+  <div class="amount-box">
+    <div class="amount-label">Amount Paid</div>
+    <div class="amount-value">AED ${payment.amount.toFixed(2)}</div>
+  </div>
+
+  <div class="balance-row">
+    <span class="label">Remaining Balance</span>
+    <span style="font-weight:700;color:${remainingBalance > 0 ? "#dc2626" : "#16a34a"}">
+      ${remainingBalance > 0 ? `AED ${remainingBalance.toFixed(2)}` : "Settled ✓"}
+    </span>
+  </div>
+
+  <div class="footer">${companyName} · Thank you!</div>
+</div>
+</body></html>`;
+}
+
 function buildCustomerStatementHtml(
   customer: Customer,
   timeline: { entry: { kind: string; id: string; date: number; amount: number; invNum?: string; loyaltyPts?: number; method?: string; ref?: string }; balance: number }[],
@@ -304,6 +362,15 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
     setReceiptSale(full ?? sale);
   };
 
+  const handlePrintPayment = async (
+    entry: { date: number; amount: number; method: string; ref: string },
+    remainingBalance: number,
+  ) => {
+    if (!selectedCustomer) return;
+    const html = buildPaymentReceiptHtml(selectedCustomer, entry, remainingBalance, companyName);
+    await printHtml(html);
+  };
+
   const renderCustomer = ({ item }: { item: Customer }) => {
     const inactive = item.isActive === false;
     return (
@@ -536,6 +603,15 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
                                 style={{ marginTop: 4 }}
                               >
                                 <Feather name="printer" size={14} color={colors.primary} />
+                              </TouchableOpacity>
+                            )}
+                            {!isSale && (
+                              <TouchableOpacity
+                                onPress={() => handlePrintPayment(entry, balance)}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                style={{ marginTop: 4 }}
+                              >
+                                <Feather name="printer" size={14} color={colors.success} />
                               </TouchableOpacity>
                             )}
                           </View>
