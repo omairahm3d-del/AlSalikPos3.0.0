@@ -296,6 +296,126 @@ verification command above before installing.
 
 ---
 
+## GPG Signing of Checksum Files
+
+SHA256SUMS.txt proves the installer hasn't been corrupted, but it doesn't
+prove who created it. A detached GPG signature (`SHA256SUMS.txt.asc`) lets
+IT admins verify **both integrity and authenticity** in one step.
+
+After each build, `checksum.js` automatically signs `SHA256SUMS.txt` when
+`GPG_KEY_ID` is set. If the variable is absent, signing is skipped
+gracefully — unsigned development builds continue to work unchanged.
+
+### Environment Variables
+
+| Variable | Description |
+|---|---|
+| `GPG_KEY_ID` | Key fingerprint or email address of the signing key (required to enable signing) |
+| `GPG_PASSPHRASE` | Passphrase for the key. Omit if the key is passphrase-less or if `gpg-agent` is already unlocked |
+
+Set these in your shell before building:
+
+```bash
+export GPG_KEY_ID="releases@alsalikcomputers.com"
+export GPG_PASSPHRASE="your-key-passphrase"   # omit if not needed
+```
+
+Or store them as CI/CD secrets (GitHub Actions, GitLab CI, etc.) and inject
+them at build time.
+
+### Output files
+
+| Edition | Signature file |
+|---------|---------------|
+| 64-bit  | `dist/SHA256SUMS.txt.asc` |
+| 32-bit  | `dist-32/SHA256SUMS.txt.asc` |
+
+Distribute `SHA256SUMS.txt` **and** `SHA256SUMS.txt.asc` together on the
+same download page or channel where the installer is offered.
+
+### Generating a Signing Key (one-time setup)
+
+If Al Salik doesn't already have a GPG key for releases, create one on the
+build machine:
+
+```bash
+gpg --full-generate-key
+# Choose: RSA and RSA, 4096 bits, key does not expire
+# Name:  Al Salik Computers
+# Email: releases@alsalikcomputers.com
+```
+
+Export the public key so recipients can import it:
+
+```bash
+gpg --armor --export releases@alsalikcomputers.com > alsalik-releases.pub.asc
+```
+
+Publish `alsalik-releases.pub.asc` on the same page as the installer, or
+upload it to a public key server:
+
+```bash
+gpg --keyserver keys.openpgp.org --send-keys <FINGERPRINT>
+```
+
+### Importing the Public Key (recipient — one-time setup)
+
+Recipients must import the public key once before they can verify signatures.
+
+**From a file:**
+
+```bash
+gpg --import alsalik-releases.pub.asc
+```
+
+**From a key server:**
+
+```bash
+gpg --keyserver keys.openpgp.org --recv-keys <FINGERPRINT>
+```
+
+Replace `<FINGERPRINT>` with the full 40-character key fingerprint shown
+during key generation, or provided alongside the download.
+
+### Verifying the Signature
+
+After downloading the installer, `SHA256SUMS.txt`, and `SHA256SUMS.txt.asc`,
+run the following commands:
+
+**Step 1 — Verify the GPG signature (authenticity)**
+
+```bash
+# 64-bit
+gpg --verify dist/SHA256SUMS.txt.asc dist/SHA256SUMS.txt
+
+# 32-bit
+gpg --verify dist-32/SHA256SUMS.txt.asc dist-32/SHA256SUMS.txt
+```
+
+A valid signature prints a line such as:
+
+```
+gpg: Good signature from "Al Salik Computers <releases@alsalikcomputers.com>"
+```
+
+A `BAD signature` message means the checksum file was tampered with — do not
+proceed.
+
+**Step 2 — Verify the installer checksum (integrity)**
+
+```bash
+# Linux / macOS — 64-bit
+cd dist && sha256sum -c SHA256SUMS.txt
+
+# Linux / macOS — 32-bit
+cd dist-32 && sha256sum -c SHA256SUMS.txt
+```
+
+Both steps together confirm the installer is unaltered **and** was produced
+by Al Salik.
+
+---
+
 ## Cross-compiling from Linux/macOS
 
 electron-builder supports building Windows installers from Linux/macOS with no extra setup.
