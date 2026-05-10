@@ -13,7 +13,7 @@ import {
 import { Feather } from "@expo/vector-icons";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
-import type { Customer, Rider, Sale, SaleItem, ZReport } from "@/types";
+import type { CreditPayment, Customer, Rider, Sale, SaleItem, ZReport } from "@/types";
 import { formatCurrency } from "@/types";
 import { buildCsv, downloadCsv } from "@/lib/csvExport";
 import { generateZReportHTML } from "@/lib/receiptTemplate";
@@ -106,6 +106,7 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustId, setSelectedCustId] = useState<string | null>(null);
   const [custSearch, setCustSearch] = useState("");
+  const [custCreditPayments, setCustCreditPayments] = useState<CreditPayment[]>([]);
 
   const [riders, setRiders] = useState<Rider[]>([]);
   const [stylistFilter, setStylistFilter] = useState<string>("all");
@@ -122,6 +123,14 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
     const items = rangeItems.filter(i => i.saleId === sale.id);
     setReceiptSale({ ...sale, items });
   };
+
+  useEffect(() => {
+    if (selectedCustId) {
+      db.loadCreditPayments(selectedCustId).then(setCustCreditPayments).catch(() => setCustCreditPayments([]));
+    } else {
+      setCustCreditPayments([]);
+    }
+  }, [selectedCustId, db]);
 
   const resetState = () => {
     setLoaded(false);
@@ -754,15 +763,35 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
   };
 
   // ─── Customer Transactions ─────────────────────────────────────────────────
+  const CUST_METHOD_COLORS: Record<string, string> = {
+    Cash: "#16a34a", Card: "#2563eb", "Bank Transfer": "#d97706", Cheque: "#7c3aed",
+    credit: "#dc2626", split: "#9333ea",
+  };
+  const KNOWN_PAY_METHODS = ["Cash", "Card", "Bank Transfer", "Cheque"];
+  const parseCreditNote = (note: string): { method: string; ref: string } => {
+    const sep = note.indexOf(" \u2014 ");
+    if (sep !== -1) {
+      const m = note.slice(0, sep);
+      if (KNOWN_PAY_METHODS.includes(m)) return { method: m, ref: note.slice(sep + 3) };
+    }
+    if (KNOWN_PAY_METHODS.includes(note.trim())) return { method: note.trim(), ref: "" };
+    return { method: "Cash", ref: note };
+  };
+
   const renderCustomer = () => (
     <View style={[st.root, { backgroundColor: colors.background }]}>
       <ReceiptModal visible={!!receiptSale} sale={receiptSale} onClose={() => setReceiptSale(null)} />
       {renderHdr("Customer Transactions", () => setView(null), () => {
         if (selectedCustId) {
-          handleExport("customer-transactions", customerTransactions.map(s => ({
-            Invoice: s.invoiceNumber, Date: new Date(s.createdAt).toISOString(), Method: s.paymentMethod,
-            Subtotal: s.subtotal.toFixed(2), VAT: s.vatAmount.toFixed(2), Total: s.total.toFixed(2),
-          })));
+          const payRows = custCreditPayments.map(p => {
+            const { method, ref } = parseCreditNote(p.note || "");
+            return { Type: "Payment Received", Date: new Date(p.createdAt).toISOString(), Method: method, Reference: ref, Amount: p.amount.toFixed(2) };
+          });
+          const saleRows = customerTransactions.map(s => ({
+            Type: "Sale", Invoice: s.invoiceNumber, Date: new Date(s.createdAt).toISOString(),
+            Method: s.paymentMethod, Subtotal: s.subtotal.toFixed(2), VAT: s.vatAmount.toFixed(2), Total: s.total.toFixed(2),
+          }));
+          handleExport("customer-transactions", [...saleRows, ...payRows]);
         } else {
           handleExport("customers-summary", filteredCustomers.map(c => {
             const txs = validSales.filter(s => s.customerId === c.id);
@@ -818,6 +847,19 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
             const c = customers.find(cx => cx.id === selectedCustId);
             if (!c) return null;
             const cTotal = customerTransactions.reduce((sum, s) => sum + s.total, 0);
+
+            // Build unified timeline: sales in range + ALL payment history, newest first
+            type TlEntry =
+              | { kind: "sale"; sale: Sale; date: number }
+              | { kind: "payment"; id: string; date: number; amount: number; method: string; ref: string };
+            const timeline: TlEntry[] = [
+              ...customerTransactions.map(s => ({ kind: "sale" as const, sale: s, date: s.createdAt })),
+              ...custCreditPayments.map(p => {
+                const { method, ref } = parseCreditNote(p.note || "");
+                return { kind: "payment" as const, id: p.id, date: p.createdAt, amount: p.amount, method, ref };
+              }),
+            ].sort((a, b) => b.date - a.date);
+
             return (
               <>
                 <TouchableOpacity onPress={() => setSelectedCustId(null)}
@@ -830,39 +872,99 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
                   {c.phone ? row("Phone", c.phone) : null}
                   {c.email ? row("Email", c.email) : null}
                   {row("Loyalty Points", String(c.loyaltyPoints ?? 0))}
-                  {row(`Transactions (${rangeLabel})`, String(customerTransactions.length))}
+                  {c.creditBalance > 0 && row("Outstanding Credit", formatCurrency(c.creditBalance), colors.destructive)}
+                  {row(`Sales (${rangeLabel})`, String(customerTransactions.length))}
                   {row("Total Spent", formatCurrency(cTotal), colors.success)}
                 </View>
-                {customerTransactions.length === 0 ? (
+
+                {timeline.length === 0 ? (
                   <Text style={{ color: colors.mutedForeground, textAlign: "center", marginTop: 24 }}>
                     No transactions in {rangeLabel}
                   </Text>
-                ) : customerTransactions.map(sale => (
-                  <View key={sale.id} style={[st.card, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-                    <View style={[st.cardRow, { marginBottom: 8 }]}>
-                      <Text style={[st.cardTitle, { color: colors.foreground, fontSize: 13 }]}>{sale.invoiceNumber}</Text>
-                      {!sale.isRefund && (
-                        <TouchableOpacity
-                          onPress={() => handlePrintCustReceipt(sale)}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          style={{ flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: colors.primary + "60", backgroundColor: colors.primary + "10" }}
-                        >
-                          <Feather name="printer" size={13} color={colors.primary} />
-                          <Text style={{ color: colors.primary, fontSize: 11, fontWeight: "700" }}>Receipt</Text>
-                        </TouchableOpacity>
-                      )}
+                ) : (
+                  <View style={[st.card, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, padding: 0, overflow: "hidden" }]}>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                      <Text style={[st.cardTitle, { color: colors.foreground, fontSize: 13 }]}>Activity Timeline</Text>
+                      <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{timeline.length} entries</Text>
                     </View>
-                    {row("Date", fmtDateTime(sale.createdAt))}
-                    {row("Method", sale.paymentMethod)}
-                    {(sale.splitPayments?.length ?? 0) > 0 && sale.splitPayments!.map((sp, i) => (
-                      row(`  Payment ${i + 1}`, `${sp.method} — ${formatCurrency(sp.amount)}`)
-                    ))}
-                    {row("Subtotal", formatCurrency(sale.subtotal))}
-                    {row("VAT", formatCurrency(sale.vatAmount))}
-                    {(sale.discountAmount ?? 0) > 0 && row("Discount", `-${formatCurrency(sale.discountAmount ?? 0)}`, "#F39C12")}
-                    {row("Total", formatCurrency(sale.total), colors.success)}
+                    {timeline.map((entry, idx) => {
+                      const isLast = idx === timeline.length - 1;
+                      if (entry.kind === "payment") {
+                        const pmColor = CUST_METHOD_COLORS[entry.method] ?? "#16a34a";
+                        return (
+                          <View key={entry.id} style={{ paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: isLast ? 0 : 1, borderBottomColor: colors.border, flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+                            <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.success + "18", alignItems: "center", justifyContent: "center", marginTop: 1 }}>
+                              <Feather name="arrow-down-circle" size={15} color={colors.success} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 2 }}>
+                                <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 13 }}>Payment Received</Text>
+                                <View style={{ backgroundColor: pmColor + "18", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1, borderWidth: 1, borderColor: pmColor + "40" }}>
+                                  <Text style={{ color: pmColor, fontSize: 10, fontWeight: "700" }}>{entry.method.toUpperCase()}</Text>
+                                </View>
+                              </View>
+                              <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{fmtDateTime(entry.date)}</Text>
+                              {!!entry.ref && <Text style={{ color: colors.mutedForeground, fontSize: 11, marginTop: 2 }} numberOfLines={1}>{entry.ref}</Text>}
+                            </View>
+                            <Text style={{ color: colors.success, fontWeight: "700", fontSize: 14 }}>-{formatCurrency(entry.amount)}</Text>
+                          </View>
+                        );
+                      }
+                      // sale entry
+                      const sale = entry.sale;
+                      const pmColor = CUST_METHOD_COLORS[sale.paymentMethod] ?? "#6b7280";
+                      const isRefund = !!sale.isRefund;
+                      return (
+                        <View key={sale.id} style={{ paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: isLast ? 0 : 1, borderBottomColor: colors.border }}>
+                          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+                            <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: (isRefund ? "#F39C12" : colors.destructive) + "18", alignItems: "center", justifyContent: "center", marginTop: 1 }}>
+                              <Feather name={isRefund ? "rotate-ccw" : "file-text"} size={15} color={isRefund ? "#F39C12" : colors.destructive} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 2 }}>
+                                <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 13 }}>
+                                  {isRefund ? "Refund" : "Sale"}
+                                </Text>
+                                <View style={{ backgroundColor: colors.secondary, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1, borderWidth: 1, borderColor: colors.border }}>
+                                  <Text style={{ color: colors.mutedForeground, fontSize: 10, fontWeight: "600" }}>{sale.invoiceNumber}</Text>
+                                </View>
+                                <View style={{ backgroundColor: pmColor + "18", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1, borderWidth: 1, borderColor: pmColor + "40" }}>
+                                  <Text style={{ color: pmColor, fontSize: 10, fontWeight: "700" }}>{sale.paymentMethod.toUpperCase()}</Text>
+                                </View>
+                              </View>
+                              <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{fmtDateTime(sale.createdAt)}</Text>
+                              {(sale.splitPayments?.length ?? 0) > 0 && (
+                                <Text style={{ color: colors.mutedForeground, fontSize: 11, marginTop: 2 }}>
+                                  {sale.splitPayments!.map(sp => `${sp.method} ${formatCurrency(sp.amount)}`).join(" + ")}
+                                </Text>
+                              )}
+                              <View style={{ flexDirection: "row", gap: 12, marginTop: 4 }}>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Sub {formatCurrency(sale.subtotal)}</Text>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>VAT {formatCurrency(sale.vatAmount)}</Text>
+                                {(sale.discountAmount ?? 0) > 0 && <Text style={{ color: "#F39C12", fontSize: 11 }}>-{formatCurrency(sale.discountAmount ?? 0)}</Text>}
+                              </View>
+                            </View>
+                            <View style={{ alignItems: "flex-end", gap: 6 }}>
+                              <Text style={{ color: isRefund ? "#F39C12" : colors.foreground, fontWeight: "700", fontSize: 14 }}>
+                                {isRefund ? "-" : "+"}{formatCurrency(sale.total)}
+                              </Text>
+                              {!isRefund && (
+                                <TouchableOpacity
+                                  onPress={() => handlePrintCustReceipt(sale)}
+                                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                  style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 5, borderWidth: 1, borderColor: colors.primary + "60", backgroundColor: colors.primary + "10" }}
+                                >
+                                  <Feather name="printer" size={11} color={colors.primary} />
+                                  <Text style={{ color: colors.primary, fontSize: 10, fontWeight: "700" }}>Receipt</Text>
+                                </TouchableOpacity>
+                              )}
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })}
                   </View>
-                ))}
+                )}
               </>
             );
           })()}
