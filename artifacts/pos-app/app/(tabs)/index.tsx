@@ -2199,22 +2199,22 @@ export default function POSScreen() {
                     onPress={() => {
                       const vatEnabled = businessSettings?.vatEnabled !== false;
                       const rate = vatEnabled ? VAT_RATE : 0;
-                      const syntheticProduct = {
+                      // Synthetic product: id starts with "pkg_" so checkout
+                      // can detect this line as a package purchase without
+                      // carrying extra fields through CartItem.
+                      const syntheticProduct: Product = {
                         id: `pkg_${pkg.id}`,
                         name: `📦 ${pkg.name}`,
                         price: pkg.price,
                         category: "Packages",
-                        stock: 999,
+                        description: pkg.description ?? "",
+                        colorHex: "#9C27B0",
+                        stockQuantity: 999,
+                        lowStockThreshold: 0,
                         isActive: true,
-                        taxGroupId: null,
-                      } as any;
+                        stockTracked: false,
+                      };
                       addItem(syntheticProduct, rate);
-                      // Patch the cart item to flag it as a package purchase
-                      // We use the isPackagePurchase + packageId fields by setting item properties
-                      // via a side-channel flag stored in lineId prefix:
-                      // The item is added; we locate it and set flags.
-                      // Since addItem doesn't support extra fields, we'll handle at checkout by
-                      // detecting lineId prefix "pkg_" (set via the product.id above).
                       setShowPackagePicker(false);
                     }}
                     style={[
