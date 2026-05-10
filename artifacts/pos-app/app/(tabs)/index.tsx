@@ -941,16 +941,31 @@ export default function POSScreen() {
         setLoyaltyRedeemPts("");
         setShowPayment(true);
       } else {
+        // No-pay: record the items as a Credit sale so the ticket syncs to the
+        // cloud, updates the customer balance, and can be receipted / WhatsApp'd.
+        const sale = await saveSale(cartItems, {
+          paymentMethod: "Credit",
+          customerId: selectedCustomer.id,
+          customerName: selectedCustomer.name,
+          staffId: currentStaff?.id,
+          staffName: currentStaff?.name,
+          allowNegativeStock: businessSettings?.allowNegativeStock !== false,
+          customerCreditBalance: selectedCustomer.creditBalance,
+        });
+        // Link the credit sale to the laundry ticket.
+        await collectLaundryOrder(order.id, sale.id, "Credit");
         clearCart();
         setSelectedCustomer(null);
-        Alert.alert("Ticket Created", `${order.ticketNumber} — promise: ${new Date(order.promisedAt).toLocaleDateString("en-AE")}`);
+        // Show ReceiptModal — gives the cashier the print button and WhatsApp option.
+        setReceiptSale(sale);
       }
     } catch (e: any) {
       Alert.alert("Error", e.message || "Could not create ticket.");
     } finally {
       setLaundryBusy(false);
     }
-  }, [selectedCustomer, businessSettings, createLaundryOrder, laundryPromisedAt, laundryOrderType, laundryNotes,
+  }, [selectedCustomer, businessSettings, createLaundryOrder, saveSale, collectLaundryOrder,
+    laundryPromisedAt, laundryOrderType, laundryNotes,
     subtotal, vatAmount, total, currentStaff, cartItems, laundryPayNow, clearCart]);
 
   const openScanner = useCallback(() => setShowScanner(true), []);

@@ -12,20 +12,17 @@ import type { InsertStockMovement } from "@workspace/saas-db";
  * forcing a server-side migration on every change.
  */
 
-// AED amounts: must be finite, non-NaN, at most 4 decimal places (matches the
-// numeric(14,4) storage column). Reject anything that would either lose
-// precision on cast or pollute reporting with floating-point artifacts.
+// AED amounts: must be finite and within range. The database column is
+// numeric(14,4) so it rounds naturally on insert. We intentionally do NOT
+// enforce exact 4-decimal precision here because JavaScript floating-point
+// arithmetic (e.g. VAT-inclusive net/vat split) routinely produces values
+// like 9.523809523809524 which are perfectly valid but would fail a strict
+// 1e-9 deviation test. The DB cast is the authoritative rounding step.
 const MAX_AMOUNT = 1e10; // 10 billion is a safe upper bound for a single sale
 const moneyAmount = z
   .number()
   .refine(Number.isFinite, "must be a finite number")
-  .refine((n) => Math.abs(n) < MAX_AMOUNT, "amount out of range")
-  .refine((n) => {
-    // Allow up to 4 decimal places. Multiply-and-round avoids tripping on the
-    // common "0.1 + 0.2" floating-point artifacts at the 4-decimal scale.
-    const scaled = Math.round(n * 10000);
-    return Math.abs(scaled / 10000 - n) < 1e-9;
-  }, "amount has too many decimal places (max 4)");
+  .refine((n) => Math.abs(n) < MAX_AMOUNT, "amount out of range");
 
 // createdAt is a JS millisecond epoch. Reject obvious garbage (seconds
 // instead of ms, year 1970, far-future timestamps) so reporting stays clean.
@@ -45,7 +42,8 @@ const incomingSaleItemSchema = z
   .object({
     productId: z.string().min(1).max(128),
     productName: z.string().min(1).max(200),
-    quantity: z.number().int().positive().max(1_000_000),
+    // Allow fractional quantities for weight-based / time-based sales (e.g. 0.75 kg, 1.5 hrs).
+    quantity: z.number().positive().max(1_000_000),
   })
   .loose();
 
