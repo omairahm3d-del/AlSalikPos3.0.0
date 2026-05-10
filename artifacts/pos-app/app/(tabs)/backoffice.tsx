@@ -54,6 +54,7 @@ import type {
 } from "@/types";
 import {
   ADMIN_PERMISSIONS,
+  MANAGER_PERMISSIONS,
   DEFAULT_CASHIER_PERMISSIONS,
   DEFAULT_CUSTOMER_DISPLAY,
   DEFAULT_KOT_SETTINGS,
@@ -173,7 +174,7 @@ export default function BackOfficeScreen() {
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [staffName, setStaffName] = useState("");
   const [staffPin, setStaffPin] = useState("");
-  const [staffRole, setStaffRole] = useState<"admin" | "cashier" | "driver">("cashier");
+  const [staffRole, setStaffRole] = useState<"admin" | "manager" | "cashier" | "driver">("cashier");
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
   const [showStaffModal, setShowStaffModal] = useState(false);
 
@@ -230,6 +231,7 @@ export default function BackOfficeScreen() {
 
   const permissions = useMemo<StaffPermissions>(() => {
     if (!currentStaff || currentStaff.role === "admin") return ADMIN_PERMISSIONS;
+    if (currentStaff.role === "manager") return MANAGER_PERMISSIONS;
     const saved = bizSettings?.rolePermissions?.cashier;
     return saved ? { ...DEFAULT_CASHIER_PERMISSIONS, ...saved } : DEFAULT_CASHIER_PERMISSIONS;
   }, [currentStaff, bizSettings]);
@@ -397,6 +399,10 @@ export default function BackOfficeScreen() {
 
   const handleSaveStaff = async () => {
     if (!staffName.trim() || !staffPin.trim() || staffPin.length < 4) { Alert.alert("Invalid", "Name and 4+ digit PIN required."); return; }
+    if (currentStaff?.role === "manager" && staffRole === "admin") {
+      Alert.alert("Not Allowed", "Managers cannot create or assign admin-level staff. Contact an administrator.");
+      return;
+    }
     if (editingStaff) { await db.updateStaff({ ...editingStaff, name: staffName.trim(), pin: staffPin, role: staffRole }); }
     else { await db.createStaff({ name: staffName.trim(), pin: staffPin, role: staffRole }); }
     await loadStaffList();
@@ -2806,18 +2812,28 @@ export default function BackOfficeScreen() {
             {renderField("PIN (4+ digits)", staffPin, setStaffPin, "1234", "number-pad")}
             <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 16 }]}>Role</Text>
             <View style={s.chipRow}>
-              {(["cashier", "driver", "admin"] as const).map((r) => (
-                <TouchableOpacity key={r} onPress={() => setStaffRole(r)}
-                  style={[s.chip, { backgroundColor: staffRole === r ? colors.primary : colors.secondary, borderColor: staffRole === r ? colors.primary : colors.border, borderRadius: colors.radius }]}>
-                  <Text style={{ color: staffRole === r ? "#fff" : colors.mutedForeground, fontWeight: "600", textTransform: "capitalize" }}>{r}</Text>
-                </TouchableOpacity>
-              ))}
+              {(["cashier", "driver", "manager", "admin"] as const)
+                .filter((r) => !(r === "admin" && currentStaff?.role === "manager"))
+                .map((r) => (
+                  <TouchableOpacity key={r} onPress={() => setStaffRole(r)}
+                    style={[s.chip, { backgroundColor: staffRole === r ? colors.primary : colors.secondary, borderColor: staffRole === r ? colors.primary : colors.border, borderRadius: colors.radius }]}>
+                    <Text style={{ color: staffRole === r ? "#fff" : colors.mutedForeground, fontWeight: "600", textTransform: "capitalize" }}>{r}</Text>
+                  </TouchableOpacity>
+                ))}
             </View>
             {staffRole === "driver" && (
               <View style={[{ backgroundColor: "#25D36618", borderRadius: colors.radius, padding: 10, marginTop: 8, flexDirection: "row", gap: 8, alignItems: "flex-start" }]}>
                 <Feather name="truck" size={14} color="#25D366" style={{ marginTop: 1 }} />
                 <Text style={{ color: "#25D366", fontSize: 12, flex: 1, lineHeight: 17 }}>
                   Drivers can log in, create pickup orders, and send receipts via WhatsApp. They have access to the Customers section by default.
+                </Text>
+              </View>
+            )}
+            {staffRole === "manager" && (
+              <View style={[{ backgroundColor: colors.primary + "12", borderRadius: colors.radius, padding: 10, marginTop: 8, flexDirection: "row", gap: 8, alignItems: "flex-start" }]}>
+                <Feather name="briefcase" size={14} color={colors.primary} style={{ marginTop: 1 }} />
+                <Text style={{ color: colors.primary, fontSize: 12, flex: 1, lineHeight: 17 }}>
+                  Managers have full back office access except Business Settings. They cannot delete records or create admin-level staff.
                 </Text>
               </View>
             )}

@@ -316,12 +316,14 @@ export interface Staff {
   name: string;
   /**
    * - "admin"   — full back office access, ADMIN_PERMISSIONS
+   * - "manager" — full back office access except business settings; cannot
+   *               delete anything or create admin-level staff.
    * - "cashier" — register only, permissions governed by rolePermissions.cashier
    * - "driver"  — laundry / delivery pickup role; uses cashier permissions.
    *               Designed for staff who visit customers, create orders on-device,
    *               and send the receipt via WhatsApp.
    */
-  role: "admin" | "cashier" | "driver";
+  role: "admin" | "manager" | "cashier" | "driver";
   pin: string;
   active: boolean;
   createdAt: number;
@@ -757,4 +759,24 @@ export const DEFAULT_CASHIER_PERMISSIONS: StaffPermissions = {
 export const DRIVER_PERMISSIONS: StaffPermissions = {
   ...DEFAULT_CASHIER_PERMISSIONS,
   boCustomers: true,
+};
+
+/**
+ * Permissions for the "manager" role.
+ * Full back-office read/write access — except:
+ *   - Cannot access Business Settings (boBusiness: false)
+ *   - Cannot delete any data (all delete* = false)
+ *   - Cannot access the Permissions screen (that section is adminOnly)
+ *   - Cannot create or promote staff to admin role (enforced in handleSaveStaff)
+ */
+export const MANAGER_PERMISSIONS: StaffPermissions = {
+  canAccessBackOffice: true,
+  boProducts: true, boCustomers: true, boReports: true, boCategories: true,
+  boRiders: true, boIngredients: true, boRecipes: true, boReceipt: true,
+  boPrinter: true, boKOT: true, boDisplay: true, boStaff: true,
+  boTax: true, boBusiness: false,
+  deleteProducts: false, deleteCustomers: false, deleteCategories: false,
+  deleteRiders: false, deleteIngredients: false, deleteStaff: false,
+  deleteTax: false, deleteTables: false,
+  canRefund: true, canApplyDiscount: true, canManageTables: true,
 };
