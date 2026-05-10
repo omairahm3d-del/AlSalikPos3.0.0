@@ -3,8 +3,9 @@
 // channel immediately after pack:release produces it.
 //
 // Usage:
-//   node publish-release.js        # uploads the 64-bit archive
-//   node publish-release.js 32     # uploads the 32-bit archive
+//   node publish-release.js        # uploads the 64-bit Windows archive
+//   node publish-release.js 32     # uploads the 32-bit Windows archive
+//   node publish-release.js apk    # uploads the Android APK
 //
 // Upload target is selected by the RELEASE_UPLOAD_TARGET environment variable:
 //
@@ -27,42 +28,77 @@ const http = require('http');
 // ---------------------------------------------------------------------------
 
 const arch = process.argv[2] || '64';
+const isApk = arch === 'apk';
 const is32 = arch === '32';
-const distDir = is32 ? 'dist-32' : 'dist';
-const archiveName = is32
-  ? 'AlSalikPOS-Installer-32.tar.gz'
-  : 'AlSalikPOS-Installer.tar.gz';
-const checksumName = 'SHA256SUMS.txt';
-const signatureName = 'SHA256SUMS.txt.asc';
 
-const archivePath = archiveName;
-const checksumPath = path.join(distDir, checksumName);
-const signaturePath = path.join(distDir, signatureName);
+let filesToUpload;
+let primaryName;
 
-if (!existsSync(archivePath)) {
-  console.error(
-    `publish-release.js: archive not found: "${archivePath}"\n` +
-      `Run "npm run pack:release${is32 ? '-32' : ''}" first.`
-  );
-  process.exit(1);
-}
+if (isApk) {
+  // Android APK — single file, no archive/checksum
+  const apkDir = 'dist';
+  const apkFile = (() => {
+    // Accept versioned or plain filename
+    for (const name of [
+      'AlSalikPOS-1.0.0-debug.apk',
+      'AlSalikPOS-debug.apk',
+      'AlSalikPOS.apk',
+    ]) {
+      const p = path.join(apkDir, name);
+      if (existsSync(p)) return { local: p, name: 'AlSalikPOS.apk' };
+    }
+    return null;
+  })();
 
-if (!existsSync(checksumPath)) {
-  console.error(
-    `publish-release.js: checksum file not found: "${checksumPath}"\n` +
-      `Run "npm run build:installer${is32 ? '-32' : ''}" first.`
-  );
-  process.exit(1);
-}
+  if (!apkFile) {
+    console.error(
+      'publish-release.js: APK not found in dist/.\n' +
+        'Build it with: pnpm --filter @workspace/pos-app run build:android'
+    );
+    process.exit(1);
+  }
 
-const filesToUpload = [
-  { local: archivePath, name: archiveName },
-  { local: checksumPath, name: checksumName },
-];
+  primaryName = apkFile.name;
+  filesToUpload = [apkFile];
+} else {
+  // Windows installer archive
+  const distDir = is32 ? 'dist-32' : 'dist';
+  const archiveName = is32
+    ? 'AlSalikPOS-Installer-32.tar.gz'
+    : 'AlSalikPOS-Installer.tar.gz';
+  const checksumName = 'SHA256SUMS.txt';
+  const signatureName = 'SHA256SUMS.txt.asc';
 
-if (existsSync(signaturePath)) {
-  filesToUpload.push({ local: signaturePath, name: signatureName });
-  console.log('Including GPG signature: SHA256SUMS.txt.asc');
+  const archivePath = archiveName;
+  const checksumPath = path.join(distDir, checksumName);
+  const signaturePath = path.join(distDir, signatureName);
+
+  if (!existsSync(archivePath)) {
+    console.error(
+      `publish-release.js: archive not found: "${archivePath}"\n` +
+        `Run "npm run pack:release${is32 ? '-32' : ''}" first.`
+    );
+    process.exit(1);
+  }
+
+  if (!existsSync(checksumPath)) {
+    console.error(
+      `publish-release.js: checksum file not found: "${checksumPath}"\n` +
+        `Run "npm run build:installer${is32 ? '-32' : ''}" first.`
+    );
+    process.exit(1);
+  }
+
+  primaryName = archiveName;
+  filesToUpload = [
+    { local: archivePath, name: archiveName },
+    { local: checksumPath, name: checksumName },
+  ];
+
+  if (existsSync(signaturePath)) {
+    filesToUpload.push({ local: signaturePath, name: signatureName });
+    console.log('Including GPG signature: SHA256SUMS.txt.asc');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -124,7 +160,7 @@ function uploadS3(files) {
   const downloadBase = publicBaseUrl || s3Base;
 
   console.log(`\nFiles published to: ${s3Base}/`);
-  console.log(`\nDownload link: ${downloadBase}/${archiveName}`);
+  console.log(`\nDownload link: ${downloadBase}/${primaryName}`);
   if (publicBaseUrl) {
     console.log(`  (using RELEASE_S3_PUBLIC_BASE_URL — CloudFront/custom domain)`);
   }
@@ -149,7 +185,6 @@ function uploadSftp(files) {
   const portArgs = ['-P', port];
   const sshOpts = ['-o', 'StrictHostKeyChecking=accept-new', '-o', 'BatchMode=yes'];
 
-  // Build a batch file of sftp commands piped via stdin
   const batchLines = files
     .map(({ local, name }) => {
       const localAbs = path.resolve(__dirname, local);
@@ -177,7 +212,7 @@ function uploadSftp(files) {
 
   console.log(`\nFiles published to: sftp://${user}@${host}${remotePath}/`);
   if (publicUrl) {
-    console.log(`\nDownload link: ${publicUrl}/${archiveName}`);
+    console.log(`\nDownload link: ${publicUrl}/${primaryName}`);
   } else {
     console.log(`\n(Set RELEASE_SFTP_PUBLIC_URL to print a shareable download link.)`);
   }
@@ -242,7 +277,7 @@ function uploadHttp(files) {
       await putFile(file);
     }
     console.log(`\nFiles published to: ${baseUrl}/`);
-    console.log(`\nDownload link: ${baseUrl}/${archiveName}`);
+    console.log(`\nDownload link: ${baseUrl}/${primaryName}`);
   }
 
   return run();
@@ -264,10 +299,9 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Publishing release archive (${arch}-bit) via ${target}…`);
-  console.log(
-    `  Files: ${filesToUpload.map((f) => f.name).join(', ')}\n`
-  );
+  const label = isApk ? 'Android APK' : `${is32 ? '32' : '64'}-bit Windows`;
+  console.log(`Publishing ${label} release via ${target}…`);
+  console.log(`  Files: ${filesToUpload.map((f) => f.name).join(', ')}\n`);
 
   try {
     if (target === 's3') {

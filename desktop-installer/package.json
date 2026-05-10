@@ -25,7 +25,8 @@
     "pack:release": "node pack-release.js",
     "pack:release-32": "node pack-release.js 32",
     "publish:release": "node pack-release.js && node publish-release.js",
-    "publish:release-32": "node pack-release.js 32 && node publish-release.js 32"
+    "publish:release-32": "node pack-release.js 32 && node publish-release.js 32",
+    "publish:apk": "node publish-release.js apk"
   },
   "devDependencies": {
     "electron": "^33.4.1",
