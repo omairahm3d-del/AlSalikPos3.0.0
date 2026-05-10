@@ -10,6 +10,9 @@ desktop-installer/dist-32/
 desktop-installer/www/
 desktop-installer/www-new/
 desktop-installer/static-build/
+
+# Desktop installer release config — may contain credentials, never commit
+desktop-installer/publish-config.json
 out-tsc
 *.tsbuildinfo
 .expo
