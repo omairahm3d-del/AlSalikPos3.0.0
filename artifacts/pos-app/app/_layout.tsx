@@ -10,7 +10,7 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Updates from "expo-updates";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View } from "react-native";
+import { Alert, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -170,10 +170,9 @@ export default function RootLayout() {
     }
   }, [fontsReady]);
 
-  // Check for OTA updates silently in the background. The downloaded bundle
-  // is applied automatically on the NEXT cold launch by Expo's runtime —
-  // we never call reloadAsync() here so the current session is never
-  // interrupted and the splash screen is never blocked.
+  // Check for OTA updates. When an update is available it is downloaded in
+  // the background and the cashier is prompted to restart now or later.
+  // If they dismiss, Expo applies the bundle automatically on the next cold launch.
   useEffect(() => {
     if (__DEV__) return;
     let cancelled = false;
@@ -182,9 +181,21 @@ export default function RootLayout() {
         const check = await Updates.checkForUpdateAsync();
         if (cancelled || !check.isAvailable) return;
         await Updates.fetchUpdateAsync();
-        // No reloadAsync() — Expo applies the bundle on next cold launch.
+        if (cancelled) return;
+        Alert.alert(
+          "Update Available",
+          "A new version of Al Salik POS has been downloaded. Restart now to apply it?",
+          [
+            { text: "Later", style: "cancel" },
+            {
+              text: "Restart Now",
+              onPress: () => { Updates.reloadAsync().catch(() => {}); },
+            },
+          ],
+          { cancelable: true },
+        );
       } catch {
-        // Silent — never block the app on an update failure.
+        // Never block the app on an update failure.
       }
     })();
     return () => { cancelled = true; };

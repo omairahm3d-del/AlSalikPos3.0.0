@@ -1,0 +1,33 @@
+# Workspace root .easignore — reduces EAS archive size when EAS_NO_VCS=1
+# Patterns are relative to the workspace root.
+
+# All node_modules (pnpm workspace hoisting makes them huge)
+node_modules/
+**/node_modules/
+
+# Build caches
+.cache/
+**/.expo/
+**/.expo-shared/
+
+# Compiled / generated outputs
+artifacts/pos-app/build-output/
+artifacts/pos-app/dist/
+artifacts/pos-app/www/
+artifacts/pos-app/www-new/
+
+# Desktop installer binaries and web exports
+desktop-installer/dist/
+desktop-installer/dist-32/
+desktop-installer/www/
+desktop-installer/www-new/
+desktop-installer/AlSalikPOS-Installer.tar.gz
+desktop-installer/AlSalikPOS-Installer-32.tar.gz
+
+# Other artifact build outputs
+artifacts/admin/dist/
+artifacts/back-office/dist/
+artifacts/api-server/dist/
+
+# Git metadata
+.git/

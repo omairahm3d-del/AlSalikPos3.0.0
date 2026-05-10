@@ -6,3 +6,5 @@ desktop-installer/dist-32/Al_Salik_POS_Setup_1.0.0_32bit.tar.gz filter=lfs diff=
 desktop-installer/dist-32/win-ia32-unpacked/Al[[:space:]]Salik[[:space:]]POS.exe filter=lfs diff=lfs merge=lfs -text
 artifacts/pos-app/build-output/al-salik-pos.apk filter=lfs diff=lfs merge=lfs -text
 artifacts/pos-app/build-output/al-salik-pos.apk.tar.gz filter=lfs diff=lfs merge=lfs -text
+desktop-installer/AlSalikPOS-Installer-32.tar.gz filter=lfs diff=lfs merge=lfs -text
+desktop-installer/AlSalikPOS-Installer.tar.gz filter=lfs diff=lfs merge=lfs -text
