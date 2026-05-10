@@ -8,7 +8,8 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
+import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -29,21 +30,52 @@ SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
+const INACTIVITY_MS = 60_000; // 1 minute
+
 function AppContent() {
-  const { currentStaff, staffRequired } = useStaff();
+  const { currentStaff, staffRequired, logout } = useStaff();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resetTimer = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      logout();
+    }, INACTIVITY_MS);
+  }, [logout]);
+
+  // Start / restart the inactivity timer whenever a staff member logs in.
+  // Cancel it as soon as they log out so there are no dangling timeouts.
+  useEffect(() => {
+    if (!staffRequired || !currentStaff) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      return;
+    }
+    resetTimer();
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [staffRequired, currentStaff, resetTimer]);
 
   if (staffRequired && !currentStaff) {
     return <LockScreen />;
   }
 
   return (
-    <>
+    // Capture phase: reset the inactivity timer on any touch anywhere in the
+    // app without stealing the event from whichever child handles it.
+    <View
+      style={{ flex: 1 }}
+      onStartShouldSetResponderCapture={() => {
+        resetTimer();
+        return false;
+      }}
+    >
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       </Stack>
       <VirtualKeyboard />
       <SyncStatusPill />
-    </>
+    </View>
   );
 }
 

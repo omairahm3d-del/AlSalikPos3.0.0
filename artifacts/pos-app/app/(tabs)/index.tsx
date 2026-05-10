@@ -963,6 +963,18 @@ export default function POSScreen() {
 
   const CartContent = (
     <View style={styles.cartInner}>
+      {/* Al Salik POS branding watermark — positioned behind all cart content */}
+      <View
+        pointerEvents="none"
+        style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center" }}
+      >
+        <Text
+          style={{ fontSize: 20, fontWeight: "800", color: colors.foreground, opacity: 0.06, textAlign: "center", letterSpacing: 4, transform: [{ rotate: "-30deg" }] }}
+          allowFontScaling={false}
+        >
+          AL SALIK POS
+        </Text>
+      </View>
       <View style={[styles.cartHeader, { borderBottomColor: colors.border }]}>
         <View style={{ flex: 1 }}>
           <View style={styles.cartHeaderRow}>
