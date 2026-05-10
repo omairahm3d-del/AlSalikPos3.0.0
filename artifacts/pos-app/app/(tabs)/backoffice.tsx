@@ -1580,11 +1580,22 @@ export default function BackOfficeScreen() {
                         const addr = printerSettings.bluetoothPrinterAddress;
                         if (!addr) return;
                         setBtTestState("testing");
-                        const { testBluetoothPrinter } = await import("@/lib/printBridge");
-                        const ok = await testBluetoothPrinter(addr, printerSettings.autoCutPaper !== false);
-                        setBtTestState(ok ? "ok" : "fail");
-                        setTimeout(() => setBtTestState("idle"), 3000);
-                        if (!ok) Alert.alert("Print Failed", `Could not send to ${printerSettings.bluetoothPrinterName || addr}.\n\nCheck that:\n• The printer is powered on and in range\n• Bluetooth is enabled\n• The printer is paired in Settings`);
+                        try {
+                          const { testBluetoothPrinterDiag } = await import("@/lib/printBridge");
+                          const { ok, errorMsg } = await testBluetoothPrinterDiag(addr, printerSettings.autoCutPaper !== false);
+                          setBtTestState(ok ? "ok" : "fail");
+                          setTimeout(() => setBtTestState("idle"), 3000);
+                          if (!ok) {
+                            const detail = errorMsg ? `\n\nError: ${errorMsg}` : "";
+                            Alert.alert(
+                              "Bluetooth Print Failed",
+                              `Could not connect to ${printerSettings.bluetoothPrinterName || addr}.${detail}\n\nSteps to fix:\n1. Make sure the printer is powered on\n2. In your phone's Settings → Bluetooth, confirm it shows as Paired (not just discovered)\n3. Move the phone closer to the printer\n4. If you selected "Built-in Printer" by mistake, tap the ✕ to clear it and scan again to find the real printer`,
+                            );
+                          }
+                        } catch {
+                          setBtTestState("fail");
+                          setTimeout(() => setBtTestState("idle"), 3000);
+                        }
                       }}
                       style={[s.chip, {
                         borderColor: btTestState === "ok" ? colors.success : btTestState === "fail" ? "#E74C3C" : colors.success,

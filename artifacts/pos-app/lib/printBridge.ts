@@ -235,6 +235,21 @@ export async function testNetworkPrinter(ip: string, port = 9100, autoCut = true
 
 export type BluetoothDevice = { name: string; address: string };
 
+/** Matches a valid Bluetooth MAC address, e.g. "A1:B2:C3:D4:E5:F6" */
+const BT_MAC_RE = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/;
+
+/** Device names that are never real ESC/POS printers — filter them out. */
+const VIRTUAL_PRINTER_NAMES = new Set([
+  "built-in printer",
+  "built-inprinter",
+  "virtual printer",
+  "microsoft print to pdf",
+  "microsoft xps document writer",
+  "fax",
+  "onenote",
+  "adobe pdf",
+]);
+
 export async function listBluetoothDevices(): Promise<BluetoothDevice[]> {
   if (Platform.OS !== "android" && Platform.OS !== "ios") return [];
   try {
@@ -245,7 +260,15 @@ export async function listBluetoothDevices(): Promise<BluetoothDevice[]> {
       .map((d: any) => {
         try { return typeof d === "string" ? JSON.parse(d) : d; } catch { return null; }
       })
-      .filter((d: any) => d?.address)
+      .filter((d: any) => {
+        if (!d?.address) return false;
+        // Keep only real Bluetooth devices with valid MAC addresses
+        if (!BT_MAC_RE.test(d.address)) return false;
+        // Drop known virtual/system printer names
+        const nameLower = (d.name ?? "").toLowerCase().trim();
+        if (VIRTUAL_PRINTER_NAMES.has(nameLower)) return false;
+        return true;
+      })
       .map((d: any) => ({ name: d.name || d.address, address: d.address }));
   } catch (e: any) {
     console.warn("[printBridge] BT list failed:", e?.message ?? e);
@@ -282,9 +305,28 @@ export async function printBluetoothPrinter(
   }
 }
 
-export async function testBluetoothPrinter(address: string, autoCut = true): Promise<boolean> {
+/** Like testBluetoothPrinter but returns the actual error message on failure. */
+export async function testBluetoothPrinterDiag(
+  address: string,
+  autoCut = true,
+): Promise<{ ok: boolean; errorMsg?: string }> {
+  if (!address?.trim()) return { ok: false, errorMsg: "No printer address selected." };
   const text = `AL SALIK POS\nBluetooth Printer Test\n${new Date().toLocaleString("en-GB")}\n--------------------------------\nPrinter connected!\n--------------------------------\n`;
-  return printBluetoothPrinter(text, address, autoCut);
+  try {
+    const { BluetoothEscposPrinter, BluetoothManager } = require("react-native-bluetooth-escpos-printer");
+    await BluetoothManager.connect(address);
+    const payload = buildEscPosBytes(text, autoCut);
+    await BluetoothEscposPrinter.printRaw(payload);
+    return { ok: true };
+  } catch (e: any) {
+    const raw: string = e?.message ?? String(e) ?? "Unknown error";
+    return { ok: false, errorMsg: raw };
+  }
+}
+
+export async function testBluetoothPrinter(address: string, autoCut = true): Promise<boolean> {
+  const { ok } = await testBluetoothPrinterDiag(address, autoCut);
+  return ok;
 }
 
 export async function printRawText(text: string, opts: { deviceName?: string; autoCut?: boolean; codepage?: "cp437" | "cp1252" | "ascii" } = {}): Promise<boolean> {
