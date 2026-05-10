@@ -81,6 +81,8 @@ A mobile-first Point of Sale (POS) system for the UAE market, offering sales, in
 
 I prefer iterative development with a focus on delivering functional components incrementally. Please ask for clarification if a task is ambiguous or before making significant architectural changes. I appreciate clear, concise communication and prefer explanations that focus on practical implications rather than overly theoretical concepts. When suggesting code, prioritize readability and maintainability.
 
+**Server / activation URL**: Always use `https://retail-hub-omairahm3d.replit.app` as the API base for the desktop installer (`desktop-installer/api-config.json`). Do NOT switch it to `https://alsalik.com` or any other domain unless explicitly asked.
+
 ## Gotchas
 
 -   **Desktop Installer Rebuild**: Requires manual rebuild of web export and NSIS installer for `artifacts/pos-app` changes.
