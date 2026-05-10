@@ -18,7 +18,7 @@ export default function Slide10Bundles() {
         </div>
 
         <div style={{ display: "flex", gap: "3vw", flex: 1 }}>
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "2.5vh' }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "2.5vh" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: "2vh", marginBottom: "3vh" }}>
               <div style={{ display: "flex", gap: "1vw", alignItems: "flex-start" }}>
                 <div style={{ width: "0.5vw", height: "0.5vw", borderRadius: "50%", backgroundColor: "#F59E0B", marginTop: "0.8vh", flexShrink: 0 }} />
@@ -39,7 +39,7 @@ export default function Slide10Bundles() {
             </div>
           </div>
 
-          <div style={{ width: "38vw", display: "flex", flexDirection: "column", gap: "2vw' }}>
+          <div style={{ width: "38vw", display: "flex", flexDirection: "column", gap: "2vw" }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2vw", flex: 1 }}>
               <div style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: "1vw", padding: "3vh 2.5vw", position: "relative", overflow: "hidden" }}>
                 <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "0.4vh", backgroundColor: "#F59E0B" }} />

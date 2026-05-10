@@ -74,7 +74,7 @@ export default function Slide15LicenseSync() {
               </div>
             </div>
           </div>
-          <div style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(20,184,166,0.2)", borderRadius: "1vw", padding: "2.5vh 2.5vw', textAlign: 'center' }}>
+          <div style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(20,184,166,0.2)", borderRadius: "1vw", padding: "2.5vh 2.5vw", textAlign: "center" }}>
             <div style={{ fontSize: "3.5vw", fontWeight: 700, color: "#14B8A6" }}>99.9%</div>
             <div style={{ color: "#94A3B8", fontSize: "1.1vw", fontFamily: "'Inter', sans-serif", marginTop: "0.5vh" }}>Sync reliability</div>
           </div>

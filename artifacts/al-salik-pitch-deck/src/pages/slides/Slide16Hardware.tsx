@@ -21,7 +21,7 @@ export default function Slide16Hardware() {
         </p>
 
         <div style={{ display: "flex", gap: "2vw", flex: 1 }}>
-          <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "1vw", padding: "4vh 3vw", display: "flex", flexDirection: "column', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "1vw", padding: "4vh 3vw", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "0.4vh", backgroundColor: "#14B8A6" }} />
             <div style={{ fontSize: "1vw", color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "2vh", fontFamily: "'Inter', sans-serif" }}>Mobile &amp; Tablet</div>
             <div style={{ fontSize: "2.5vw", fontWeight: 700, marginBottom: "1.5vh" }}>iOS &amp; Android</div>
@@ -40,7 +40,7 @@ export default function Slide16Hardware() {
               </div>
             </div>
           </div>
-          <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "1vw", padding: "4vh 3vw", display: "flex", flexDirection: "column', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "1vw", padding: "4vh 3vw", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "0.4vh", backgroundColor: "#14B8A6" }} />
             <div style={{ fontSize: "1vw", color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "2vh", fontFamily: "'Inter', sans-serif" }}>Desktop</div>
             <div style={{ fontSize: "2.5vw", fontWeight: 700, marginBottom: "1.5vh" }}>Windows App</div>
@@ -59,7 +59,7 @@ export default function Slide16Hardware() {
               </div>
             </div>
           </div>
-          <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "1vw", padding: "4vh 3vw", display: "flex", flexDirection: "column', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "1vw", padding: "4vh 3vw", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "0.4vh", backgroundColor: "#14B8A6" }} />
             <div style={{ fontSize: "1vw", color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "2vh", fontFamily: "'Inter', sans-serif" }}>Peripherals</div>
             <div style={{ fontSize: "2.5vw", fontWeight: 700, marginBottom: "1.5vh" }}>Plug &amp; Play</div>

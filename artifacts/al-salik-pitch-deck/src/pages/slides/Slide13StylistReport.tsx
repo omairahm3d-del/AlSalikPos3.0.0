@@ -17,7 +17,7 @@ export default function Slide13StylistReport() {
         </div>
 
         <div style={{ display: "flex", gap: "3vw", flex: 1 }}>
-          <div style={{ flex: 1, display: "flex", flexDirection: "column', gap: "2.5vh" }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "2.5vh" }}>
             <div style={{ display: "flex", gap: "2vw", marginBottom: "3vh" }}>
               <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "1vw", padding: "2.5vh 2vw" }}>
                 <div style={{ color: "#94A3B8", fontSize: "1vw", fontFamily: "'Inter', sans-serif", marginBottom: "1vh" }}>Top Stylist</div>
@@ -31,9 +31,9 @@ export default function Slide13StylistReport() {
               </div>
             </div>
 
-            <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: "1vw", padding: "2.5vh 2.5vw' }}>
+            <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: "1vw", padding: "2.5vh 2.5vw" }}>
               <div style={{ fontSize: "1.2vw", fontWeight: 600, marginBottom: "3vh" }}>Revenue per stylist — this month</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "2.2vh' }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "2.2vh" }}>
                 <div>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1.2vw", marginBottom: "0.8vh" }}>
                     <span>Ahmed</span><span style={{ color: "#F59E0B" }}>AED 8,400</span>
