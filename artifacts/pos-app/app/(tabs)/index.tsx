@@ -82,6 +82,7 @@ export default function POSScreen() {
     heldOrderInfo,
     addItem,
     addItemWithModifiers,
+    addBundleItem,
     addWeightedItem,
     removeItem,
     updateQuantity,
@@ -417,9 +418,9 @@ export default function POSScreen() {
       durationMinutes: undefined,
       isActive: true,
     };
-    addItem(syntheticProduct, rate);
+    addBundleItem(syntheticProduct, rate, bundle.services);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [addItem, businessSettings]);
+  }, [addBundleItem, businessSettings]);
 
   const handleHoldOrder = useCallback(async (table: PosTable) => {
     if (cartItems.length === 0) return;

@@ -304,6 +304,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
         stylistName: item.stylistName,
         modifiers: item.selectedModifiers?.length ? item.selectedModifiers : undefined,
         modifierTotal: item.modifierTotal ?? undefined,
+        bundleServices: item.bundleServices?.length ? item.bundleServices : undefined,
       };
     });
 

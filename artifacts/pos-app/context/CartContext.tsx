@@ -15,7 +15,7 @@ export function cartLineKey(item: CartItem): string {
 }
 
 type CartAction =
-  | { type: "ADD_ITEM"; product: Product; taxRate?: number; selectedModifiers?: SelectedModifier[]; lineId?: string }
+  | { type: "ADD_ITEM"; product: Product; taxRate?: number; selectedModifiers?: SelectedModifier[]; lineId?: string; bundleServices?: CartItem["bundleServices"] }
   | { type: "ADD_WEIGHTED_ITEM"; product: Product; taxRate?: number; weightKg: number; lineId: string }
   | { type: "REMOVE_ITEM"; itemKey: string }
   | { type: "UPDATE_QUANTITY"; itemKey: string; quantity: number }
@@ -43,6 +43,7 @@ interface CartContextValue {
   heldOrderInfo: HeldOrderInfo | null;
   addItem: (product: Product, taxRate?: number) => void;
   addItemWithModifiers: (product: Product, taxRate: number | undefined, selectedModifiers: SelectedModifier[]) => void;
+  addBundleItem: (product: Product, taxRate: number | undefined, bundleServices: CartItem["bundleServices"]) => void;
   addWeightedItem: (product: Product, taxRate: number | undefined, weightKg: number) => void;
   removeItem: (itemKey: string) => void;
   updateQuantity: (itemKey: string, quantity: number) => void;
@@ -109,10 +110,10 @@ function cartReducer(state: CartState, action: CartAction): CartState {
             }),
           };
         }
-        return { items: [...state.items, { product: action.product, quantity: 1, taxRate: action.taxRate }] };
+        return { items: [...state.items, { product: action.product, quantity: 1, taxRate: action.taxRate, bundleServices: action.bundleServices }] };
       }
 
-      // Modifier item: always a new unique line — never merges.
+      // Modifier item (or bundle): always a new unique line — never merges.
       const modifierTotal = (action.selectedModifiers ?? []).reduce((s, m) => s + m.priceAdjustment, 0);
       const newItem: CartItem = {
         product: action.product,
@@ -121,6 +122,7 @@ function cartReducer(state: CartState, action: CartAction): CartState {
         selectedModifiers: action.selectedModifiers,
         modifierTotal,
         lineId: incomingLineId,
+        bundleServices: action.bundleServices,
       };
       return { items: [...state.items, newItem] };
     }
@@ -258,6 +260,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: "ADD_ITEM", product, taxRate, selectedModifiers, lineId });
   }, []);
 
+  const addBundleItem = useCallback((
+    product: Product,
+    taxRate: number | undefined,
+    bundleServices: CartItem["bundleServices"],
+  ) => {
+    const lineId = `bundle-${product.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    dispatch({ type: "ADD_ITEM", product, taxRate, lineId, bundleServices });
+  }, []);
+
   const addWeightedItem = useCallback((
     product: Product,
     taxRate: number | undefined,
@@ -293,12 +304,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(() => ({
     items: state.items, itemCount, subtotal, netSubtotal, itemDiscountTotal, effectiveSubtotal,
     vatAmount, total, quantityMap, heldOrderInfo,
-    addItem, addItemWithModifiers, addWeightedItem, removeItem, updateQuantity,
+    addItem, addItemWithModifiers, addBundleItem, addWeightedItem, removeItem, updateQuantity,
     setItemDiscount, setItemPrice, setItemStylist, setItemNotes,
     restoreCart, clearCart, getItemQuantity,
   }), [state.items, itemCount, subtotal, netSubtotal, itemDiscountTotal, effectiveSubtotal,
     vatAmount, total, quantityMap, heldOrderInfo,
-    addItem, addItemWithModifiers, addWeightedItem, removeItem, updateQuantity,
+    addItem, addItemWithModifiers, addBundleItem, addWeightedItem, removeItem, updateQuantity,
     setItemDiscount, setItemPrice, setItemStylist, setItemNotes,
     restoreCart, clearCart, getItemQuantity]);
 

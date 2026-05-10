@@ -65,10 +65,15 @@ export function generateReceiptHTML(
         const stylistLine = item.stylistName
           ? `<br/><small style="color:#555;font-size:${fs.body - 2}px;">✂ ${item.stylistName}</small>`
           : "";
+        const bundleLines = item.bundleServices && item.bundleServices.length > 0
+          ? item.bundleServices.map((s) =>
+            `<br/><small style="color:#00897B;font-size:${fs.body - 2}px;margin-left:8px;">✓ ${s.serviceName}</small>`
+          ).join("")
+          : "";
         const effectivePrice = item.productPrice + (item.modifierTotal ?? 0);
         return `
       <tr>
-        <td style="padding:4px 0;text-align:left;">${item.productName}${modifierLines}${stylistLine}</td>
+        <td style="padding:4px 0;text-align:left;">${item.productName}${bundleLines}${modifierLines}${stylistLine}</td>
         <td style="padding:4px 8px;text-align:center;">${Math.abs(item.quantity)}</td>
         <td style="padding:4px 8px;text-align:right;">${fmt(effectivePrice)}</td>
         <td style="padding:4px 0;text-align:right;">${fmt(item.lineTotal)}${(item.discountAmount ?? 0) > 0 ? `<br/><small style="color:#000;">-${fmt(item.discountAmount!)}</small>` : ""}</td>

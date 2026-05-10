@@ -148,9 +148,10 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         const effectiveUnitPrice = item.product.price + (item.modifierTotal ?? 0);
         const lineTotal = effectiveUnitPrice * item.quantity - (item.discountAmount ?? 0);
         const modifiersJson = item.selectedModifiers?.length ? JSON.stringify(item.selectedModifiers) : null;
+        const bundleServicesJson = item.bundleServices?.length ? JSON.stringify(item.bundleServices) : null;
         await tx.runAsync(
-          "INSERT INTO sale_items (id, sale_id, product_id, product_name, product_price, quantity, line_total, discount_amount, stylist_id, stylist_name, modifiers_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-          [itemId, saleId, item.product.id, item.product.name, item.product.price, item.quantity, lineTotal, item.discountAmount ?? 0, item.stylistId ?? null, item.stylistName ?? null, modifiersJson]
+          "INSERT INTO sale_items (id, sale_id, product_id, product_name, product_price, quantity, line_total, discount_amount, stylist_id, stylist_name, modifiers_json, bundle_services_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+          [itemId, saleId, item.product.id, item.product.name, item.product.price, item.quantity, lineTotal, item.discountAmount ?? 0, item.stylistId ?? null, item.stylistName ?? null, modifiersJson, bundleServicesJson]
         );
         // Only deduct stock for products the merchant is tracking
         // (stock_tracking=1). Untracked products (default stock_tracking=0)
@@ -279,6 +280,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
 
   const mapItemRow = (i: any): SaleItem => {
     const modifiers = i.modifiers_json ? JSON.parse(i.modifiers_json) : undefined;
+    const bundleServices = i.bundle_services_json ? JSON.parse(i.bundle_services_json) : undefined;
     return {
       id: i.id, saleId: i.sale_id, productId: i.product_id,
       productName: i.product_name, productPrice: i.product_price,
@@ -288,6 +290,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       modifierTotal: modifiers
         ? modifiers.reduce((s: number, m: { priceAdjustment: number }) => s + m.priceAdjustment, 0)
         : undefined,
+      bundleServices,
     };
   };
 

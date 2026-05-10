@@ -40,7 +40,15 @@ function CartItemRowInner({ item, onUpdateQuantity, onRemoveItem }: Props) {
         <Text style={[styles.name, { color: colors.foreground }]} numberOfLines={1}>
           {item.product.name}
         </Text>
-        {item.selectedModifiers && item.selectedModifiers.length > 0 ? (
+        {item.bundleServices && item.bundleServices.length > 0 ? (
+          <View style={styles.modifierList}>
+            {item.bundleServices.map((s) => (
+              <Text key={s.serviceId} style={[styles.modifierChip, { color: "#00897B" }]} numberOfLines={1}>
+                ✓ {s.serviceName}
+              </Text>
+            ))}
+          </View>
+        ) : item.selectedModifiers && item.selectedModifiers.length > 0 ? (
           <View style={styles.modifierList}>
             {item.selectedModifiers.map((m) => (
               <Text key={m.optionId} style={[styles.modifierChip, { color: colors.mutedForeground }]} numberOfLines={1}>

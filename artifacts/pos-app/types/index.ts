@@ -156,6 +156,11 @@ export interface CartItem {
   isPackagePurchase?: boolean;
   /** Saloon mode: the PrepaidPackage.id being sold when isPackagePurchase=true. */
   packageId?: string;
+  /**
+   * Saloon mode: when this line is a service bundle, carries the list of
+   * included services shown in the cart and printed on the receipt.
+   */
+  bundleServices?: Array<{ serviceId: string; serviceName: string }>;
 }
 
 export interface SaleItem {
@@ -175,6 +180,11 @@ export interface SaleItem {
   modifierTotal?: number;
   /** Saloon mode: the CustomerPackage.id if this session was redeemed from a prepaid package. */
   packageRedemptionId?: string;
+  /**
+   * Saloon mode: when this sale line is a service bundle, carries the list of
+   * included services for receipt display.
+   */
+  bundleServices?: Array<{ serviceId: string; serviceName: string }>;
 }
 
 /**

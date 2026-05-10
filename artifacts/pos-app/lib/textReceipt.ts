@@ -75,6 +75,11 @@ export function generateReceiptText(
       lines.push(name);
       lines.push(`${pad("", nameWidth)} ${padRight(String(Math.abs(it.quantity)), 3)} ${padRight(effectivePrice.toFixed(2), 6)} ${padRight(it.lineTotal.toFixed(2), 6)}`);
     }
+    if (it.bundleServices && it.bundleServices.length > 0) {
+      for (const s of it.bundleServices) {
+        lines.push(`  + ${asciiSafe(s.serviceName)}`);
+      }
+    }
     if (it.modifiers && it.modifiers.length > 0) {
       for (const m of it.modifiers) {
         const adj = m.priceAdjustment !== 0 ? ` (${m.priceAdjustment > 0 ? "+" : ""}${m.priceAdjustment.toFixed(2)})` : "";
