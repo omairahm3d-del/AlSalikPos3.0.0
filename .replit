@@ -63,6 +63,7 @@ externalPort = 3001
 
 [userenv.shared]
 GITHUB_TOKEN = "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"
+EXPO_TOKEN = "TyI0n6c-MDvhH8HVodRz77smlSxnntsjF-HSJswm"
 
 [nix]
 channel = "stable-25_05"
