@@ -11,7 +11,8 @@ import {
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
-import type { Product } from "@/types";
+import type { Product, WeightBarcodeSettings } from "@/types";
+import { isWeightBarcode, parseWeightBarcode } from "@/lib/weightBarcode";
 
 interface Props {
   visible: boolean;
@@ -22,6 +23,13 @@ interface Props {
   /** Optional: used in Products screen to capture a barcode for assignment */
   assignMode?: boolean;
   onAssign?: (barcode: string) => void;
+  /**
+   * Retail mode: when provided and enabled, weight-scale EAN-13 barcodes
+   * (prefix 20–29) are decoded and the matched product + weight are passed
+   * to onFoundWeighed instead of the normal onFound handler.
+   */
+  weightBarcodeSettings?: WeightBarcodeSettings;
+  onFoundWeighed?: (product: Product, weightKg: number) => void;
 }
 
 const SCAN_COOLDOWN_MS = 1500;
@@ -34,6 +42,8 @@ export function BarcodeScannerModal({
   onClose,
   assignMode = false,
   onAssign,
+  weightBarcodeSettings,
+  onFoundWeighed,
 }: Props) {
   const colors = useColors();
   const [permission, requestPermission] = useCameraPermissions();
@@ -75,14 +85,37 @@ export function BarcodeScannerModal({
         setScanResult(null);
         onFound(match);
       }, 700);
-    } else {
-      setScanResult({ type: "not_found", label: data });
-      if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
-      feedbackTimer.current = setTimeout(() => {
-        setScanResult(null);
-        onNotFound(data);
-      }, 1000);
+      return;
     }
+
+    // Weight-scale barcode fallback (retail mode).
+    // Barcodes with prefix 20–29 embed a 5-digit PLU and a weight/price.
+    // Look up the product by matching product.barcode === parsed PLU string.
+    if (weightBarcodeSettings?.enabled && !assignMode) {
+      if (isWeightBarcode(data, weightBarcodeSettings.prefixes)) {
+        const parsed = parseWeightBarcode(data, weightBarcodeSettings);
+        if (parsed?.weightKg != null && parsed.weightKg > 0) {
+          const pluMatch = products.find((p) => p.barcode === parsed.plu);
+          if (pluMatch) {
+            const label = `${parsed.weightKg.toFixed(3)} kg × ${pluMatch.name}`;
+            setScanResult({ type: "found", label });
+            if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
+            feedbackTimer.current = setTimeout(() => {
+              setScanResult(null);
+              onFoundWeighed?.(pluMatch, parsed.weightKg!);
+            }, 700);
+            return;
+          }
+        }
+      }
+    }
+
+    setScanResult({ type: "not_found", label: data });
+    if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
+    feedbackTimer.current = setTimeout(() => {
+      setScanResult(null);
+      onNotFound(data);
+    }, 1000);
   };
 
   if (Platform.OS === "web") {

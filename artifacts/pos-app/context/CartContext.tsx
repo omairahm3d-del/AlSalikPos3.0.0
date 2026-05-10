@@ -16,6 +16,7 @@ export function cartLineKey(item: CartItem): string {
 
 type CartAction =
   | { type: "ADD_ITEM"; product: Product; taxRate?: number; selectedModifiers?: SelectedModifier[]; lineId?: string }
+  | { type: "ADD_WEIGHTED_ITEM"; product: Product; taxRate?: number; weightKg: number; lineId: string }
   | { type: "REMOVE_ITEM"; itemKey: string }
   | { type: "UPDATE_QUANTITY"; itemKey: string; quantity: number }
   | { type: "SET_ITEM_DISCOUNT"; itemKey: string; discountType?: "percentage" | "fixed"; discountValue?: number }
@@ -42,6 +43,7 @@ interface CartContextValue {
   heldOrderInfo: HeldOrderInfo | null;
   addItem: (product: Product, taxRate?: number) => void;
   addItemWithModifiers: (product: Product, taxRate: number | undefined, selectedModifiers: SelectedModifier[]) => void;
+  addWeightedItem: (product: Product, taxRate: number | undefined, weightKg: number) => void;
   removeItem: (itemKey: string) => void;
   updateQuantity: (itemKey: string, quantity: number) => void;
   setItemDiscount: (itemKey: string, discountType?: "percentage" | "fixed", discountValue?: number) => void;
@@ -179,6 +181,18 @@ function cartReducer(state: CartState, action: CartAction): CartState {
       };
     case "RESTORE":
       return { items: action.items };
+    case "ADD_WEIGHTED_ITEM": {
+      // Each weight-scale scan always creates its own unique cart line — never
+      // merges with an existing line because the weight differs per label.
+      const weightItem: CartItem = {
+        product: action.product,
+        quantity: action.weightKg,
+        taxRate: action.taxRate,
+        weightKg: action.weightKg,
+        lineId: action.lineId,
+      };
+      return { items: [...state.items, weightItem] };
+    }
     case "CLEAR":
       return { items: [] };
     default:
@@ -244,6 +258,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: "ADD_ITEM", product, taxRate, selectedModifiers, lineId });
   }, []);
 
+  const addWeightedItem = useCallback((
+    product: Product,
+    taxRate: number | undefined,
+    weightKg: number,
+  ) => {
+    const lineId = `w-${product.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    dispatch({ type: "ADD_WEIGHTED_ITEM", product, taxRate, weightKg, lineId });
+  }, []);
+
   const removeItem = useCallback((itemKey: string) =>
     dispatch({ type: "REMOVE_ITEM", itemKey }), []);
   const updateQuantity = useCallback((itemKey: string, quantity: number) =>
@@ -270,12 +293,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(() => ({
     items: state.items, itemCount, subtotal, netSubtotal, itemDiscountTotal, effectiveSubtotal,
     vatAmount, total, quantityMap, heldOrderInfo,
-    addItem, addItemWithModifiers, removeItem, updateQuantity,
+    addItem, addItemWithModifiers, addWeightedItem, removeItem, updateQuantity,
     setItemDiscount, setItemPrice, setItemStylist, setItemNotes,
     restoreCart, clearCart, getItemQuantity,
   }), [state.items, itemCount, subtotal, netSubtotal, itemDiscountTotal, effectiveSubtotal,
     vatAmount, total, quantityMap, heldOrderInfo,
-    addItem, addItemWithModifiers, removeItem, updateQuantity,
+    addItem, addItemWithModifiers, addWeightedItem, removeItem, updateQuantity,
     setItemDiscount, setItemPrice, setItemStylist, setItemNotes,
     restoreCart, clearCart, getItemQuantity]);
 

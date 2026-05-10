@@ -50,6 +50,7 @@ import type {
   Staff,
   StaffPermissions,
   TaxGroup,
+  WeightBarcodeSettings,
 } from "@/types";
 import {
   ADMIN_PERMISSIONS,
@@ -58,6 +59,7 @@ import {
   DEFAULT_KOT_SETTINGS,
   DEFAULT_PRINTER_SETTINGS,
   DEFAULT_RECEIPT_DESIGN,
+  DEFAULT_WEIGHT_BARCODE_SETTINGS,
   PRODUCT_COLORS,
   formatCurrency,
 } from "@/types";
@@ -165,6 +167,7 @@ export default function BackOfficeScreen() {
   useEffect(() => { refreshWindowsPrinters(); }, [refreshWindowsPrinters]);
   const [kotSettings, setKotSettings] = useState<KOTSettings>({ ...DEFAULT_KOT_SETTINGS });
   const [customerDisplay, setCustomerDisplay] = useState<CustomerDisplaySettings>({ ...DEFAULT_CUSTOMER_DISPLAY });
+  const [weightBarcodeSettings, setWeightBarcodeSettings] = useState<WeightBarcodeSettings>({ ...DEFAULT_WEIGHT_BARCODE_SETTINGS });
   const [bizSettings, setBizSettings] = useState<BusinessSettings | null>(null);
 
   const [staffList, setStaffList] = useState<Staff[]>([]);
@@ -238,6 +241,7 @@ export default function BackOfficeScreen() {
     setPrinterSettings(biz.printerSettings ?? { ...DEFAULT_PRINTER_SETTINGS });
     setKotSettings(biz.kotSettings ?? { ...DEFAULT_KOT_SETTINGS });
     setCustomerDisplay(biz.customerDisplay ?? { ...DEFAULT_CUSTOMER_DISPLAY });
+    setWeightBarcodeSettings(biz.weightBarcodeSettings ?? { ...DEFAULT_WEIGHT_BARCODE_SETTINGS });
     setCashierPerms(biz.rolePermissions?.cashier ? { ...DEFAULT_CASHIER_PERMISSIONS, ...biz.rolePermissions.cashier } : { ...DEFAULT_CASHIER_PERMISSIONS });
     setZReportEmail(biz.zReportEmail ?? "");
     const sc = biz.smtpConfig;
@@ -275,7 +279,8 @@ export default function BackOfficeScreen() {
     rd?: ReceiptDesignSettings,
     ps?: PrinterSettings,
     ks?: KOTSettings,
-    cd?: CustomerDisplaySettings
+    cd?: CustomerDisplaySettings,
+    wbs?: WeightBarcodeSettings,
   ) => {
     const biz = bizSettings ?? await db.loadBusinessSettings();
     const updated: BusinessSettings = {
@@ -284,12 +289,13 @@ export default function BackOfficeScreen() {
       printerSettings: ps ?? printerSettings,
       kotSettings: ks ?? kotSettings,
       customerDisplay: cd ?? customerDisplay,
+      weightBarcodeSettings: wbs ?? weightBarcodeSettings,
     };
     await db.saveBusinessSettings(updated);
     setBizSettings(updated);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Alert.alert("Saved", "Settings have been saved successfully.");
-  }, [bizSettings, receiptDesign, printerSettings, kotSettings, customerDisplay, db]);
+  }, [bizSettings, receiptDesign, printerSettings, kotSettings, customerDisplay, weightBarcodeSettings, db]);
 
   const openSection = useCallback((sec: Section) => {
     // Inventory screens live as their own expo-router routes (so deep-links
@@ -1914,6 +1920,88 @@ export default function BackOfficeScreen() {
           </>
         )}
 
+        {/* Weight Scale Barcode — retail mode only */}
+        {isRetail && (
+          <>
+            <View style={[s.divider, { backgroundColor: colors.border, marginVertical: 20 }]} />
+            <Text style={[s.sectionTitle, { color: colors.foreground, marginBottom: 4 }]}>Weight Scale Barcode</Text>
+            <Text style={[s.fieldHint, { color: colors.mutedForeground, marginBottom: 8 }]}>
+              Decode EAN-13 barcodes with embedded weight or price (prefixes 20–29). Set each product's Barcode field to its 5-digit PLU code.
+            </Text>
+            {renderSwitch(
+              "Enable Weight Scale Barcodes",
+              weightBarcodeSettings.enabled,
+              (v) => setWeightBarcodeSettings({ ...weightBarcodeSettings, enabled: v }),
+            )}
+            {weightBarcodeSettings.enabled && (
+              <>
+                <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 14 }]}>Value Encoding</Text>
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
+                  {(["weight", "price"] as const).map((enc) => (
+                    <TouchableOpacity
+                      key={enc}
+                      onPress={() => setWeightBarcodeSettings({ ...weightBarcodeSettings, encoding: enc })}
+                      style={[s.chip, {
+                        backgroundColor: weightBarcodeSettings.encoding === enc ? colors.primary : colors.secondary,
+                        borderColor: weightBarcodeSettings.encoding === enc ? colors.primary : colors.border,
+                        borderRadius: colors.radius,
+                      }]}
+                    >
+                      <Text style={{ color: weightBarcodeSettings.encoding === enc ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 13 }}>
+                        {enc === "weight" ? "Weight (grams)" : "Price (fils)"}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {weightBarcodeSettings.encoding === "weight" && (
+                  <>
+                    <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 14 }]}>Weight Divisor</Text>
+                    <Text style={[s.fieldHint, { color: colors.mutedForeground }]}>
+                      Divide the raw 5-digit value by this to get kg. Default 1000 means the value is in grams.
+                    </Text>
+                    <TextInput
+                      style={[s.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]}
+                      keyboardType="numeric"
+                      value={String(weightBarcodeSettings.weightDivisor)}
+                      onChangeText={(v) => {
+                        const n = parseInt(v, 10);
+                        if (!isNaN(n) && n > 0) setWeightBarcodeSettings({ ...weightBarcodeSettings, weightDivisor: n });
+                      }}
+                    />
+                  </>
+                )}
+                <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 14 }]}>Active Prefixes</Text>
+                <Text style={[s.fieldHint, { color: colors.mutedForeground }]}>
+                  First 2 digits of the barcode that trigger weight parsing. Tap to toggle.
+                </Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                  {["20","21","22","23","24","25","26","27","28","29"].map((p) => {
+                    const active = weightBarcodeSettings.prefixes.includes(p);
+                    return (
+                      <TouchableOpacity
+                        key={p}
+                        onPress={() => setWeightBarcodeSettings({
+                          ...weightBarcodeSettings,
+                          prefixes: active
+                            ? weightBarcodeSettings.prefixes.filter((x) => x !== p)
+                            : [...weightBarcodeSettings.prefixes, p].sort(),
+                        })}
+                        style={[s.chip, {
+                          backgroundColor: active ? colors.primary : colors.secondary,
+                          borderColor: active ? colors.primary : colors.border,
+                          borderRadius: colors.radius,
+                        }]}
+                      >
+                        <Text style={{ color: active ? "#fff" : colors.mutedForeground, fontWeight: "600", fontSize: 13 }}>{p}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
+          </>
+        )}
+
         <TouchableOpacity onPress={() => saveSettings(undefined, printerSettings)} style={[s.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius, marginTop: 16 }]}>
           <Feather name="save" size={16} color="#fff" />
           <Text style={s.saveBtnText}>Save Printer Settings</Text>
@@ -2896,6 +2984,8 @@ const s = StyleSheet.create({
   formContent: { padding: 20, paddingBottom: 60 },
   fieldWrap: { marginBottom: 12 },
   fieldLabel: { fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 },
+  fieldHint: { fontSize: 12, lineHeight: 18, marginBottom: 6 },
+  divider: { height: 1 },
   input: { paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, borderWidth: 1 },
   switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14, borderBottomWidth: 0.5 },
   switchLabel: { fontSize: 15 },

@@ -81,6 +81,7 @@ export default function POSScreen() {
     heldOrderInfo,
     addItem,
     addItemWithModifiers,
+    addWeightedItem,
     removeItem,
     updateQuantity,
     setItemDiscount,
@@ -640,6 +641,15 @@ export default function POSScreen() {
     handleAddItem(product);
     setShowScanner(false);
   }, [handleAddItem]);
+
+  const handleScanFoundWeighed = useCallback((product: Product, weightKg: number) => {
+    const vatEnabled = businessSettings?.vatEnabled !== false;
+    const rate = vatEnabled
+      ? (product.taxGroupId ? (taxGroupMap[product.taxGroupId] ?? VAT_RATE) : VAT_RATE)
+      : 0;
+    addWeightedItem(product, rate, weightKg);
+    setShowScanner(false);
+  }, [addWeightedItem, businessSettings, taxGroupMap]);
 
   const handleScanNotFound = useCallback(async (barcode: string) => {
     setShowScanner(false);
@@ -1755,6 +1765,8 @@ export default function POSScreen() {
         onFound={handleScanFound}
         onNotFound={handleScanNotFound}
         onClose={() => setShowScanner(false)}
+        weightBarcodeSettings={businessSettings?.weightBarcodeSettings}
+        onFoundWeighed={handleScanFoundWeighed}
       />
 
       {/* Modifier Picker Modal */}

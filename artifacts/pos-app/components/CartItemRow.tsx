@@ -55,26 +55,37 @@ function CartItemRowInner({ item, onUpdateQuantity, onRemoveItem }: Props) {
           </Text>
         ) : null}
         <Text style={[styles.unitPrice, { color: colors.mutedForeground }]}>
-          {formatCurrency(effectivePrice)} each
+          {formatCurrency(effectivePrice)} {item.weightKg != null ? "per kg" : "each"}
         </Text>
       </View>
 
       <View style={styles.qtySection}>
-        <TouchableOpacity
-          onPress={decrement}
-          style={[styles.qtyBtn, { backgroundColor: colors.secondary }]}
-        >
-          <Feather name="minus" size={13} color={colors.foreground} />
-        </TouchableOpacity>
+        {item.weightKg != null ? (
+          <View style={[styles.weightBadge, { backgroundColor: colors.secondary, borderRadius: 8 }]}>
+            <Feather name="tag" size={11} color={colors.primary} />
+            <Text style={[styles.weightLabel, { color: colors.primary }]}>
+              {item.weightKg.toFixed(3)} kg
+            </Text>
+          </View>
+        ) : (
+          <>
+            <TouchableOpacity
+              onPress={decrement}
+              style={[styles.qtyBtn, { backgroundColor: colors.secondary }]}
+            >
+              <Feather name="minus" size={13} color={colors.foreground} />
+            </TouchableOpacity>
 
-        <Text style={[styles.qty, { color: colors.foreground }]}>{item.quantity}</Text>
+            <Text style={[styles.qty, { color: colors.foreground }]}>{item.quantity}</Text>
 
-        <TouchableOpacity
-          onPress={increment}
-          style={[styles.qtyBtn, { backgroundColor: colors.primary }]}
-        >
-          <Feather name="plus" size={13} color="#fff" />
-        </TouchableOpacity>
+            <TouchableOpacity
+              onPress={increment}
+              style={[styles.qtyBtn, { backgroundColor: colors.primary }]}
+            >
+              <Feather name="plus" size={13} color="#fff" />
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
       <Text style={[styles.lineTotal, { color: colors.foreground }]}>
@@ -153,6 +164,18 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_700Bold",
     minWidth: 22,
     textAlign: "center",
+  },
+  weightBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  weightLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    fontFamily: "Inter_700Bold",
   },
   lineTotal: {
     fontSize: 13,

@@ -49,6 +49,13 @@ export interface Product {
    * Absent on legacy rows is treated as true (active). Stored as 0/1 in SQLite.
    */
   isActive?: boolean;
+  /**
+   * Retail mode: when true, this product is sold by weight (e.g. loose produce,
+   * deli items). The price field is treated as price-per-kg. Weight barcodes
+   * (EAN-13 prefix 20–29) decoded by the scanner supply the cart quantity in kg.
+   * Stored as 0/1 in SQLite.
+   */
+  soldByWeight?: boolean;
 }
 
 export interface PrinterConfig {
@@ -128,6 +135,13 @@ export interface CartItem {
    * When undefined, the product.id is used as the line key (legacy behaviour).
    */
   lineId?: string;
+  /**
+   * Retail / weight-scale items: weight captured from the EAN-13 barcode in kg.
+   * When set the cart quantity equals this value; the +/- quantity buttons are
+   * hidden (weight is fixed by the scale label). Each weight scan creates its own
+   * line (never merges) via a unique lineId.
+   */
+  weightKg?: number;
 }
 
 export interface SaleItem {
@@ -421,6 +435,35 @@ export interface SmtpConfig {
   fromName: string;
 }
 
+/**
+ * Configuration for EAN-13 weight-scale barcode decoding (retail mode).
+ * GS1 reserves prefixes 20–29 for in-store printed labels that embed an
+ * item PLU and either a weight (grams) or price (fils) in the barcode.
+ */
+export interface WeightBarcodeSettings {
+  /** Master switch — when false the feature is completely disabled. */
+  enabled: boolean;
+  /**
+   * EAN-13 2-digit prefixes treated as weight/price labels.
+   * Default: all of 20–29.
+   */
+  prefixes: string[];
+  /** Whether the 5-digit value field encodes weight (grams) or price (fils). */
+  encoding: "weight" | "price";
+  /**
+   * Divide the raw 5-digit integer by this to convert to kg.
+   * Default 1000 means the value field is in grams (1250 → 1.250 kg).
+   */
+  weightDivisor: number;
+}
+
+export const DEFAULT_WEIGHT_BARCODE_SETTINGS: WeightBarcodeSettings = {
+  enabled: false,
+  prefixes: ["20", "21", "22", "23", "24", "25", "26", "27", "28", "29"],
+  encoding: "weight",
+  weightDivisor: 1000,
+};
+
 export interface BusinessSettings {
   businessName: string;
   trn: string;
@@ -463,6 +506,13 @@ export interface BusinessSettings {
    * and the stock deduction is clamped to zero on the device ledger.
    */
   allowNegativeStock?: boolean;
+  /**
+   * Retail mode: EAN-13 weight-scale barcode decoding. When enabled, barcodes
+   * with prefixes 20–29 are parsed to extract a 5-digit PLU and a weight (kg)
+   * or price, and the matching product is added with the decoded weight as its
+   * cart quantity.
+   */
+  weightBarcodeSettings?: WeightBarcodeSettings;
 }
 
 /**
