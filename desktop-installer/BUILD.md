@@ -521,6 +521,7 @@ of the three supported backends:
 | `RELEASE_S3_BUCKET` | yes | S3 bucket name (e.g. `my-releases-bucket`) |
 | `RELEASE_S3_PREFIX` | no | Key prefix inside the bucket (e.g. `alsalik-pos/v1.0.0`) |
 | `RELEASE_S3_ENDPOINT` | no | Custom endpoint for S3-compatible stores (MinIO, Wasabi, Backblaze B2, etc.) |
+| `RELEASE_S3_PUBLIC_BASE_URL` | no | Public base URL printed as the download link (e.g. a CloudFront or custom-domain URL). When not set, falls back to the standard `https://<bucket>.s3.amazonaws.com/<prefix>` URL — or to `<RELEASE_S3_ENDPOINT>/<bucket>/<prefix>` when `RELEASE_S3_ENDPOINT` is configured. |
 
 **Shell example:**
 
@@ -562,6 +563,7 @@ export RELEASE_S3_ENDPOINT=https://s3.us-east-005.backblazeb2.com
 | `RELEASE_SFTP_PATH` | yes | Absolute remote directory path |
 | `RELEASE_SFTP_PORT` | no | SSH port (default: `22`) |
 | `RELEASE_SFTP_KEY` | no | Path to a private key file (`~/.ssh/id_rsa`, etc.) |
+| `RELEASE_SFTP_PUBLIC_URL` | no | Public HTTP(S) base URL printed as the download link (e.g. `https://files.example.com/releases/alsalik-pos`). When not set a reminder is printed to configure it. |
 
 The remote directory (`RELEASE_SFTP_PATH`) must already exist on the server.
 

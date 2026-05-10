@@ -100,6 +100,7 @@ function uploadS3(files) {
   const bucket = cfg('RELEASE_S3_BUCKET');
   const prefix = cfg('RELEASE_S3_PREFIX').replace(/\/$/, '');
   const endpoint = cfg('RELEASE_S3_ENDPOINT');
+  const publicBaseUrl = cfg('RELEASE_S3_PUBLIC_BASE_URL').replace(/\/$/, '');
 
   if (!bucket) {
     console.error(
@@ -117,10 +118,16 @@ function uploadS3(files) {
     runCmd('aws', ['s3', 'cp', local, dest, '--no-progress', ...endpointArgs]);
   }
 
-  const base = endpoint
+  const s3Base = endpoint
     ? `${endpoint.replace(/\/$/, '')}/${bucket}${prefix ? '/' + prefix : ''}`
     : `https://${bucket}.s3.amazonaws.com${prefix ? '/' + prefix : ''}`;
-  console.log(`\nFiles published to: ${base}/`);
+  const downloadBase = publicBaseUrl || s3Base;
+
+  console.log(`\nFiles published to: ${s3Base}/`);
+  console.log(`\nDownload link: ${downloadBase}/${archiveName}`);
+  if (publicBaseUrl) {
+    console.log(`  (using RELEASE_S3_PUBLIC_BASE_URL — CloudFront/custom domain)`);
+  }
 }
 
 function uploadSftp(files) {
@@ -166,7 +173,14 @@ function uploadSftp(files) {
     throw new Error(`sftp exited with status ${result.status}`);
   }
 
+  const publicUrl = cfg('RELEASE_SFTP_PUBLIC_URL').replace(/\/$/, '');
+
   console.log(`\nFiles published to: sftp://${user}@${host}${remotePath}/`);
+  if (publicUrl) {
+    console.log(`\nDownload link: ${publicUrl}/${archiveName}`);
+  } else {
+    console.log(`\n(Set RELEASE_SFTP_PUBLIC_URL to print a shareable download link.)`);
+  }
 }
 
 function uploadHttp(files) {
@@ -228,6 +242,7 @@ function uploadHttp(files) {
       await putFile(file);
     }
     console.log(`\nFiles published to: ${baseUrl}/`);
+    console.log(`\nDownload link: ${baseUrl}/${archiveName}`);
   }
 
   return run();

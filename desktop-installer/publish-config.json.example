@@ -7,12 +7,14 @@
   "RELEASE_S3_BUCKET": "my-releases-bucket",
   "RELEASE_S3_PREFIX": "alsalik-pos/v1.0.0",
   "RELEASE_S3_ENDPOINT": "",
+  "RELEASE_S3_PUBLIC_BASE_URL": "",
 
   "RELEASE_SFTP_HOST": "files.example.com",
   "RELEASE_SFTP_USER": "deploy",
   "RELEASE_SFTP_PATH": "/var/www/releases/alsalik-pos",
   "RELEASE_SFTP_PORT": "22",
   "RELEASE_SFTP_KEY": "/path/to/id_rsa",
+  "RELEASE_SFTP_PUBLIC_URL": "",
 
   "RELEASE_HTTP_URL": "https://my-server.example.com/releases/v1.0.0",
   "RELEASE_HTTP_BEARER": ""
