@@ -22,6 +22,7 @@ config.resolver.blockList = [
 config.resolver.extraNodeModules = {
   ...config.resolver.extraNodeModules,
   "react-native-ping": path.resolve(__dirname, "stubs/react-native-ping.js"),
+  "react-native-webview": path.resolve(__dirname, "stubs/react-native-webview.js"),
 };
 
 module.exports = config;
