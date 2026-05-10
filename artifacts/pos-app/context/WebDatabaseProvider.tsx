@@ -7,7 +7,7 @@ import type {
   PrepaidPackage, Product, RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
 } from "@/types";
-import { DEFAULT_BUSINESS_SETTINGS, SEED_CATEGORIES, SEED_PRODUCTS, SEED_STAFF, SEED_TABLES, SEED_TAX_GROUPS, SEED_CUSTOMERS, VAT_RATE } from "@/types";
+import { DEFAULT_BUSINESS_SETTINGS, SEED_CATEGORIES, SEED_PRODUCTS, SEED_STAFF, SEED_TABLES, SEED_TAX_GROUPS, SEED_CUSTOMERS, VAT_RATE, SEED_PRODUCT_IDS, SEED_CATEGORY_IDS } from "@/types";
 import { computeLineNetVat } from "./CartContext";
 import { generateId, generateInvoiceNumber, generateOrderNumber } from "@/lib/database";
 import { notifySyncQueueChanged } from "@/lib/syncEvents";
@@ -1274,6 +1274,25 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     await setJson(K.syncLog, []);
   }, []);
 
+  const clearSeedCatalog = useCallback(async (): Promise<void> => {
+    return runCatalogExclusive(async () => {
+      const products = await getProducts();
+      const categories = await getCategories();
+      const cleanedProducts = products.filter(
+        (p) => !SEED_PRODUCT_IDS.has(p.id) || (p.updatedAt !== undefined && p.updatedAt > 0)
+      );
+      const cleanedCategories = categories.filter(
+        (c) => !SEED_CATEGORY_IDS.has(c.id) || (c.updatedAt !== undefined && c.updatedAt > 0)
+      );
+      if (cleanedProducts.length !== products.length) {
+        await setJson(K.products, cleanedProducts);
+      }
+      if (cleanedCategories.length !== categories.length) {
+        await setJson(K.categories, cleanedCategories);
+      }
+    });
+  }, []);
+
   const applyRemoteCatalog = useCallback(async (input: CatalogApplyInput): Promise<void> => {
     const incomingProducts = input.products ?? [];
     const incomingCategories = input.categories ?? [];
@@ -1620,7 +1639,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       exportData, importData, clearData,
       loadExpenses, createExpense, deleteExpense,
       enqueueSync, reconcilePendingSync, loadSyncBatch, markSyncResults, countPendingSync,
-      loadCatalogBatch, markCatalogResults, countPendingCatalog, applyRemoteCatalog,
+      loadCatalogBatch, markCatalogResults, countPendingCatalog, applyRemoteCatalog, clearSeedCatalog,
       loadSyncQueue, loadCatalogOutbox, dismissSyncItem, dismissCatalogItem,
       insertSyncLog, loadSyncLogs, clearSyncLogs,
       loadLocalSuppliers, createLocalSupplier, updateLocalSupplier,

@@ -735,6 +735,14 @@ export const SEED_CATEGORIES: Category[] = [
   { id: "cat_desserts", name: "Desserts", colorHex: "#9B59B6", sortOrder: 4 },
 ];
 
+export const SEED_PRODUCT_IDS = new Set([
+  "p1","p2","p3","p4","p5","p6","p7","p8","p9","p10",
+  "p11","p12","p13","p14","p15","p16","p17","p18",
+]);
+export const SEED_CATEGORY_IDS = new Set([
+  "cat_beverages","cat_food","cat_snacks","cat_desserts",
+]);
+
 // Default admin staff. PIN login is 4-digit, so the credentials are
 // name "Admin" / PIN "1234". Shown as a hint on the lock screen on a
 // fresh install. Can be changed/removed from Back Office → Staff.

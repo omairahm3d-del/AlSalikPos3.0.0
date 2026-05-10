@@ -35,7 +35,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const permissions = usePermissions();
-  const { isSaloon, productLabel } = useWorkMode();
+  const { isSaloon, isLaundry, productLabel } = useWorkMode();
   const { width } = useWindowDimensions();
   const {
     loadProducts, createProduct, updateProduct, deleteProduct,
@@ -151,7 +151,12 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     ]);
     setProducts(data);
     setTaxGroups(groups);
-    const catNames = cats.length > 0 ? cats.map((c: Category) => c.name) : ["Beverages", "Food", "Snacks", "Desserts"];
+    const defaultCats = isSaloon
+      ? ["Hair", "Nails", "Skin", "Waxing", "Other"]
+      : isLaundry
+      ? ["Shirts", "Trousers", "Suits", "Blankets", "Bedding", "Other"]
+      : ["Beverages", "Food", "Snacks", "Desserts"];
+    const catNames = cats.length > 0 ? cats.map((c: Category) => c.name) : defaultCats;
     setCategoryOptions(catNames);
     setPrinterConfigs(biz.printerSettings?.printers ?? []);
     setIngredients(ings);

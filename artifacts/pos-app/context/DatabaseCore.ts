@@ -325,6 +325,16 @@ export interface DatabaseContextValue {
    * from the cloud so they shouldn't bounce back.
    */
   applyRemoteCatalog: (input: CatalogApplyInput) => Promise<void>;
+  /**
+   * Delete local rows whose IDs match the well-known restaurant seed set
+   * (products p1–p18, categories cat_beverages/food/snacks/desserts).
+   * Called once after the first successful catalog pull so a fresh device
+   * doesn't show restaurant demo data when the company uses a different
+   * work mode (laundry, saloon, retail) or simply has no catalog yet.
+   * Only removes rows that haven't been updated since seeding (updatedAt
+   * is null/0) so any real local edits on those IDs are preserved.
+   */
+  clearSeedCatalog: () => Promise<void>;
 
   // ---- Sync queue viewer + dismiss ----
   /** Load all sync_queue rows for display in the queue viewer. */

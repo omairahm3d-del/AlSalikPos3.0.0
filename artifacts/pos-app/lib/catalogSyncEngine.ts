@@ -221,6 +221,13 @@ export async function catalogSyncOnce(
       // fair to surface the volume so the status pill doesn't look stuck.
       succeeded += applyCount;
     }
+    // On the very first pull (cursor was "0"), always clear restaurant seed
+    // rows so a fresh device in laundry/saloon/retail mode doesn't show demo
+    // café products/categories. We only delete seed IDs that were never
+    // edited locally (updated_at = null/0), so real user edits are safe.
+    if (cursor === "0") {
+      await db.clearSeedCatalog();
+    }
     if (pull.cursor && pull.cursor !== cursor) {
       await setCatalogCursor(pull.cursor);
     }

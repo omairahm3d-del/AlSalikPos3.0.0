@@ -6,7 +6,7 @@ import type {
   RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
 } from "@/types";
-import { DEFAULT_BUSINESS_SETTINGS, VAT_RATE } from "@/types";
+import { DEFAULT_BUSINESS_SETTINGS, VAT_RATE, SEED_PRODUCT_IDS, SEED_CATEGORY_IDS } from "@/types";
 import { computeLineNetVat } from "./CartContext";
 import { generateId, generateInvoiceNumber, generateOrderNumber } from "@/lib/database";
 import { notifySyncQueueChanged } from "@/lib/syncEvents";
@@ -1547,6 +1547,21 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     });
   }, [db]);
 
+  const clearSeedCatalog = useCallback(async (): Promise<void> => {
+    const productPlaceholders = Array.from(SEED_PRODUCT_IDS).map(() => "?").join(",");
+    const categoryPlaceholders = Array.from(SEED_CATEGORY_IDS).map(() => "?").join(",");
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      await tx.runAsync(
+        `DELETE FROM products WHERE id IN (${productPlaceholders}) AND (updated_at IS NULL OR updated_at = 0)`,
+        [...SEED_PRODUCT_IDS]
+      );
+      await tx.runAsync(
+        `DELETE FROM categories WHERE id IN (${categoryPlaceholders}) AND (updated_at IS NULL OR updated_at = 0)`,
+        [...SEED_CATEGORY_IDS]
+      );
+    });
+  }, [db]);
+
   // ---- Local offline storage (SQLite) ----
 
   const loadLocalSuppliers = useCallback(async (): Promise<LocalSupplier[]> => {
@@ -1915,7 +1930,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       exportData, importData, clearData,
       loadExpenses, createExpense, deleteExpense,
       enqueueSync, reconcilePendingSync, loadSyncBatch, markSyncResults, countPendingSync,
-      loadCatalogBatch, markCatalogResults, countPendingCatalog, applyRemoteCatalog,
+      loadCatalogBatch, markCatalogResults, countPendingCatalog, applyRemoteCatalog, clearSeedCatalog,
       loadSyncQueue, loadCatalogOutbox, dismissSyncItem, dismissCatalogItem,
       insertSyncLog, loadSyncLogs, clearSyncLogs,
       loadLocalSuppliers, createLocalSupplier, updateLocalSupplier,
