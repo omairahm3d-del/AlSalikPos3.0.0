@@ -38,7 +38,7 @@ import { useWorkMode } from "@/context/WorkModeContext";
 import { useColors } from "@/hooks/useColors";
 import { generateKitchenTicketHTML, getUniqueStations } from "@/lib/kitchenTicketTemplate";
 import { generateBillHTML } from "@/lib/billTemplate";
-import type { BusinessSettings, Category, Customer, CustomerPackage, KOTSettings, ModifierGroup, OrderType, PosTable, PrepaidPackage, Product, Rider, Sale, SaleItem, SelectedModifier, SplitPaymentEntry, TaxGroup } from "@/types";
+import type { BusinessSettings, Category, Customer, CustomerPackage, KOTSettings, ModifierGroup, OrderType, PosTable, PrepaidPackage, Product, Rider, Sale, SaleItem, SelectedModifier, ServiceBundle, SplitPaymentEntry, TaxGroup } from "@/types";
 import { DEFAULT_KOT_SETTINGS, VAT_RATE, formatCurrency } from "@/types";
 
 type PaymentMethod = "Card" | "Cash" | "Credit" | "Split";
@@ -65,7 +65,7 @@ export default function POSScreen() {
   const phoneColumns = isLandscape ? 3 : 2;
   const cartPaneWidth = Math.max(260, Math.min(Math.floor(width * 0.36), 380));
 
-  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder, loadStaff, loadAllModifierGroups, loadPackages, purchaseCustomerPackage, loadCustomerPackages, redeemPackageSession, createLaundryOrder, collectLaundryOrder, updateAppointmentStatus } = useDatabase();
+  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder, loadStaff, loadAllModifierGroups, loadPackages, purchaseCustomerPackage, loadCustomerPackages, redeemPackageSession, createLaundryOrder, collectLaundryOrder, updateAppointmentStatus, loadServiceBundles } = useDatabase();
   const { currentStaff } = useStaff();
   const { isSaloon, isLaundry, isRetail, tableLabelSingular, tableLabel, productLabel } = useWorkMode();
   const { session } = useLicense();
@@ -157,6 +157,7 @@ export default function POSScreen() {
   // Saloon mode: prepaid packages
   const [showPackagePicker, setShowPackagePicker] = useState(false);
   const [allPackages, setAllPackages] = useState<PrepaidPackage[]>([]);
+  const [allBundles, setAllBundles] = useState<ServiceBundle[]>([]);
   const [activeCustomerPackages, setActiveCustomerPackages] = useState<CustomerPackage[]>([]);
   /** lineKey → customerPackageId being redeemed for that cart line */
   const [packageRedemptions, setPackageRedemptions] = useState<Record<string, string>>({});
@@ -285,9 +286,9 @@ export default function POSScreen() {
   const splitRemaining = finalTotal - splitEntries.reduce((s, e) => s + e.amount, 0);
 
   const fetchData = useCallback(async () => {
-    const [prods, tbls, biz, tgs, cats, rdrs, staff, allGroups, pkgs] = await Promise.all([
+    const [prods, tbls, biz, tgs, cats, rdrs, staff, allGroups, pkgs, bdls] = await Promise.all([
       loadProducts(), loadTables(), loadBusinessSettings(), loadTaxGroups(),
-      loadCategories(), loadRiders(), loadStaff(), loadAllModifierGroups(), loadPackages(),
+      loadCategories(), loadRiders(), loadStaff(), loadAllModifierGroups(), loadPackages(), loadServiceBundles(),
     ]);
     setProducts(prods.filter((p: Product) => p.isActive !== false));
     setTables(tbls);
@@ -307,8 +308,9 @@ export default function POSScreen() {
     }
     setModifierGroupsByProduct(byProduct);
     setAllPackages(pkgs.filter((p: PrepaidPackage) => p.isActive));
+    setAllBundles(bdls.filter((b: ServiceBundle) => b.isActive));
     setLoading(false);
-  }, [loadProducts, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, loadRiders, loadStaff, loadAllModifierGroups, loadPackages]);
+  }, [loadProducts, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, loadRiders, loadStaff, loadAllModifierGroups, loadPackages, loadServiceBundles]);
 
   // Fetches on first focus AND every time the Register tab regains focus,
   // so newly added/edited products, categories, tables, riders and business
@@ -392,6 +394,32 @@ export default function POSScreen() {
   const handleAddItem = useCallback((product: Product) => {
     handleAddById(product.id);
   }, [handleAddById]);
+
+  const handleAddBundle = useCallback((bundle: ServiceBundle) => {
+    const vatEnabled = businessSettings?.vatEnabled !== false;
+    const rate = vatEnabled ? VAT_RATE : 0;
+    const syntheticProduct: Product = {
+      id: bundle.id,
+      name: bundle.name,
+      category: "Bundle",
+      price: bundle.price,
+      description: bundle.description,
+      colorHex: "#00897B",
+      barcode: undefined,
+      stockQuantity: 999,
+      stockTracked: false,
+      lowStockThreshold: 10,
+      taxGroupId: undefined,
+      imageUri: undefined,
+      printerId: undefined,
+      priceChangeAllowed: false,
+      vatInclusive: false,
+      durationMinutes: undefined,
+      isActive: true,
+    };
+    addItem(syntheticProduct, rate);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [addItem, businessSettings]);
 
   const handleHoldOrder = useCallback(async (table: PosTable) => {
     if (cartItems.length === 0) return;
@@ -1412,6 +1440,16 @@ export default function POSScreen() {
               </View>
             </View>
             {SearchBar}
+            {isSaloon && allBundles.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 72, flexShrink: 0 }} contentContainerStyle={{ paddingHorizontal: 10, paddingBottom: 6, gap: 8, alignItems: "center" }}>
+                {allBundles.map((b) => (
+                  <TouchableOpacity key={b.id} onPress={() => handleAddBundle(b)} style={{ backgroundColor: "#00897B18", borderRadius: colors.radius, borderWidth: 1, borderColor: "#00897B55", paddingHorizontal: 12, paddingVertical: 8, alignItems: "center", minWidth: 90 }}>
+                    <Text style={{ fontSize: 11, fontWeight: "700", color: "#00897B" }}>🎁 {b.name}</Text>
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#00897B", marginTop: 2 }}>{formatCurrency(b.price)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
             {loading ? (
               <ActivityIndicator style={styles.loader} color={colors.primary} />
             ) : (
@@ -1452,6 +1490,16 @@ export default function POSScreen() {
               </View>
             </View>
             {SearchBar}
+            {isSaloon && allBundles.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 72, flexShrink: 0 }} contentContainerStyle={{ paddingHorizontal: 10, paddingBottom: 6, gap: 8, alignItems: "center" }}>
+                {allBundles.map((b) => (
+                  <TouchableOpacity key={b.id} onPress={() => handleAddBundle(b)} style={{ backgroundColor: "#00897B18", borderRadius: colors.radius, borderWidth: 1, borderColor: "#00897B55", paddingHorizontal: 12, paddingVertical: 8, alignItems: "center", minWidth: 90 }}>
+                    <Text style={{ fontSize: 11, fontWeight: "700", color: "#00897B" }}>🎁 {b.name}</Text>
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#00897B", marginTop: 2 }}>{formatCurrency(b.price)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
             {loading ? (
               <ActivityIndicator style={styles.loader} color={colors.primary} />
             ) : (

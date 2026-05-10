@@ -25,7 +25,7 @@ import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useWorkMode } from "@/context/WorkModeContext";
-import type { Category, Ingredient, ModifierGroup, PrepaidPackage, PrinterConfig, Product, TaxGroup } from "@/types";
+import type { Category, Ingredient, ModifierGroup, PrepaidPackage, PrinterConfig, Product, ServiceBundle, TaxGroup } from "@/types";
 import { CURRENCY, PRODUCT_COLORS, formatCurrency } from "@/types";
 
 type ModifierOptionDraft = { name: string; priceAdjustment: number };
@@ -43,6 +43,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     loadIngredients, loadRecipeIngredients, saveRecipeIngredients,
     loadModifierGroups, saveModifierGroups,
     loadPackages, createPackage, updatePackage, deletePackage,
+    loadServiceBundles, createServiceBundle, updateServiceBundle, deleteServiceBundle,
   } = useDatabase();
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -93,8 +94,8 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
   const [optionDraftName, setOptionDraftName] = useState("");
   const [optionDraftPrice, setOptionDraftPrice] = useState("0");
 
-  // ── Packages tab (saloon only) ──────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<"services" | "packages">("services");
+  // ── Packages + Bundles tab (saloon only) ─────────────────────────────────
+  const [activeTab, setActiveTab] = useState<"services" | "packages" | "bundles">("services");
   const [packages, setPackages] = useState<PrepaidPackage[]>([]);
   const [pkgModalVisible, setPkgModalVisible] = useState(false);
   const [editingPackage, setEditingPackage] = useState<PrepaidPackage | null>(null);
@@ -105,6 +106,16 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
   const [pkgApplicableAll, setPkgApplicableAll] = useState(true);
   const [pkgApplicableIds, setPkgApplicableIds] = useState<string[]>([]);
   const [pkgIsActive, setPkgIsActive] = useState(true);
+
+  // ── Service bundles (saloon only) ────────────────────────────────────────
+  const [bundles, setBundles] = useState<ServiceBundle[]>([]);
+  const [bundleModalVisible, setBundleModalVisible] = useState(false);
+  const [editingBundle, setEditingBundle] = useState<ServiceBundle | null>(null);
+  const [bundleName, setBundleName] = useState("");
+  const [bundleDescription, setBundleDescription] = useState("");
+  const [bundlePrice, setBundlePrice] = useState("");
+  const [bundleServiceIds, setBundleServiceIds] = useState<string[]>([]);
+  const [bundleIsActive, setBundleIsActive] = useState(true);
 
   const pickImage = async () => {
     try {
@@ -144,9 +155,13 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     setCategoryOptions(catNames);
     setPrinterConfigs(biz.printerSettings?.printers ?? []);
     setIngredients(ings);
-    if (isSaloon) setPackages(await loadPackages());
+    if (isSaloon) {
+      const [pkgs, bdls] = await Promise.all([loadPackages(), loadServiceBundles()]);
+      setPackages(pkgs);
+      setBundles(bdls);
+    }
     setLoading(false);
-  }, [loadProducts, loadTaxGroups, loadCategories, loadBusinessSettings, loadIngredients, isSaloon, loadPackages]);
+  }, [loadProducts, loadTaxGroups, loadCategories, loadBusinessSettings, loadIngredients, isSaloon, loadPackages, loadServiceBundles]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
@@ -366,6 +381,56 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     ]);
   };
 
+  // ── Bundle handlers ───────────────────────────────────────────────────────
+  const openAddBundle = () => {
+    setEditingBundle(null);
+    setBundleName(""); setBundleDescription(""); setBundlePrice("");
+    setBundleServiceIds([]); setBundleIsActive(true);
+    setBundleModalVisible(true);
+  };
+
+  const openEditBundle = (b: ServiceBundle) => {
+    setEditingBundle(b);
+    setBundleName(b.name); setBundleDescription(b.description);
+    setBundlePrice(b.price.toFixed(2));
+    setBundleServiceIds(b.services.map((s) => s.serviceId));
+    setBundleIsActive(b.isActive);
+    setBundleModalVisible(true);
+  };
+
+  const handleSaveBundle = async () => {
+    const priceNum = parseFloat(bundlePrice);
+    if (!bundleName.trim() || isNaN(priceNum) || priceNum <= 0) {
+      Alert.alert("Invalid input", "Enter a valid name and price.");
+      return;
+    }
+    const selectedServices = products
+      .filter((p) => bundleServiceIds.includes(p.id))
+      .map((p) => ({ serviceId: p.id, serviceName: p.name }));
+    const payload = {
+      name: bundleName.trim(),
+      description: bundleDescription.trim(),
+      price: priceNum,
+      services: selectedServices,
+      isActive: bundleIsActive,
+    };
+    if (editingBundle) {
+      await updateServiceBundle({ ...editingBundle, ...payload });
+    } else {
+      await createServiceBundle(payload);
+    }
+    setBundleModalVisible(false);
+    setBundles(await loadServiceBundles());
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const handleDeleteBundle = (b: ServiceBundle) => {
+    Alert.alert("Delete Bundle", `Delete "${b.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => { await deleteServiceBundle(b.id); setBundles(await loadServiceBundles()); } },
+    ]);
+  };
+
   const numColumns = width >= 1200 ? 5 : width >= 900 ? 4 : width >= 600 ? 3 : 2;
   const topPadding = embedded ? 0 : (Platform.OS === "web" ? insets.top + 8 : 0);
 
@@ -438,16 +503,17 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
       {/* Tab bar — only in saloon mode */}
       {isSaloon && (
         <View style={{ flexDirection: "row", marginHorizontal: 16, marginTop: 12, marginBottom: 4, borderRadius: colors.radius, overflow: "hidden", borderWidth: 1, borderColor: colors.border }}>
-          {(["services", "packages"] as const).map((tab) => {
+          {(["services", "packages", "bundles"] as const).map((tab) => {
             const active = activeTab === tab;
+            const label = tab === "services" ? "Services" : tab === "packages" ? "📦 Packages" : "🎁 Bundles";
             return (
               <TouchableOpacity
                 key={tab}
                 onPress={() => setActiveTab(tab)}
                 style={{ flex: 1, paddingVertical: 9, alignItems: "center", backgroundColor: active ? colors.primary : colors.secondary }}
               >
-                <Text style={{ fontSize: 13, fontWeight: "700", color: active ? "#fff" : colors.mutedForeground, textTransform: "capitalize" }}>
-                  {tab === "services" ? "Services" : "📦 Packages"}
+                <Text style={{ fontSize: 12, fontWeight: "700", color: active ? "#fff" : colors.mutedForeground }}>
+                  {label}
                 </Text>
               </TouchableOpacity>
             );
@@ -455,7 +521,59 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
         </View>
       )}
 
-      {activeTab === "packages" ? (
+      {activeTab === "bundles" ? (
+        /* ── Service Bundles list ───────────────────────────────────── */
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+          {bundles.length === 0 ? (
+            <EmptyState icon="package" title="No Bundles" subtitle="Tap + to create your first service bundle" />
+          ) : (
+            bundles.map((b) => (
+              <TouchableOpacity
+                key={b.id}
+                onPress={() => openEditBundle(b)}
+                onLongPress={() => handleDeleteBundle(b)}
+                activeOpacity={0.8}
+                style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: b.isActive ? "#00897B44" : colors.border, marginBottom: 10, padding: 14, opacity: b.isActive ? 1 : 0.55 }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: "#00897B18", alignItems: "center", justifyContent: "center", marginRight: 12 }}>
+                    <Text style={{ fontSize: 20 }}>🎁</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                      <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, flex: 1 }} numberOfLines={1}>{b.name}</Text>
+                      {!b.isActive && (
+                        <View style={{ backgroundColor: colors.mutedForeground + "22", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                          <Text style={{ fontSize: 9, fontWeight: "700", color: colors.mutedForeground }}>INACTIVE</Text>
+                        </View>
+                      )}
+                    </View>
+                    {!!b.description && (
+                      <Text style={{ fontSize: 12, color: colors.mutedForeground, marginBottom: 6 }} numberOfLines={2}>{b.description}</Text>
+                    )}
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+                      <View>
+                        <Text style={{ fontSize: 18, fontWeight: "700", color: "#00897B" }}>{formatCurrency(b.price)}</Text>
+                        <Text style={{ fontSize: 10, color: colors.mutedForeground, textTransform: "uppercase" }}>Bundle Price</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        {b.services.length > 0 ? (
+                          <Text style={{ fontSize: 12, color: colors.mutedForeground }} numberOfLines={2}>
+                            {b.services.map((s) => s.serviceName).join(" + ")}
+                          </Text>
+                        ) : (
+                          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontStyle: "italic" }}>No services listed</Text>
+                        )}
+                        <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Includes</Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
+        </ScrollView>
+      ) : activeTab === "packages" ? (
         /* ── Packages list ─────────────────────────────────────────── */
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
           {packages.length === 0 ? (
@@ -547,8 +665,8 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
       )}
 
       <TouchableOpacity
-        onPress={activeTab === "packages" ? openAddPkg : openAdd}
-        style={[styles.fab, { backgroundColor: activeTab === "packages" ? "#9C27B0" : colors.primary, borderRadius: 28, bottom: insets.bottom + 20 }]}
+        onPress={activeTab === "packages" ? openAddPkg : activeTab === "bundles" ? openAddBundle : openAdd}
+        style={[styles.fab, { backgroundColor: activeTab === "packages" ? "#9C27B0" : activeTab === "bundles" ? "#00897B" : colors.primary, borderRadius: 28, bottom: insets.bottom + 20 }]}
       >
         <Feather name="plus" size={24} color="#fff" />
       </TouchableOpacity>
@@ -620,6 +738,57 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
                 <Text style={[styles.toggleHint, { color: colors.mutedForeground }]}>Inactive packages cannot be sold or redeemed at the POS.</Text>
               </View>
               <Switch value={pkgIsActive} onValueChange={setPkgIsActive} trackColor={{ true: "#9C27B0" }} />
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── Bundle modal ────────────────────────────────────────────── */}
+      <Modal visible={bundleModalVisible} animationType="slide" presentationStyle="pageSheet">
+        <KeyboardAvoidingView style={[styles.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[styles.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={() => setBundleModalVisible(false)}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>{editingBundle ? "Edit Bundle" : "New Bundle"}</Text>
+            <TouchableOpacity onPress={handleSaveBundle}><Text style={{ color: "#00897B", fontWeight: "700", fontSize: 16 }}>Save</Text></TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Bundle Name</Text>
+            <TextInput value={bundleName} onChangeText={setBundleName} placeholder="e.g. VIP Package" placeholderTextColor={colors.mutedForeground} style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]} />
+
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Price ({CURRENCY})</Text>
+            <TextInput value={bundlePrice} onChangeText={setBundlePrice} placeholder="0.00" placeholderTextColor={colors.mutedForeground} keyboardType="decimal-pad" style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]} />
+
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Description (optional)</Text>
+            <TextInput value={bundleDescription} onChangeText={setBundleDescription} placeholder="Short description shown to customer" placeholderTextColor={colors.mutedForeground} multiline numberOfLines={2} style={[styles.input, styles.textArea, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]} />
+
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Included Services</Text>
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, marginBottom: 8 }}>Tap services to include in this bundle:</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips}>
+              {products.filter((p) => p.isActive !== false).map((p) => {
+                const selected = bundleServiceIds.includes(p.id);
+                return (
+                  <TouchableOpacity
+                    key={p.id}
+                    onPress={() => setBundleServiceIds((prev) => selected ? prev.filter((id) => id !== p.id) : [...prev, p.id])}
+                    style={[styles.chip, { backgroundColor: selected ? "#00897B" : colors.secondary, borderColor: selected ? "#00897B" : colors.border, borderRadius: colors.radius, marginRight: 6 }]}
+                  >
+                    <Text style={{ color: selected ? "#fff" : colors.mutedForeground, fontWeight: "600" }}>{p.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            {bundleServiceIds.length > 0 && (
+              <Text style={{ fontSize: 12, color: "#00897B", marginBottom: 12 }}>
+                Selected: {products.filter((p) => bundleServiceIds.includes(p.id)).map((p) => p.name).join(" + ")}
+              </Text>
+            )}
+
+            <View style={[styles.toggleRow, { borderColor: bundleIsActive ? colors.border : colors.destructive + "60", borderRadius: colors.radius, backgroundColor: bundleIsActive ? undefined : colors.destructive + "08", marginTop: 20 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.toggleLabel, { color: bundleIsActive ? colors.foreground : colors.destructive }]}>Active</Text>
+                <Text style={[styles.toggleHint, { color: colors.mutedForeground }]}>Inactive bundles are hidden from the POS cart.</Text>
+              </View>
+              <Switch value={bundleIsActive} onValueChange={setBundleIsActive} trackColor={{ true: "#00897B" }} />
             </View>
           </ScrollView>
         </KeyboardAvoidingView>

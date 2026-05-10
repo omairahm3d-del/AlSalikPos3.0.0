@@ -36,6 +36,7 @@ const K = {
   appointments: "@pos_appointments",
   packages: "@pos_packages",
   customerPackages: "@pos_customer_packages",
+  serviceBundles: "@pos_service_bundles",
   laundryOrders: "@pos_laundry_orders",
   laundryOrderItems: "@pos_laundry_order_items",
   laundryCounter: "@pos_laundry_counter",
@@ -1467,6 +1468,27 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
 
   // ---- Prepaid packages (saloon mode) ----
 
+  async function loadServiceBundles(): Promise<import("@/types").ServiceBundle[]> {
+    return getJson<import("@/types").ServiceBundle[]>(K.serviceBundles, []);
+  }
+
+  async function createServiceBundle(bundle: Omit<import("@/types").ServiceBundle, "id" | "createdAt">): Promise<import("@/types").ServiceBundle> {
+    const row: import("@/types").ServiceBundle = { id: generateId(), createdAt: Date.now(), ...bundle };
+    const all = await getJson<import("@/types").ServiceBundle[]>(K.serviceBundles, []);
+    await setJson(K.serviceBundles, [...all, row]);
+    return row;
+  }
+
+  async function updateServiceBundle(bundle: import("@/types").ServiceBundle): Promise<void> {
+    const all = await getJson<import("@/types").ServiceBundle[]>(K.serviceBundles, []);
+    await setJson(K.serviceBundles, all.map((b) => (b.id === bundle.id ? bundle : b)));
+  }
+
+  async function deleteServiceBundle(id: string): Promise<void> {
+    const all = await getJson<import("@/types").ServiceBundle[]>(K.serviceBundles, []);
+    await setJson(K.serviceBundles, all.map((b) => (b.id === id ? { ...b, isActive: false } : b)));
+  }
+
   async function loadPackages(): Promise<PrepaidPackage[]> {
     return getJson<PrepaidPackage[]>(K.packages, []);
   }
@@ -1603,6 +1625,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       loadLocalSuppliers, createLocalSupplier, updateLocalSupplier,
       loadLocalPurchases, getLocalPurchase, createLocalPurchase,
       loadLocalMovements, createLocalAdjustment,
+      loadServiceBundles, createServiceBundle, updateServiceBundle, deleteServiceBundle,
       loadPackages, createPackage, updatePackage, deletePackage,
       loadCustomerPackages, purchaseCustomerPackage, redeemPackageSession,
       createLaundryOrder, loadLaundryOrders, updateLaundryOrderStatus, collectLaundryOrder, getLaundryOrder,

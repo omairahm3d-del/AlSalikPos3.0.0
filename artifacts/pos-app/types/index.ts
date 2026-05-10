@@ -200,6 +200,23 @@ export interface PrepaidPackage {
 }
 
 /**
+ * A service bundle groups multiple DIFFERENT services at one combined price.
+ * e.g. "VIP Package: Haircut + Beard + Facial = AED 200"
+ * Sold as a single cart line item — distinct from PrepaidPackage (session credits).
+ */
+export interface ServiceBundle {
+  id: string;
+  name: string;
+  description: string;
+  /** Combined selling price of the bundle in AED. */
+  price: number;
+  /** The services included in this bundle (for display / info). */
+  services: Array<{ serviceId: string; serviceName: string }>;
+  isActive: boolean;
+  createdAt: number;
+}
+
+/**
  * A customer's purchased instance of a PrepaidPackage.
  * Created on checkout when a package cart line is present.
  * Each service redemption increments `usedSessions` by 1.

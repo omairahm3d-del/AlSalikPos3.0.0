@@ -1660,6 +1660,40 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     return { id, productClientId: data.productClientId, productName: data.productName, kind: "adjustment", delta: data.delta, refId: id, reason: data.reason ?? null, createdAt };
   }, [db]);
 
+  // ---- Service bundles (saloon mode) ----
+  const loadServiceBundles = useCallback(async (): Promise<import("@/types").ServiceBundle[]> => {
+    const rows = await db.getAllAsync<any>("SELECT * FROM service_bundles ORDER BY name ASC");
+    return rows.map((r: any) => ({
+      id: r.id, name: r.name, description: r.description ?? "",
+      price: r.price,
+      services: r.services_json ? JSON.parse(r.services_json) : [],
+      isActive: !!r.is_active, createdAt: r.created_at,
+    }));
+  }, [db]);
+
+  const createServiceBundle = useCallback(async (bundle: Omit<import("@/types").ServiceBundle, "id" | "createdAt">): Promise<import("@/types").ServiceBundle> => {
+    const id = generateId();
+    const createdAt = Date.now();
+    await db.runAsync(
+      "INSERT INTO service_bundles (id, name, description, price, services_json, is_active, created_at) VALUES (?,?,?,?,?,?,?)",
+      [id, bundle.name, bundle.description, bundle.price,
+       JSON.stringify(bundle.services), bundle.isActive ? 1 : 0, createdAt]
+    );
+    return { id, ...bundle, createdAt };
+  }, [db]);
+
+  const updateServiceBundle = useCallback(async (bundle: import("@/types").ServiceBundle): Promise<void> => {
+    await db.runAsync(
+      "UPDATE service_bundles SET name=?, description=?, price=?, services_json=?, is_active=? WHERE id=?",
+      [bundle.name, bundle.description, bundle.price,
+       JSON.stringify(bundle.services), bundle.isActive ? 1 : 0, bundle.id]
+    );
+  }, [db]);
+
+  const deleteServiceBundle = useCallback(async (id: string): Promise<void> => {
+    await db.runAsync("UPDATE service_bundles SET is_active=0 WHERE id=?", [id]);
+  }, [db]);
+
   // ---- Prepaid packages (saloon mode) ----
   const loadPackages = useCallback(async (): Promise<import("@/types").PrepaidPackage[]> => {
     const rows = await db.getAllAsync<any>("SELECT * FROM packages ORDER BY name ASC");
@@ -1878,6 +1912,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       loadLocalSuppliers, createLocalSupplier, updateLocalSupplier,
       loadLocalPurchases, getLocalPurchase, createLocalPurchase,
       loadLocalMovements, createLocalAdjustment,
+      loadServiceBundles, createServiceBundle, updateServiceBundle, deleteServiceBundle,
       loadPackages, createPackage, updatePackage, deletePackage,
       loadCustomerPackages, purchaseCustomerPackage, redeemPackageSession,
       createLaundryOrder, loadLaundryOrders, updateLaundryOrderStatus, collectLaundryOrder, getLaundryOrder,

@@ -433,6 +433,16 @@ export interface DatabaseContextValue {
    * Increments usedSessions by 1, capped at totalSessions.
    */
   redeemPackageSession: (customerPackageId: string) => Promise<void>;
+
+  // ---- Service bundles (saloon mode) ----
+  /** Load all bundle definitions, active and inactive. */
+  loadServiceBundles: () => Promise<import("@/types").ServiceBundle[]>;
+  /** Create a new service bundle definition. */
+  createServiceBundle: (bundle: Omit<import("@/types").ServiceBundle, "id" | "createdAt">) => Promise<import("@/types").ServiceBundle>;
+  /** Update an existing service bundle. */
+  updateServiceBundle: (bundle: import("@/types").ServiceBundle) => Promise<void>;
+  /** Soft-delete a service bundle (sets isActive=false). */
+  deleteServiceBundle: (id: string) => Promise<void>;
 }
 
 export const DatabaseContext = createContext<DatabaseContextValue | null>(null);

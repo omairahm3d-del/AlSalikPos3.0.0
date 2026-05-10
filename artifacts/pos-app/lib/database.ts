@@ -412,6 +412,20 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     CREATE INDEX IF NOT EXISTS lsm_product_idx ON local_stock_movements(product_client_id, created_at DESC);
   `);
 
+  // Service bundles (saloon mode). Groups of different services sold at one price.
+  // Created idempotently outside migrations.
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS service_bundles (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      price REAL NOT NULL DEFAULT 0,
+      services_json TEXT NOT NULL DEFAULT '[]',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL
+    );
+  `);
+
   // Prepaid packages (saloon mode). Created outside migrations so they are
   // idempotent on every open (IF NOT EXISTS). Package definitions + per-customer
   // purchased instances are both local — they sync to the cloud separately.
