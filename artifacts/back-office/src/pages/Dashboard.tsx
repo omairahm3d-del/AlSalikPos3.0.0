@@ -22,9 +22,10 @@ type Tab =
   | "suppliers"
   | "products"
   | "customers"
-  | "packages";
+  | "packages"
+  | "orders";
 
-function buildTabs(isSaloon: boolean): { id: Tab; label: string }[] {
+function buildTabs(isSaloon: boolean, isLaundry: boolean): { id: Tab; label: string }[] {
   const tabs: { id: Tab; label: string }[] = [
     { id: "reports", label: "Reports" },
     { id: "stock", label: "Stock" },
@@ -34,6 +35,7 @@ function buildTabs(isSaloon: boolean): { id: Tab; label: string }[] {
     { id: "customers", label: "Customers" },
   ];
   if (isSaloon) tabs.push({ id: "packages", label: "Packages" });
+  if (isLaundry) tabs.push({ id: "orders", label: "Orders" });
   return tabs;
 }
 
@@ -41,7 +43,8 @@ export default function Dashboard({ session, onSession, onLogout }: Props) {
   const [tab, setTab] = useState<Tab>("reports");
   const branchId = session.branchId ?? session.branches[0]?.id ?? null;
   const isSaloon = session.workMode === "saloon";
-  const TABS = buildTabs(isSaloon);
+  const isLaundry = session.workMode === "laundry";
+  const TABS = buildTabs(isSaloon, isLaundry);
 
   function setBranch(id: string) {
     onSession({ ...session, branchId: id });
@@ -111,6 +114,9 @@ export default function Dashboard({ session, onSession, onLogout }: Props) {
         )}
         {tab === "packages" && isSaloon && (
           <PackagesTab token={session.token} branchId={branchId} />
+        )}
+        {tab === "orders" && isLaundry && (
+          <LaundryOrdersTab token={session.token} branchId={branchId} />
         )}
       </div>
     </Shell>
@@ -182,6 +188,118 @@ function parseCsv(text: string): Record<string, string>[] {
     rows.push(row);
   }
   return rows;
+}
+
+function LaundryOrdersTab({ token, branchId }: { token: string; branchId: string }) {
+  const [from, setFrom] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10);
+  });
+  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
+
+  const q = useQuery({
+    queryKey: ["laundry-orders", branchId, from, to],
+    queryFn: () => api.salesAll(token, branchId, { from, to }),
+  });
+
+  const rows = q.data ?? [];
+
+  function handleExport() {
+    if (rows.length === 0) return alert("No orders to export.");
+    downloadCsv(
+      "laundry-orders",
+      buildCsv(
+        rows.map((r) => ({
+          Invoice: r.invoiceNumber,
+          Date: new Date(r.createdAtClient).toLocaleDateString("en-AE"),
+          Customer: String(r.payload.customerName ?? "Walk-in"),
+          Items: String((r.payload.items ?? []).length),
+          Subtotal: fmtAED(r.payload.subtotal ?? 0),
+          VAT: fmtAED(r.payload.vatAmount ?? 0),
+          Total: fmtAED(r.payload.total ?? 0),
+          Payment: String(r.payload.paymentMethod ?? ""),
+          Staff: String(r.payload.staffName ?? ""),
+        }))
+      )
+    );
+  }
+
+  const total = rows.reduce((s, r) => s + (r.payload.total ?? 0), 0);
+
+  return (
+    <div>
+      <div className="flex items-center gap-4 mb-6 flex-wrap">
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-gray-600">From</label>
+          <input
+            type="date" value={from} onChange={(e) => setFrom(e.target.value)}
+            className="border border-gray-300 rounded px-2 py-1 text-sm"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-gray-600">To</label>
+          <input
+            type="date" value={to} onChange={(e) => setTo(e.target.value)}
+            className="border border-gray-300 rounded px-2 py-1 text-sm"
+          />
+        </div>
+        <button
+          onClick={handleExport}
+          className="ml-auto px-3 py-1.5 text-sm bg-gray-900 text-white rounded hover:bg-gray-700"
+        >
+          Export CSV
+        </button>
+      </div>
+
+      {q.isLoading && <div className="text-sm text-gray-500 py-8 text-center">Loading…</div>}
+      {q.isError && <div className="text-sm text-red-600 py-4">Failed to load orders.</div>}
+
+      {!q.isLoading && rows.length > 0 && (
+        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex gap-6">
+          <div>
+            <div className="text-xs text-blue-600 font-semibold mb-1">ORDERS</div>
+            <div className="text-2xl font-bold text-blue-900">{rows.length}</div>
+          </div>
+          <div>
+            <div className="text-xs text-blue-600 font-semibold mb-1">TOTAL REVENUE</div>
+            <div className="text-2xl font-bold text-blue-900">{fmtAED(total)}</div>
+          </div>
+        </div>
+      )}
+
+      {!q.isLoading && rows.length === 0 && !q.isError && (
+        <div className="text-sm text-gray-500 py-8 text-center">No completed orders in this date range.</div>
+      )}
+
+      {rows.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-gray-200 text-left">
+                <th className="py-2 pr-4 font-semibold text-gray-700">Invoice</th>
+                <th className="py-2 pr-4 font-semibold text-gray-700">Date</th>
+                <th className="py-2 pr-4 font-semibold text-gray-700">Customer</th>
+                <th className="py-2 pr-4 font-semibold text-gray-700 text-right">Items</th>
+                <th className="py-2 pr-4 font-semibold text-gray-700 text-right">Total</th>
+                <th className="py-2 font-semibold text-gray-700">Payment</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.clientSaleId} className="border-b border-gray-100 hover:bg-gray-50">
+                  <td className="py-2 pr-4 font-mono text-xs text-gray-500">{r.invoiceNumber}</td>
+                  <td className="py-2 pr-4">{new Date(r.createdAtClient).toLocaleDateString("en-AE")}</td>
+                  <td className="py-2 pr-4">{r.payload.customerName ?? <span className="text-gray-400">Walk-in</span>}</td>
+                  <td className="py-2 pr-4 text-right">{(r.payload.items ?? []).length}</td>
+                  <td className="py-2 pr-4 text-right font-semibold">{fmtAED(r.payload.total ?? 0)}</td>
+                  <td className="py-2">{r.payload.paymentMethod}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ProductsTab({ token, branchId }: { token: string; branchId: string }) {

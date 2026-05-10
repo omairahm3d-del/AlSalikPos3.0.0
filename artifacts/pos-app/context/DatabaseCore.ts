@@ -1,7 +1,8 @@
 import { createContext, useContext } from "react";
 import type {
   Appointment, BackupData, BusinessSettings, CartItem, Category, ClearDataOptions,
-  CreditPayment, Customer, CustomerPackage, Expense, HeldOrder, Ingredient, ModifierGroup,
+  CreditPayment, Customer, CustomerPackage, Expense, HeldOrder, Ingredient, LaundryOrder,
+  LaundryOrderStatus, ModifierGroup,
   OrderType, PosTable, PrepaidPackage, Product, RecipeIngredient, Rider, Sale, SaleItem,
   SplitPaymentEntry, Staff, TaxGroup,
 } from "@/types";
@@ -369,6 +370,38 @@ export interface DatabaseContextValue {
     delta: number;
     reason?: string | null;
   }) => Promise<LocalStockMovement>;
+
+  // ---- Laundry orders (laundry mode) ----
+  /** Create a new laundry ticket at drop-off time. Returns the saved order with generated ticket number. */
+  createLaundryOrder(data: {
+    customerId: string;
+    customerName: string;
+    customerPhone: string;
+    promisedAt: number;
+    orderType: "drop-off" | "express";
+    notes?: string | null;
+    subtotal: number;
+    vatAmount: number;
+    total: number;
+    staffId?: string | null;
+    staffName?: string | null;
+    items: Array<{
+      productId: string;
+      productName: string;
+      productPrice: number;
+      quantity: number;
+      lineTotal: number;
+      notes?: string | null;
+    }>;
+  }): Promise<LaundryOrder>;
+  /** Load all laundry orders, optionally filtered by status. Newest first. */
+  loadLaundryOrders(statusFilter?: LaundryOrderStatus[]): Promise<LaundryOrder[]>;
+  /** Advance the status of a laundry order (e.g. received → ready). */
+  updateLaundryOrderStatus(orderId: string, status: LaundryOrderStatus): Promise<void>;
+  /** Mark an order as collected and link it to the payment sale. */
+  collectLaundryOrder(orderId: string, saleId: string, paymentMethod: string): Promise<void>;
+  /** Load a single laundry order with all its items. */
+  getLaundryOrder(id: string): Promise<LaundryOrder | null>;
 
   // ---- Prepaid packages (saloon mode) ----
   /** Load all package definitions, active and inactive. */

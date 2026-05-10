@@ -11,7 +11,7 @@ export interface ManagerSession {
   branches: BranchSummary[];
   branchId: string | null;
   /** Business type: "standard" (restaurant/retail) or "saloon" (beauty). Defaults to "standard". */
-  workMode?: "standard" | "saloon";
+  workMode?: "standard" | "saloon" | "laundry";
 }
 
 export function loadSession(): ManagerSession | null {

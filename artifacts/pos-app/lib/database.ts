@@ -443,6 +443,51 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     CREATE INDEX IF NOT EXISTS cp_customer_idx ON customer_packages(customer_id, is_active);
   `);
 
+  // Laundry orders (laundry mode). Created idempotently outside migrations.
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS laundry_orders (
+      id TEXT PRIMARY KEY,
+      ticket_number TEXT NOT NULL,
+      customer_id TEXT NOT NULL,
+      customer_name TEXT NOT NULL DEFAULT '',
+      customer_phone TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'received',
+      promised_at INTEGER NOT NULL,
+      order_type TEXT NOT NULL DEFAULT 'drop-off',
+      notes TEXT DEFAULT NULL,
+      subtotal REAL NOT NULL DEFAULT 0,
+      vat_amount REAL NOT NULL DEFAULT 0,
+      total REAL NOT NULL DEFAULT 0,
+      paid_at INTEGER DEFAULT NULL,
+      payment_method TEXT DEFAULT NULL,
+      sale_id TEXT DEFAULT NULL,
+      staff_id TEXT DEFAULT NULL,
+      staff_name TEXT DEFAULT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS laundry_ticket_uniq ON laundry_orders(ticket_number);
+    CREATE INDEX IF NOT EXISTS laundry_status_idx ON laundry_orders(status, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS laundry_order_items (
+      id TEXT PRIMARY KEY,
+      order_id TEXT NOT NULL,
+      product_id TEXT NOT NULL,
+      product_name TEXT NOT NULL,
+      product_price REAL NOT NULL,
+      quantity INTEGER NOT NULL,
+      line_total REAL NOT NULL,
+      notes TEXT DEFAULT NULL
+    );
+    CREATE INDEX IF NOT EXISTS loi_order_idx ON laundry_order_items(order_id);
+
+    CREATE TABLE IF NOT EXISTS laundry_counter (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      next_value INTEGER NOT NULL DEFAULT 1
+    );
+    INSERT OR IGNORE INTO laundry_counter (id, next_value) VALUES (1, 1);
+  `);
+
   // Cash-out / petty-cash log. Created outside the migrations array so it
   // executes via execAsync (CREATE TABLE IF NOT EXISTS is idempotent).
   await db.execAsync(`

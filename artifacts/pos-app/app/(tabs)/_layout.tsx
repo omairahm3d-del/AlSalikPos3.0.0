@@ -35,6 +35,12 @@ function NativeTabLayout() {
           <Label>Appointments</Label>
         </NativeTabs.Trigger>
       )}
+      {isLaundry && (
+        <NativeTabs.Trigger name="laundry">
+          <Icon sf={{ default: "tshirt", selected: "tshirt.fill" }} />
+          <Label>Orders</Label>
+        </NativeTabs.Trigger>
+      )}
       <NativeTabs.Trigger name="history">
         <Icon sf={{ default: "clock", selected: "clock.fill" }} />
         <Label>History</Label>
@@ -128,6 +134,19 @@ function ClassicTabLayout() {
               <SymbolView name="calendar" tintColor={color} size={24} />
             ) : (
               <Feather name="calendar" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="laundry"
+        options={{
+          href: isLaundry ? undefined : null,
+          title: "Orders",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="tshirt" tintColor={color} size={24} />
+            ) : (
+              <Feather name="list" size={22} color={color} />
             ),
         }}
       />

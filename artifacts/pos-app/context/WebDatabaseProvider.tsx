@@ -2,7 +2,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback } from "react";
 import type {
   Appointment, BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment,
-  Customer, CustomerPackage, Expense, HeldOrder, HeldOrderItem, Ingredient, ModifierGroup, PosTable,
+  Customer, CustomerPackage, Expense, HeldOrder, HeldOrderItem, Ingredient, LaundryOrder,
+  LaundryOrderItem, LaundryOrderStatus, ModifierGroup, PosTable,
   PrepaidPackage, Product, RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
 } from "@/types";
@@ -35,6 +36,9 @@ const K = {
   appointments: "@pos_appointments",
   packages: "@pos_packages",
   customerPackages: "@pos_customer_packages",
+  laundryOrders: "@pos_laundry_orders",
+  laundryOrderItems: "@pos_laundry_order_items",
+  laundryCounter: "@pos_laundry_counter",
 };
 
 interface WebCatalogOutboxRow {
@@ -1509,6 +1513,64 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     ));
   }
 
+  // ---- Laundry orders (laundry mode) ----
+
+  async function createLaundryOrder(data: {
+    customerId: string; customerName: string; customerPhone: string; promisedAt: number;
+    orderType: "drop-off" | "express"; notes?: string | null; subtotal: number;
+    vatAmount: number; total: number; staffId?: string | null; staffName?: string | null;
+    items: Array<{ productId: string; productName: string; productPrice: number; quantity: number; lineTotal: number; notes?: string | null; }>;
+  }): Promise<LaundryOrder> {
+    const id = generateId();
+    const now = Date.now();
+    const seq = (await getJson<number>(K.laundryCounter, 1));
+    await setJson(K.laundryCounter, seq + 1);
+    const ticketNumber = `LDR-${String(seq).padStart(4, "0")}`;
+    const items: LaundryOrderItem[] = data.items.map((it, i) => ({
+      id: `${id}_${i}`, orderId: id, productId: it.productId, productName: it.productName,
+      productPrice: it.productPrice, quantity: it.quantity, lineTotal: it.lineTotal, notes: it.notes ?? null,
+    }));
+    const order: LaundryOrder = {
+      id, ticketNumber, customerId: data.customerId, customerName: data.customerName,
+      customerPhone: data.customerPhone, status: "received", promisedAt: data.promisedAt,
+      orderType: data.orderType, notes: data.notes ?? null, subtotal: data.subtotal,
+      vatAmount: data.vatAmount, total: data.total, paidAt: null, paymentMethod: null,
+      saleId: null, staffId: data.staffId ?? null, staffName: data.staffName ?? null,
+      createdAt: now, updatedAt: now, items,
+    };
+    const allOrders = await getJson<LaundryOrder[]>(K.laundryOrders, []);
+    await setJson(K.laundryOrders, [order, ...allOrders]);
+    return order;
+  }
+
+  async function loadLaundryOrders(statusFilter?: LaundryOrderStatus[]): Promise<LaundryOrder[]> {
+    const all = await getJson<LaundryOrder[]>(K.laundryOrders, []);
+    const filtered = statusFilter && statusFilter.length > 0
+      ? all.filter((o) => statusFilter.includes(o.status))
+      : all;
+    return filtered.sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  async function updateLaundryOrderStatus(orderId: string, status: LaundryOrderStatus): Promise<void> {
+    const all = await getJson<LaundryOrder[]>(K.laundryOrders, []);
+    await setJson(K.laundryOrders, all.map((o) =>
+      o.id === orderId ? { ...o, status, updatedAt: Date.now() } : o
+    ));
+  }
+
+  async function collectLaundryOrder(orderId: string, saleId: string, paymentMethod: string): Promise<void> {
+    const now = Date.now();
+    const all = await getJson<LaundryOrder[]>(K.laundryOrders, []);
+    await setJson(K.laundryOrders, all.map((o) =>
+      o.id === orderId ? { ...o, status: "collected" as const, saleId, paidAt: now, paymentMethod, updatedAt: now } : o
+    ));
+  }
+
+  async function getLaundryOrder(id: string): Promise<LaundryOrder | null> {
+    const all = await getJson<LaundryOrder[]>(K.laundryOrders, []);
+    return all.find((o) => o.id === id) ?? null;
+  }
+
   return (
     <DatabaseContext.Provider value={{
       loadProducts, createProduct, updateProduct, deleteProduct, updateStock,
@@ -1538,6 +1600,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       loadLocalMovements, createLocalAdjustment,
       loadPackages, createPackage, updatePackage, deletePackage,
       loadCustomerPackages, purchaseCustomerPackage, redeemPackageSession,
+      createLaundryOrder, loadLaundryOrders, updateLaundryOrderStatus, collectLaundryOrder, getLaundryOrder,
     }}>
       {children}
     </DatabaseContext.Provider>

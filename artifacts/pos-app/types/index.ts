@@ -219,6 +219,45 @@ export interface CustomerPackage {
   isActive: boolean;
 }
 
+export type LaundryOrderStatus = "received" | "ready" | "collected";
+
+export interface LaundryOrderItem {
+  id: string;
+  orderId: string;
+  productId: string;
+  productName: string;
+  productPrice: number;
+  quantity: number;
+  lineTotal: number;
+  notes: string | null;
+}
+
+export interface LaundryOrder {
+  id: string;
+  ticketNumber: string;
+  customerId: string;
+  customerName: string;
+  customerPhone: string;
+  status: LaundryOrderStatus;
+  /** ms epoch when the order is promised to be ready */
+  promisedAt: number;
+  orderType: "drop-off" | "express";
+  notes: string | null;
+  subtotal: number;
+  vatAmount: number;
+  total: number;
+  /** null = pay on collection */
+  paidAt: number | null;
+  paymentMethod: string | null;
+  /** linked Sale.id once collected and paid */
+  saleId: string | null;
+  staffId: string | null;
+  staffName: string | null;
+  createdAt: number;
+  updatedAt: number;
+  items: LaundryOrderItem[];
+}
+
 export interface SplitPaymentEntry {
   method: string;
   amount: number;

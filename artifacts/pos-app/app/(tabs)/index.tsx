@@ -64,7 +64,7 @@ export default function POSScreen() {
   const phoneColumns = isLandscape ? 3 : 2;
   const cartPaneWidth = Math.max(260, Math.min(Math.floor(width * 0.36), 380));
 
-  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder, loadStaff, loadAllModifierGroups, loadPackages, purchaseCustomerPackage, loadCustomerPackages, redeemPackageSession } = useDatabase();
+  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder, loadStaff, loadAllModifierGroups, loadPackages, purchaseCustomerPackage, loadCustomerPackages, redeemPackageSession, createLaundryOrder, collectLaundryOrder } = useDatabase();
   const { currentStaff } = useStaff();
   const { isSaloon, isLaundry, isRetail, tableLabelSingular, tableLabel, productLabel } = useWorkMode();
   const { session } = useLicense();
@@ -159,6 +159,18 @@ export default function POSScreen() {
   const [activeCustomerPackages, setActiveCustomerPackages] = useState<CustomerPackage[]>([]);
   /** lineKey → customerPackageId being redeemed for that cart line */
   const [packageRedemptions, setPackageRedemptions] = useState<Record<string, string>>({});
+
+  // Laundry mode: ticket creation
+  const [showLaundryTicket, setShowLaundryTicket] = useState(false);
+  const [laundryPromisedAt, setLaundryPromisedAt] = useState<number>(() => {
+    const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(14, 0, 0, 0); return d.getTime();
+  });
+  const [laundryOrderType, setLaundryOrderType] = useState<"drop-off" | "express">("drop-off");
+  const [laundryNotes, setLaundryNotes] = useState("");
+  const [laundryPayNow, setLaundryPayNow] = useState(false);
+  const [laundryBusy, setLaundryBusy] = useState(false);
+  /** Set when a ticket has been created and the user chose pay-now; collectLaundryOrder is called after saveSale. */
+  const [pendingLaundryOrderId, setPendingLaundryOrderId] = useState<string | null>(null);
 
   const router = useRouter();
   const params = useLocalSearchParams<{
@@ -709,6 +721,14 @@ export default function POSScreen() {
         setPackageRedemptions({});
       }
 
+      // Laundry: link payment to the pending ticket if pay-now flow.
+      if (isLaundry && pendingLaundryOrderId) {
+        try {
+          await collectLaundryOrder(pendingLaundryOrderId, sale.id, paymentMethod);
+        } catch {}
+        setPendingLaundryOrderId(null);
+      }
+
       clearCart();
       setShowPayment(false);
       setShowCart(false);
@@ -728,7 +748,8 @@ export default function POSScreen() {
   }, [cartItems, paymentMethod, selectedCustomer, splitRemaining, orderDiscAmt, loyaltyRedeemAmount,
     saveSale, currentStaff, selectedTable, heldOrderInfo, selectedRider, orderType, orderDiscountType, orderDiscountValue,
     loyaltyRedeemPtsActual, splitEntries, clearCart, fetchData, kotSettings, businessSettings,
-    cashTendered, finalTotal, isSaloon, allPackages, purchaseCustomerPackage, redeemPackageSession, packageRedemptions]);
+    cashTendered, finalTotal, isSaloon, isLaundry, allPackages, purchaseCustomerPackage, redeemPackageSession,
+    packageRedemptions, collectLaundryOrder, pendingLaundryOrderId]);
 
   const handleAddSplit = useCallback(() => {
     const amt = parseFloat(splitAmount);
@@ -804,6 +825,76 @@ export default function POSScreen() {
     setLoyaltyRedeemPts("");
     setShowPayment(true);
   }, [isSaloon]);
+
+  // Laundry mode: open the ticket-creation modal (customer required).
+  const openLaundryTicket = useCallback(() => {
+    if (cartItems.length === 0) return;
+    if (!selectedCustomer) {
+      Alert.alert("Customer Required", "Please select a customer before creating a laundry ticket.");
+      setShowCustomerSelect(true);
+      return;
+    }
+    // Reset promised date to tomorrow 2pm every time the modal opens.
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(14, 0, 0, 0);
+    setLaundryPromisedAt(d.getTime());
+    setLaundryOrderType("drop-off");
+    setLaundryNotes("");
+    setLaundryPayNow(false);
+    setShowLaundryTicket(true);
+  }, [cartItems.length, selectedCustomer]);
+
+  const handleCreateLaundryTicket = useCallback(async () => {
+    if (!selectedCustomer) return;
+    setLaundryBusy(true);
+    try {
+      const vatEnabled = businessSettings?.vatEnabled !== false;
+      const order = await createLaundryOrder({
+        customerId: selectedCustomer.id,
+        customerName: selectedCustomer.name,
+        customerPhone: selectedCustomer.phone ?? "",
+        promisedAt: laundryPromisedAt,
+        orderType: laundryOrderType,
+        notes: laundryNotes || null,
+        subtotal,
+        vatAmount: vatEnabled ? vatAmount : 0,
+        total,
+        staffId: currentStaff?.id ?? null,
+        staffName: currentStaff?.name ?? null,
+        items: cartItems.map((ci) => ({
+          productId: ci.product.id,
+          productName: ci.product.name,
+          productPrice: ci.product.price + (ci.modifierTotal ?? 0),
+          quantity: ci.quantity,
+          lineTotal: (ci.product.price + (ci.modifierTotal ?? 0)) * ci.quantity - (ci.discountAmount ?? 0),
+          notes: ci.notes ?? null,
+        })),
+      });
+
+      setShowLaundryTicket(false);
+
+      if (laundryPayNow) {
+        setPendingLaundryOrderId(order.id);
+        // Open normal payment flow; handleChargeSale will call collectLaundryOrder on success.
+        setPaymentMethod("Card");
+        setOrderDiscountValue("");
+        setShowDiscountInput(false);
+        setSplitEntries([]);
+        setLoyaltyRedeemPts("");
+        setShowPayment(true);
+      } else {
+        clearCart();
+        setSelectedCustomer(null);
+        Alert.alert("Ticket Created", `${order.ticketNumber} — promise: ${new Date(order.promisedAt).toLocaleDateString("en-AE")}`);
+      }
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Could not create ticket.");
+    } finally {
+      setLaundryBusy(false);
+    }
+  }, [selectedCustomer, businessSettings, createLaundryOrder, laundryPromisedAt, laundryOrderType, laundryNotes,
+    subtotal, vatAmount, total, currentStaff, cartItems, laundryPayNow, clearCart]);
 
   const openScanner = useCallback(() => setShowScanner(true), []);
   const closeCart = useCallback(() => setShowCart(false), []);
@@ -1236,7 +1327,15 @@ export default function POSScreen() {
                 <Text style={styles.holdBtnText}>Hold</Text>
               </TouchableOpacity>
             )}
-            {registerOpen ? (
+            {isLaundry ? (
+              <TouchableOpacity
+                onPress={openLaundryTicket}
+                style={[styles.chargeBtn, { backgroundColor: colors.primary, borderRadius: colors.radius, flex: 1 }]}
+              >
+                <Feather name="tag" size={18} color="#fff" />
+                <Text style={styles.chargeBtnText} allowFontScaling={false}>Create Ticket · {formatCurrency(total)}</Text>
+              </TouchableOpacity>
+            ) : registerOpen ? (
               <TouchableOpacity
                 onPress={openPayment}
                 style={[styles.chargeBtn, { backgroundColor: colors.success, borderRadius: colors.radius, flex: 1 }]}
@@ -2174,6 +2273,152 @@ export default function POSScreen() {
             </ScrollView>
           </View>
         </View>
+      </Modal>
+
+      {/* Laundry Ticket Modal — laundry mode only */}
+      <Modal visible={isLaundry && showLaundryTicket} transparent animationType="fade" onRequestClose={() => setShowLaundryTicket(false)}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <View style={styles.paymentOverlay}>
+            <ScrollView contentContainerStyle={styles.paymentScrollContent} keyboardShouldPersistTaps="handled">
+              <View style={[styles.paymentSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2 }]}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+                  <Text style={[styles.paymentTitle, { marginBottom: 0, color: colors.foreground }]}>🧺 Create Laundry Ticket</Text>
+                  <TouchableOpacity onPress={() => setShowLaundryTicket(false)}>
+                    <Feather name="x" size={22} color={colors.mutedForeground} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Customer (read-only since required before opening) */}
+                <Text style={[styles.paymentLabel, { color: colors.mutedForeground }]}>CUSTOMER</Text>
+                <View style={[styles.customerPickerBtn, { borderColor: colors.primary, borderRadius: colors.radius, backgroundColor: colors.primary + "10", marginBottom: 16 }]}>
+                  <View style={styles.customerPickerRow}>
+                    <View style={[styles.customerPickerAvatar, { backgroundColor: colors.primary }]}>
+                      <Feather name="user" size={16} color="#fff" />
+                    </View>
+                    <View style={styles.customerInfoCol}>
+                      <Text style={[styles.customerPickerName, { color: colors.foreground }]}>{selectedCustomer?.name}</Text>
+                      {selectedCustomer?.phone ? (
+                        <Text style={{ fontSize: 12, color: colors.mutedForeground }}>{selectedCustomer.phone}</Text>
+                      ) : null}
+                    </View>
+                  </View>
+                </View>
+
+                {/* Order type */}
+                <Text style={[styles.paymentLabel, { color: colors.mutedForeground }]}>ORDER TYPE</Text>
+                <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
+                  {(["drop-off", "express"] as const).map((t) => (
+                    <TouchableOpacity
+                      key={t}
+                      style={[
+                        styles.methodBtn,
+                        { borderRadius: colors.radius, borderColor: laundryOrderType === t ? colors.primary : colors.border, flex: 1 },
+                        laundryOrderType === t && { backgroundColor: colors.primary + "15" },
+                      ]}
+                      onPress={() => setLaundryOrderType(t)}
+                    >
+                      <Feather name={t === "express" ? "zap" : "package"} size={16} color={laundryOrderType === t ? colors.primary : colors.mutedForeground} />
+                      <Text style={{ color: laundryOrderType === t ? colors.primary : colors.foreground, fontWeight: "600", fontSize: 13, textTransform: "capitalize" }}>
+                        {t === "drop-off" ? "Drop-off" : "Express"}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Promised date */}
+                <Text style={[styles.paymentLabel, { color: colors.mutedForeground }]}>PROMISED DATE</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+                  {[
+                    { label: "Tonight 6pm", hours: 0, hh: 18 },
+                    { label: "Tomorrow 2pm", hours: 24, hh: 14 },
+                    { label: "+2 Days", hours: 48, hh: 14 },
+                    { label: "+3 Days", hours: 72, hh: 14 },
+                  ].map((opt) => {
+                    const target = new Date(); target.setDate(target.getDate() + Math.floor(opt.hours / 24)); target.setHours(opt.hh, 0, 0, 0);
+                    const isActive = Math.abs(laundryPromisedAt - target.getTime()) < 60000;
+                    return (
+                      <TouchableOpacity
+                        key={opt.label}
+                        style={[
+                          styles.numpadQuickBtn,
+                          { borderRadius: colors.radius, borderColor: isActive ? colors.primary : colors.border },
+                          isActive && { backgroundColor: colors.primary + "15" },
+                        ]}
+                        onPress={() => setLaundryPromisedAt(target.getTime())}
+                      >
+                        <Text style={{ color: isActive ? colors.primary : colors.foreground, fontSize: 12, fontWeight: "600" }}>{opt.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <Text style={{ fontSize: 12, color: colors.mutedForeground, marginBottom: 16 }}>
+                  Promise: {new Date(laundryPromisedAt).toLocaleDateString("en-AE", { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </Text>
+
+                {/* Notes */}
+                <Text style={[styles.paymentLabel, { color: colors.mutedForeground }]}>NOTES (optional)</Text>
+                <TextInput
+                  value={laundryNotes}
+                  onChangeText={setLaundryNotes}
+                  placeholder="e.g. Handle with care, fragile buttons..."
+                  placeholderTextColor={colors.mutedForeground}
+                  multiline
+                  style={[styles.discInput, { borderColor: colors.border, borderRadius: colors.radius, color: colors.foreground, backgroundColor: colors.secondary, marginBottom: 16, minHeight: 60 }]}
+                />
+
+                {/* Pay now toggle */}
+                <TouchableOpacity
+                  style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 20, paddingVertical: 4 }}
+                  onPress={() => setLaundryPayNow((p) => !p)}
+                >
+                  <View style={[{ width: 22, height: 22, borderRadius: 4, borderWidth: 2, alignItems: "center", justifyContent: "center" }, { borderColor: laundryPayNow ? colors.primary : colors.border, backgroundColor: laundryPayNow ? colors.primary : "transparent" }]}>
+                    {laundryPayNow && <Feather name="check" size={14} color="#fff" />}
+                  </View>
+                  <Text style={{ color: colors.foreground, fontSize: 14, fontWeight: "600" }}>Pay now (collect at drop-off)</Text>
+                </TouchableOpacity>
+
+                {/* Summary */}
+                <View style={[styles.summaryBox, { backgroundColor: colors.secondary, borderRadius: colors.radius, marginBottom: 16 }]}>
+                  <View style={styles.summaryRow}>
+                    <Text style={[styles.paymentLabel, { marginBottom: 0, color: colors.mutedForeground }]}>Subtotal</Text>
+                    <Text style={{ color: colors.foreground, fontWeight: "600" }}>{formatCurrency(subtotal)}</Text>
+                  </View>
+                  <View style={styles.summaryRow}>
+                    <Text style={[styles.paymentLabel, { marginBottom: 0, color: colors.mutedForeground }]}>VAT (5%)</Text>
+                    <Text style={{ color: colors.foreground, fontWeight: "600" }}>{formatCurrency(vatAmount)}</Text>
+                  </View>
+                  <View style={[styles.summaryRow, { paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, marginTop: 4 }]}>
+                    <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 15 }}>Total</Text>
+                    <Text style={{ color: colors.success, fontWeight: "700", fontSize: 17 }}>{formatCurrency(total)}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.paymentActions}>
+                  <TouchableOpacity
+                    onPress={() => setShowLaundryTicket(false)}
+                    style={[styles.cancelBtn, { borderColor: colors.border, borderRadius: colors.radius }]}
+                  >
+                    <Text style={{ color: colors.mutedForeground, fontWeight: "600" }}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleCreateLaundryTicket}
+                    disabled={laundryBusy}
+                    style={[styles.confirmBtn, { backgroundColor: colors.primary, borderRadius: colors.radius, opacity: laundryBusy ? 0.6 : 1 }]}
+                  >
+                    {laundryBusy ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <>
+                        <Feather name="tag" size={18} color="#fff" />
+                        <Text style={styles.confirmBtnText}>{laundryPayNow ? "Create & Pay Now" : "Create Ticket"}</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Package picker — saloon mode, buy a package for selected customer */}

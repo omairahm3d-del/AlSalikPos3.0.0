@@ -103,7 +103,7 @@ export default function ReportsHub({
 }: {
   token: string;
   branchId: string;
-  workMode?: "standard" | "saloon";
+  workMode?: "standard" | "saloon" | "laundry";
 }) {
   const isSaloon = workMode === "saloon";
   const [view, setView] = useState<View>(null);

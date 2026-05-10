@@ -1733,6 +1733,120 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     );
   }, [db]);
 
+  // ---- Laundry orders (laundry mode) ----
+
+  const createLaundryOrder = useCallback(async (data: Parameters<import("./DatabaseCore").DatabaseContextValue["createLaundryOrder"]>[0]): Promise<import("@/types").LaundryOrder> => {
+    const id = generateId();
+    const now = Date.now();
+    let ticketNumber = "";
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      const counter = await tx.getFirstAsync<{ next_value: number }>("SELECT next_value FROM laundry_counter WHERE id=1");
+      const seq = counter?.next_value ?? 1;
+      await tx.runAsync("UPDATE laundry_counter SET next_value=? WHERE id=1", [seq + 1]);
+      ticketNumber = `LDR-${String(seq).padStart(4, "0")}`;
+      await tx.runAsync(
+        `INSERT INTO laundry_orders
+          (id, ticket_number, customer_id, customer_name, customer_phone, status,
+           promised_at, order_type, notes, subtotal, vat_amount, total,
+           paid_at, payment_method, sale_id, staff_id, staff_name, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL,?,?,?,?)`,
+        [id, ticketNumber, data.customerId, data.customerName, data.customerPhone,
+         "received", data.promisedAt, data.orderType, data.notes ?? null,
+         data.subtotal, data.vatAmount, data.total,
+         data.staffId ?? null, data.staffName ?? null, now, now]
+      );
+      for (const item of data.items) {
+        const itemId = generateId();
+        await tx.runAsync(
+          "INSERT INTO laundry_order_items (id, order_id, product_id, product_name, product_price, quantity, line_total, notes) VALUES (?,?,?,?,?,?,?,?)",
+          [itemId, id, item.productId, item.productName, item.productPrice, item.quantity, item.lineTotal, item.notes ?? null]
+        );
+      }
+    });
+    return {
+      id, ticketNumber,
+      customerId: data.customerId, customerName: data.customerName, customerPhone: data.customerPhone,
+      status: "received" as const, promisedAt: data.promisedAt, orderType: data.orderType,
+      notes: data.notes ?? null, subtotal: data.subtotal, vatAmount: data.vatAmount, total: data.total,
+      paidAt: null, paymentMethod: null, saleId: null,
+      staffId: data.staffId ?? null, staffName: data.staffName ?? null,
+      createdAt: now, updatedAt: now,
+      items: data.items.map((it, i) => ({
+        id: `${id}_${i}`, orderId: id, productId: it.productId, productName: it.productName,
+        productPrice: it.productPrice, quantity: it.quantity, lineTotal: it.lineTotal, notes: it.notes ?? null,
+      })),
+    };
+  }, [db]);
+
+  const loadLaundryOrders = useCallback(async (statusFilter?: import("@/types").LaundryOrderStatus[]): Promise<import("@/types").LaundryOrder[]> => {
+    let sql = "SELECT * FROM laundry_orders";
+    const args: string[] = [];
+    if (statusFilter && statusFilter.length > 0) {
+      sql += ` WHERE status IN (${statusFilter.map(() => "?").join(",")})`;
+      args.push(...statusFilter);
+    }
+    sql += " ORDER BY created_at DESC";
+    const orders = await db.getAllAsync<any>(sql, args);
+    if (orders.length === 0) return [];
+    const allItems = await db.getAllAsync<any>(
+      `SELECT * FROM laundry_order_items WHERE order_id IN (${orders.map(() => "?").join(",")})`,
+      orders.map((o: any) => o.id)
+    );
+    const itemsByOrder: Record<string, import("@/types").LaundryOrderItem[]> = {};
+    for (const r of allItems) {
+      (itemsByOrder[r.order_id] ??= []).push({
+        id: r.id, orderId: r.order_id, productId: r.product_id, productName: r.product_name,
+        productPrice: r.product_price, quantity: r.quantity, lineTotal: r.line_total, notes: r.notes ?? null,
+      });
+    }
+    return orders.map((r: any) => ({
+      id: r.id, ticketNumber: r.ticket_number,
+      customerId: r.customer_id, customerName: r.customer_name, customerPhone: r.customer_phone,
+      status: r.status as import("@/types").LaundryOrderStatus, promisedAt: r.promised_at,
+      orderType: r.order_type as "drop-off" | "express", notes: r.notes ?? null,
+      subtotal: r.subtotal, vatAmount: r.vat_amount, total: r.total,
+      paidAt: r.paid_at ?? null, paymentMethod: r.payment_method ?? null, saleId: r.sale_id ?? null,
+      staffId: r.staff_id ?? null, staffName: r.staff_name ?? null,
+      createdAt: r.created_at, updatedAt: r.updated_at,
+      items: itemsByOrder[r.id] ?? [],
+    }));
+  }, [db]);
+
+  const updateLaundryOrderStatus = useCallback(async (orderId: string, status: import("@/types").LaundryOrderStatus): Promise<void> => {
+    await db.runAsync(
+      "UPDATE laundry_orders SET status=?, updated_at=? WHERE id=?",
+      [status, Date.now(), orderId]
+    );
+  }, [db]);
+
+  const collectLaundryOrder = useCallback(async (orderId: string, saleId: string, paymentMethod: string): Promise<void> => {
+    const now = Date.now();
+    await db.runAsync(
+      "UPDATE laundry_orders SET status='collected', sale_id=?, paid_at=?, payment_method=?, updated_at=? WHERE id=?",
+      [saleId, now, paymentMethod, now, orderId]
+    );
+  }, [db]);
+
+  const getLaundryOrder = useCallback(async (id: string): Promise<import("@/types").LaundryOrder | null> => {
+    const r = await db.getFirstAsync<any>("SELECT * FROM laundry_orders WHERE id=?", [id]);
+    if (!r) return null;
+    const items = await db.getAllAsync<any>("SELECT * FROM laundry_order_items WHERE order_id=?", [id]);
+    return {
+      id: r.id, ticketNumber: r.ticket_number,
+      customerId: r.customer_id, customerName: r.customer_name, customerPhone: r.customer_phone,
+      status: r.status as import("@/types").LaundryOrderStatus, promisedAt: r.promised_at,
+      orderType: r.order_type as "drop-off" | "express", notes: r.notes ?? null,
+      subtotal: r.subtotal, vatAmount: r.vat_amount, total: r.total,
+      paidAt: r.paid_at ?? null, paymentMethod: r.payment_method ?? null, saleId: r.sale_id ?? null,
+      staffId: r.staff_id ?? null, staffName: r.staff_name ?? null,
+      createdAt: r.created_at, updatedAt: r.updated_at,
+      items: items.map((it: any) => ({
+        id: it.id, orderId: it.order_id, productId: it.product_id, productName: it.product_name,
+        productPrice: it.product_price, quantity: it.quantity, lineTotal: it.line_total, notes: it.notes ?? null,
+      })),
+    };
+  }, [db]);
+
   return (
     <DatabaseContext.Provider value={{
       loadProducts, createProduct, updateProduct, deleteProduct, updateStock,
@@ -1762,6 +1876,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       loadLocalMovements, createLocalAdjustment,
       loadPackages, createPackage, updatePackage, deletePackage,
       loadCustomerPackages, purchaseCustomerPackage, redeemPackageSession,
+      createLaundryOrder, loadLaundryOrders, updateLaundryOrderStatus, collectLaundryOrder, getLaundryOrder,
     }}>
       {children}
     </DatabaseContext.Provider>
