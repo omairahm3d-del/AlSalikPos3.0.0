@@ -4,7 +4,11 @@
 Unicode True
 
 !define APP_NAME      "Al Salik POS"
-!define APP_VERSION   "1.0.0"
+; APP_VERSION is injected at build time via: makensis /DAPP_VERSION=<version>
+; Set the version in desktop-installer/package.json — that is the single source of truth.
+!ifndef APP_VERSION
+  !error "APP_VERSION must be defined. Run: npm run build:installer (not makensis directly)."
+!endif
 !define PUBLISHER     "Al Salik Computers"
 !define APP_ID        "com.alsalikcomputers.pos"
 !define INSTALL_DIR   "$PROGRAMFILES64\Al Salik Computers\Al Salik POS"

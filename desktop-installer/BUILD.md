@@ -131,16 +131,16 @@ npm run build:installer-32 # rebuild 32-bit .exe
 
 ## Updating the Version
 
-Edit the `"version"` field in `package.json` and the `APP_VERSION` define in both
-`installer.nsi` and `installer-32.nsi`:
+Edit the `"version"` field in **`package.json`** only — that is the single source of truth:
 
 ```json
 "version": "1.1.0"
 ```
 
-```nsis
-!define APP_VERSION   "1.1.0"
-```
+The `build:installer` and `build:installer-32` scripts automatically pass the version to
+NSIS at compile time via a `/D` flag, so `installer.nsi` and `installer-32.nsi` never
+need to be touched. Both NSIS scripts will fail with a clear error if invoked directly
+without the flag (i.e. without going through `npm run build:installer`).
 
 ---
 
