@@ -2268,50 +2268,61 @@ export default function POSScreen() {
       })()}
 
       <Modal visible={!!creditPaySale} animationType="fade" transparent>
-        <View style={styles.paymentOverlay} onStartShouldSetResponderCapture={() => { activityResetFn.current(); return false; }}>
-          <View style={[styles.itemDiscSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2, maxWidth: 400 }]}>
-            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
-              <Feather name="credit-card" size={20} color={colors.primary} />
-              <Text style={[styles.paymentTitle, { color: colors.foreground, fontSize: 18, marginLeft: 8, marginBottom: 0 }]}>Collect Credit Payment</Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <View style={styles.paymentOverlay} onStartShouldSetResponderCapture={() => { activityResetFn.current(); return false; }}>
+            <View style={[styles.itemDiscSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2, maxWidth: 400, maxHeight: "88%" }]}>
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 8 }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
+                  <Feather name="credit-card" size={20} color={colors.primary} />
+                  <Text style={[styles.paymentTitle, { color: colors.foreground, fontSize: 18, marginLeft: 8, marginBottom: 0 }]}>Collect Credit Payment</Text>
+                </View>
+                <View style={{ backgroundColor: colors.secondary, borderColor: colors.border, borderWidth: 1, borderRadius: colors.radius, marginBottom: 12, padding: 12 }}>
+                  <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 15 }}>{creditPayCustomer?.name}</Text>
+                  <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 2 }}>Invoice: {creditPaySale?.invoiceNumber}</Text>
+                  <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 2 }}>Sale Total: {formatCurrency(creditPaySale?.total ?? 0)}</Text>
+                  <Text style={{ color: "#E74C3C", fontSize: 13, fontWeight: "600", marginTop: 4 }}>Outstanding: {formatCurrency(creditPayCustomer?.creditBalance ?? 0)}</Text>
+                </View>
+                <Text style={{ color: colors.mutedForeground, fontSize: 12, fontWeight: "600", marginBottom: 4 }}>Payment Amount</Text>
+                <TextInput
+                  value={creditPayAmount}
+                  onChangeText={setCreditPayAmount}
+                  placeholder="0.00"
+                  placeholderTextColor={colors.mutedForeground}
+                  keyboardType="decimal-pad"
+                  style={[styles.searchInput, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius, fontSize: 20, fontWeight: "700", textAlign: "center", marginBottom: 8 }]}
+                />
+                <Text style={{ color: colors.mutedForeground, fontSize: 12, fontWeight: "600", marginBottom: 4 }}>Note</Text>
+                <TextInput
+                  value={creditPayNote}
+                  onChangeText={setCreditPayNote}
+                  placeholder="e.g. Cash payment"
+                  placeholderTextColor={colors.mutedForeground}
+                  style={[styles.searchInput, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius, marginBottom: 12 }]}
+                />
+                <TouchableOpacity
+                  onPress={handleCreditPayFromScan}
+                  style={[styles.chargeBtn, { backgroundColor: colors.success, borderRadius: colors.radius }]}
+                >
+                  <Feather name="check" size={16} color="#fff" />
+                  <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15, marginLeft: 6 }}>Collect Payment</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => { setCreditPaySale(null); setCreditPayCustomer(null); setCreditPayAmount(""); setCreditPayNote(""); }}
+                  style={[styles.cancelBtn, { borderColor: colors.border, borderRadius: colors.radius, marginTop: 8 }]}
+                >
+                  <Text style={{ color: colors.mutedForeground, fontWeight: "600" }}>Cancel</Text>
+                </TouchableOpacity>
+              </ScrollView>
             </View>
-            <View style={{ backgroundColor: colors.secondary, borderColor: colors.border, borderWidth: 1, borderRadius: colors.radius, marginBottom: 12, padding: 12 }}>
-              <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 15 }}>{creditPayCustomer?.name}</Text>
-              <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 2 }}>Invoice: {creditPaySale?.invoiceNumber}</Text>
-              <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 2 }}>Sale Total: {formatCurrency(creditPaySale?.total ?? 0)}</Text>
-              <Text style={{ color: "#E74C3C", fontSize: 13, fontWeight: "600", marginTop: 4 }}>Outstanding: {formatCurrency(creditPayCustomer?.creditBalance ?? 0)}</Text>
-            </View>
-            <Text style={{ color: colors.mutedForeground, fontSize: 12, fontWeight: "600", marginBottom: 4 }}>Payment Amount</Text>
-            <TextInput
-              value={creditPayAmount}
-              onChangeText={setCreditPayAmount}
-              placeholder="0.00"
-              placeholderTextColor={colors.mutedForeground}
-              keyboardType="decimal-pad"
-              style={[styles.searchInput, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius, fontSize: 20, fontWeight: "700", textAlign: "center", marginBottom: 8 }]}
-            />
-            <Text style={{ color: colors.mutedForeground, fontSize: 12, fontWeight: "600", marginBottom: 4 }}>Note</Text>
-            <TextInput
-              value={creditPayNote}
-              onChangeText={setCreditPayNote}
-              placeholder="e.g. Cash payment"
-              placeholderTextColor={colors.mutedForeground}
-              style={[styles.searchInput, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius, marginBottom: 12 }]}
-            />
-            <TouchableOpacity
-              onPress={handleCreditPayFromScan}
-              style={[styles.chargeBtn, { backgroundColor: colors.success, borderRadius: colors.radius }]}
-            >
-              <Feather name="check" size={16} color="#fff" />
-              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15, marginLeft: 6 }}>Collect Payment</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => { setCreditPaySale(null); setCreditPayCustomer(null); setCreditPayAmount(""); setCreditPayNote(""); }}
-              style={[styles.cancelBtn, { borderColor: colors.border, borderRadius: colors.radius, marginTop: 8 }]}
-            >
-              <Text style={{ color: colors.mutedForeground, fontWeight: "600" }}>Cancel</Text>
-            </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Stylist picker — saloon mode only */}

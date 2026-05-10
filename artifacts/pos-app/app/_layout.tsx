@@ -8,6 +8,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import * as Updates from "expo-updates";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -134,6 +135,27 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [fontsReady]);
+
+  // Check for OTA updates on every launch. In development the Updates API
+  // is a no-op so this is safe to run unconditionally. On a production build
+  // it fetches and immediately applies any new bundle so the restart the user
+  // does after "update available" always lands on the latest code.
+  useEffect(() => {
+    if (__DEV__) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const check = await Updates.checkForUpdateAsync();
+        if (cancelled || !check.isAvailable) return;
+        await Updates.fetchUpdateAsync();
+        if (cancelled) return;
+        await Updates.reloadAsync();
+      } catch {
+        // Silent — never block the app on an update failure.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   if (!fontsReady) return null;
 
