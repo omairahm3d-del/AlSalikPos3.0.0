@@ -5,9 +5,9 @@ const router: IRouter = Router();
 const SIDECAR = "http://127.0.0.1:1106";
 const BUCKET_ID = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID ?? "";
 
-const INSTALLER_GCS = "downloads/AlSalikPOS-Setup-1.0.0.exe";
-const INSTALLER_32_GCS = "downloads/AlSalikPOS-Setup-1.0.0-32bit.exe";
-const APK_GCS = "downloads/AlSalikPOS.apk";
+const INSTALLER_GCS = "public/releases/AlSalikPOS-Setup-1.0.0.exe";
+const INSTALLER_32_GCS = "public/releases/AlSalikPOS-Setup-1.0.0-32bit.exe";
+const APK_GCS = "public/releases/AlSalikPOS.apk";
 const INSTALLER_NAME = "Al Salik POS Setup 1.0.0.exe";
 const INSTALLER_32_NAME = "Al Salik POS Setup 1.0.0 (32-bit).exe";
 const APK_NAME = "Al Salik POS.apk";
