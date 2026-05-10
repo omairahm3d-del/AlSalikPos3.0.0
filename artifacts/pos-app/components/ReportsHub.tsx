@@ -1420,6 +1420,16 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
     const refundSubtotal = refunds.reduce((s, x) => s + Math.abs(x.subtotal), 0);
     const refundVat = refunds.reduce((s, x) => s + Math.abs(x.vatAmount), 0);
     const netVat = outputVat - refundVat;
+    // Fixed dark-on-light helpers — these boxes always have a light bg regardless of theme
+    const gHead = (t: string) => (
+      <Text style={{ fontSize: 10, fontWeight: "700", letterSpacing: 0.6, textTransform: "uppercase", color: "#166534", marginTop: 8 }}>{t}</Text>
+    );
+    const gRow = (label: string, value: string, accent?: string) => (
+      <View style={st.summaryRow}>
+        <Text style={[st.rowLabel, { color: "#374151" }]}>{label}</Text>
+        <Text style={[st.rowValue, { color: accent ?? "#111827" }]}>{value}</Text>
+      </View>
+    );
     return (
       <View style={[st.root, { backgroundColor: colors.background }]}>
         {renderHdr("Sales VAT Filing", () => setView(null),
@@ -1442,18 +1452,18 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
               <>
                 {/* UAE VAT Return summary */}
                 <View style={[st.summaryBox, { backgroundColor: "#f0fdf4", borderColor: "#86efac", borderRadius: colors.radius }]}>
-                  {sectionHead("OUTPUT TAX (BOX 1)")}
-                  {row("Taxable Supplies (excl. VAT)", formatCurrency(taxableSupplies))}
-                  {row("VAT Rate", "5%")}
-                  {row("Output VAT Due", formatCurrency(outputVat), colors.destructive)}
-                  {refundVat > 0 && sectionHead("ADJUSTMENTS (BOX 7)")}
-                  {refundSubtotal > 0 && row("Refunds — excl. VAT", `-${formatCurrency(refundSubtotal)}`)}
-                  {refundVat > 0 && row("Refund VAT Adj.", `-${formatCurrency(refundVat)}`, "#F39C12")}
-                  {sectionHead("NET POSITION")}
-                  {row("Net Output VAT Payable", formatCurrency(netVat), colors.destructive)}
-                  {row("Total Revenue (incl. VAT)", formatCurrency(totalInclVat), colors.success)}
-                  {row("Transactions", String(txns.length))}
-                  {refunds.length > 0 && row("Refunds", String(refunds.length))}
+                  {gHead("OUTPUT TAX (BOX 1)")}
+                  {gRow("Taxable Supplies (excl. VAT)", formatCurrency(taxableSupplies))}
+                  {gRow("VAT Rate", "5%")}
+                  {gRow("Output VAT Due", formatCurrency(outputVat), "#b91c1c")}
+                  {refundVat > 0 && gHead("ADJUSTMENTS (BOX 7)")}
+                  {refundSubtotal > 0 && gRow("Refunds — excl. VAT", `-${formatCurrency(refundSubtotal)}`)}
+                  {refundVat > 0 && gRow("Refund VAT Adj.", `-${formatCurrency(refundVat)}`, "#b45309")}
+                  {gHead("NET POSITION")}
+                  {gRow("Net Output VAT Payable", formatCurrency(netVat), "#b91c1c")}
+                  {gRow("Total Revenue (incl. VAT)", formatCurrency(totalInclVat), "#15803d")}
+                  {gRow("Transactions", String(txns.length))}
+                  {refunds.length > 0 && gRow("Refunds", String(refunds.length))}
                 </View>
                 {/* Transaction detail */}
                 {[...txns, ...refunds].sort((a, b) => b.createdAt - a.createdAt).map(s => {
@@ -1498,6 +1508,16 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
     const taxablePurchases = filtered.reduce((s, x) => s + x.subtotal, 0);
     const inputVat = filtered.reduce((s, x) => s + x.vatAmount, 0);
     const totalInclVat = filtered.reduce((s, x) => s + x.total, 0);
+    // Fixed dark-on-light helpers — violet box always has a light bg regardless of theme
+    const vHead = (t: string) => (
+      <Text style={{ fontSize: 10, fontWeight: "700", letterSpacing: 0.6, textTransform: "uppercase", color: "#5b21b6", marginTop: 8 }}>{t}</Text>
+    );
+    const vRow = (label: string, value: string, accent?: string) => (
+      <View style={st.summaryRow}>
+        <Text style={[st.rowLabel, { color: "#374151" }]}>{label}</Text>
+        <Text style={[st.rowValue, { color: accent ?? "#111827" }]}>{value}</Text>
+      </View>
+    );
     return (
       <View style={[st.root, { backgroundColor: colors.background }]}>
         {renderHdr("Purchase VAT Filing", () => setView(null),
@@ -1519,13 +1539,13 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
               <>
                 {/* UAE Input VAT summary */}
                 <View style={[st.summaryBox, { backgroundColor: "#f5f3ff", borderColor: "#c4b5fd", borderRadius: colors.radius }]}>
-                  {sectionHead("INPUT TAX (BOX 9)")}
-                  {row("Taxable Purchases (excl. VAT)", formatCurrency(taxablePurchases))}
-                  {row("VAT Rate", "5%")}
-                  {row("Input VAT Recoverable", formatCurrency(inputVat), colors.success)}
-                  {sectionHead("SUMMARY")}
-                  {row("Total Purchases (incl. VAT)", formatCurrency(totalInclVat))}
-                  {row("GRN Count", String(filtered.length))}
+                  {vHead("INPUT TAX (BOX 9)")}
+                  {vRow("Taxable Purchases (excl. VAT)", formatCurrency(taxablePurchases))}
+                  {vRow("VAT Rate", "5%")}
+                  {vRow("Input VAT Recoverable", formatCurrency(inputVat), "#15803d")}
+                  {vHead("SUMMARY")}
+                  {vRow("Total Purchases (incl. VAT)", formatCurrency(totalInclVat))}
+                  {vRow("GRN Count", String(filtered.length))}
                 </View>
                 {/* GRN detail */}
                 {filtered.map(p => (
