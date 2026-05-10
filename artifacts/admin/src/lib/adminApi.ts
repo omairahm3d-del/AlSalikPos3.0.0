@@ -7,7 +7,7 @@ export interface Company {
   status: string;
   contactEmail: string | null;
   notes: string | null;
-  workMode?: "standard" | "saloon";
+  workMode?: "standard" | "saloon" | "laundry" | "retail";
   createdAt: string;
   updatedAt: string;
 }

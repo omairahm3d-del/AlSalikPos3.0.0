@@ -285,6 +285,7 @@ export async function clearSession(): Promise<void> {
     K_LICENSE,
     K_LICENSE_KEY,
     K_BRANCH,
+    K_WORK_MODE,
   ]);
   // Intentionally keep K_DEVICE_UID so re-activation reuses the same slot
   // and doesn't burn an extra device against the license's maxDevices.
