@@ -468,6 +468,175 @@ folder — no separate download required.
 
 ---
 
+## Publishing a Release (Automated Upload)
+
+`publish:release` packs the archive **and** uploads it to a remote distribution channel
+in one step.  The script (`publish-release.js`) reads its configuration from environment
+variables or from the optional `publish-config.json` file in `desktop-installer/`.
+
+> **Never commit `publish-config.json`.**  It may contain credentials.  Add it to your
+> `.gitignore`.  Use `publish-config.json.example` as a starting template.
+
+### Quick start
+
+```bash
+# 1. Copy the example config
+cp publish-config.json.example publish-config.json
+
+# 2. Edit publish-config.json (or export the env vars below)
+
+# 3. Publish
+npm run publish:release       # 64-bit
+npm run publish:release-32    # 32-bit
+```
+
+`publish:release` is equivalent to running `pack:release` followed by
+`node publish-release.js`.  If the archive already exists from a previous
+`pack:release` run, you can call `node publish-release.js` directly to skip
+re-packing.
+
+---
+
+### Selecting an upload target
+
+Set `RELEASE_UPLOAD_TARGET` (environment variable or `publish-config.json` key) to one
+of the three supported backends:
+
+| Value  | Backend                        |
+|--------|--------------------------------|
+| `s3`   | Amazon S3 (or S3-compatible)   |
+| `sftp` | SFTP server via `sftp` CLI     |
+| `http` | HTTP/HTTPS PUT endpoint        |
+
+---
+
+### Target: `s3` — Amazon S3
+
+**Requirements:** AWS CLI (`aws`) must be installed and configured (credentials via
+`~/.aws/credentials`, `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, or an IAM role).
+
+| Variable | Required | Description |
+|---|---|---|
+| `RELEASE_UPLOAD_TARGET` | yes | `s3` |
+| `RELEASE_S3_BUCKET` | yes | S3 bucket name (e.g. `my-releases-bucket`) |
+| `RELEASE_S3_PREFIX` | no | Key prefix inside the bucket (e.g. `alsalik-pos/v1.0.0`) |
+| `RELEASE_S3_ENDPOINT` | no | Custom endpoint for S3-compatible stores (MinIO, Wasabi, Backblaze B2, etc.) |
+
+**Shell example:**
+
+```bash
+export RELEASE_UPLOAD_TARGET=s3
+export RELEASE_S3_BUCKET=my-releases-bucket
+export RELEASE_S3_PREFIX=alsalik-pos/v1.0.0
+npm run publish:release
+```
+
+**`publish-config.json` example:**
+
+```json
+{
+  "RELEASE_UPLOAD_TARGET": "s3",
+  "RELEASE_S3_BUCKET": "my-releases-bucket",
+  "RELEASE_S3_PREFIX": "alsalik-pos/v1.0.0"
+}
+```
+
+The script runs `aws s3 cp <file> s3://<bucket>/<prefix>/<file>` for each artifact.
+Pass `RELEASE_S3_ENDPOINT` to point to an S3-compatible provider:
+
+```bash
+export RELEASE_S3_ENDPOINT=https://s3.us-east-005.backblazeb2.com
+```
+
+---
+
+### Target: `sftp` — SFTP Server
+
+**Requirements:** `sftp` CLI (OpenSSH, available by default on Linux/macOS).
+
+| Variable | Required | Description |
+|---|---|---|
+| `RELEASE_UPLOAD_TARGET` | yes | `sftp` |
+| `RELEASE_SFTP_HOST` | yes | Hostname or IP of the SFTP server |
+| `RELEASE_SFTP_USER` | yes | SSH username |
+| `RELEASE_SFTP_PATH` | yes | Absolute remote directory path |
+| `RELEASE_SFTP_PORT` | no | SSH port (default: `22`) |
+| `RELEASE_SFTP_KEY` | no | Path to a private key file (`~/.ssh/id_rsa`, etc.) |
+
+The remote directory (`RELEASE_SFTP_PATH`) must already exist on the server.
+
+**Shell example:**
+
+```bash
+export RELEASE_UPLOAD_TARGET=sftp
+export RELEASE_SFTP_HOST=files.example.com
+export RELEASE_SFTP_USER=deploy
+export RELEASE_SFTP_PATH=/var/www/releases/alsalik-pos
+export RELEASE_SFTP_KEY=~/.ssh/id_rsa_deploy
+npm run publish:release
+```
+
+The first connection to a new host requires SSH host-key verification.  The script passes
+`-o StrictHostKeyChecking=accept-new` so new hosts are trusted automatically; subsequent
+runs verify the cached key.
+
+---
+
+### Target: `http` — HTTP PUT Endpoint
+
+**Requirements:** None beyond Node.js (uses the built-in `https` module).
+
+| Variable | Required | Description |
+|---|---|---|
+| `RELEASE_UPLOAD_TARGET` | yes | `http` |
+| `RELEASE_HTTP_URL` | yes | Base URL that accepts `PUT <url>/<filename>` (no trailing slash) |
+| `RELEASE_HTTP_BEARER` | no | Bearer token sent in the `Authorization` header |
+
+**Shell example:**
+
+```bash
+export RELEASE_UPLOAD_TARGET=http
+export RELEASE_HTTP_URL=https://my-server.example.com/releases/v1.0.0
+export RELEASE_HTTP_BEARER=my-api-token
+npm run publish:release
+```
+
+The script issues one `PUT` request per file with `Content-Type: application/octet-stream`.
+This target works with any HTTP file server or object-storage pre-signed URL that accepts
+`PUT` (e.g. Azure Blob Storage, Cloudflare R2 via presigned URL).
+
+---
+
+### What gets uploaded
+
+`publish-release.js` always uploads the two mandatory artifacts plus the optional GPG
+signature when it is present:
+
+| File | Source |
+|------|--------|
+| `AlSalikPOS-Installer.tar.gz` (or `-32`) | `desktop-installer/` |
+| `SHA256SUMS.txt` | `dist/` (or `dist-32/`) |
+| `SHA256SUMS.txt.asc` *(when GPG-signed)* | `dist/` (or `dist-32/`) |
+
+---
+
+### Full release workflow (build → sign → pack → publish)
+
+```bash
+# 64-bit
+npm run export-web
+npm run build:win
+npm run rebuild-web
+npm run build:installer       # sign, checksum
+npm run publish:release       # pack + upload
+
+# 32-bit (export-web already done above)
+npm run build:all-32          # build:win7-32 + rebuild-web-32 + build:installer-32
+npm run publish:release-32    # pack + upload
+```
+
+---
+
 ## Cross-compiling from Linux/macOS
 
 electron-builder supports building Windows installers from Linux/macOS with no extra setup.

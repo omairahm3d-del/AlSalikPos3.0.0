@@ -1,0 +1,19 @@
+{
+  "_comment": "Copy this file to publish-config.json and fill in the values for your target.",
+  "_comment2": "Environment variables override any value here. Never commit publish-config.json.",
+
+  "RELEASE_UPLOAD_TARGET": "s3",
+
+  "RELEASE_S3_BUCKET": "my-releases-bucket",
+  "RELEASE_S3_PREFIX": "alsalik-pos/v1.0.0",
+  "RELEASE_S3_ENDPOINT": "",
+
+  "RELEASE_SFTP_HOST": "files.example.com",
+  "RELEASE_SFTP_USER": "deploy",
+  "RELEASE_SFTP_PATH": "/var/www/releases/alsalik-pos",
+  "RELEASE_SFTP_PORT": "22",
+  "RELEASE_SFTP_KEY": "/path/to/id_rsa",
+
+  "RELEASE_HTTP_URL": "https://my-server.example.com/releases/v1.0.0",
+  "RELEASE_HTTP_BEARER": ""
+}
