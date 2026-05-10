@@ -18,6 +18,7 @@ import { DatabaseProvider } from "@/context/DatabaseProvider";
 import { StaffProvider, useStaff } from "@/context/StaffContext";
 import { LicenseProvider, useLicense } from "@/context/LicenseContext";
 import { WorkModeProvider } from "@/context/WorkModeContext";
+import { UsbPrintProvider } from "@/context/UsbPrintContext";
 import { SyncProvider } from "@/context/SyncContext";
 import { LockScreen } from "@/components/LockScreen";
 import { ActivationScreen } from "@/components/ActivationScreen";
@@ -96,7 +97,9 @@ export default function RootLayout() {
                       <SyncProvider>
                         <CartProvider>
                           <StaffProvider>
-                            <AppContent />
+                            <UsbPrintProvider>
+                              <AppContent />
+                            </UsbPrintProvider>
                           </StaffProvider>
                         </CartProvider>
                       </SyncProvider>

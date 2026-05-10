@@ -387,6 +387,11 @@ export interface PrinterSettings {
   bluetoothPrinterEnabled?: boolean;
   bluetoothPrinterAddress?: string;
   bluetoothPrinterName?: string;
+  usbPrinterEnabled?: boolean;
+  usbPrinterVendorId?: number;
+  usbPrinterProductId?: number;
+  usbPrinterName?: string;
+  usbPrintMode?: "text" | "bitmap";
 }
 
 export interface KOTSettings {

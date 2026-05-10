@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useUsbPrint } from "@/context/UsbPrintContext";
 import {
   ActivityIndicator,
   Alert,
@@ -64,6 +65,8 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
 
   const isTrnValid = business?.trn ? /^\d{15}$/.test(business.trn) : false;
 
+  const { captureAndPrintBitmap } = useUsbPrint();
+
   const handlePrint = async () => {
     if (!sale || !business) return;
     try {
@@ -96,12 +99,32 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
           networkPrinterIp: ps?.networkPrinterEnabled ? ps?.networkPrinterIp : undefined,
           networkPrinterPort: ps?.networkPrinterPort,
           bluetoothAddress: ps?.bluetoothPrinterEnabled ? ps?.bluetoothPrinterAddress : undefined,
+          usbVendorId: ps?.usbPrinterEnabled && ps.usbPrinterVendorId != null ? ps.usbPrinterVendorId : undefined,
+          usbProductId: ps?.usbPrinterEnabled ? (ps.usbPrinterProductId ?? 0) : undefined,
         });
         return;
       }
 
       const html = generateReceiptHTML(sale, items, business);
-      const needRawText = !!ps?.rawTextMode || !!ps?.androidPrinterEnabled || !!ps?.sunmiEnabled || !!ps?.networkPrinterEnabled || !!ps?.bluetoothPrinterEnabled;
+
+      // USB OTG bitmap mode: capture HTML as image then print via ESC/POS
+      if (ps?.usbPrinterEnabled && ps.usbPrinterVendorId != null && ps.usbPrintMode === "bitmap") {
+        try {
+          const ok = await captureAndPrintBitmap(html, ps);
+          if (!ok) Alert.alert("USB Print Failed", "Could not print via USB OTG.\n\nCheck that:\n• The printer is plugged in via OTG cable\n• The printer is powered on\n• You granted USB permission when prompted");
+        } catch (e: any) {
+          Alert.alert("USB Print Error", e?.message ?? "Unknown error");
+        }
+        return;
+      }
+
+      const needRawText =
+        !!ps?.rawTextMode ||
+        !!ps?.androidPrinterEnabled ||
+        !!ps?.sunmiEnabled ||
+        !!ps?.networkPrinterEnabled ||
+        !!ps?.bluetoothPrinterEnabled ||
+        (!!ps?.usbPrinterEnabled && ps?.usbPrintMode !== "bitmap");
       let rawText: string | undefined;
       if (needRawText) {
         const { generateReceiptText } = await import("@/lib/textReceipt");
@@ -119,6 +142,8 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
         networkPrinterIp: ps?.networkPrinterEnabled ? ps?.networkPrinterIp : undefined,
         networkPrinterPort: ps?.networkPrinterPort,
         bluetoothAddress: ps?.bluetoothPrinterEnabled ? ps?.bluetoothPrinterAddress : undefined,
+        usbVendorId: ps?.usbPrinterEnabled && ps?.usbPrintMode !== "bitmap" && ps.usbPrinterVendorId != null ? ps.usbPrinterVendorId : undefined,
+        usbProductId: ps?.usbPrinterEnabled && ps?.usbPrintMode !== "bitmap" ? (ps.usbPrinterProductId ?? 0) : undefined,
       });
     } catch {
     }

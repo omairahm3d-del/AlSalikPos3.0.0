@@ -60,6 +60,8 @@ export type PrintOpts = {
   networkPrinterIp?: string;
   networkPrinterPort?: number;
   bluetoothAddress?: string;
+  usbVendorId?: number;
+  usbProductId?: number;
 };
 
 // ─── Sunmi SDK ────────────────────────────────────────────────────────────────
@@ -318,6 +320,20 @@ export async function printHtml(html: string, opts: PrintOpts = {}): Promise<boo
   if (opts.bluetoothAddress && opts.rawText) {
     const ok = await printBluetoothPrinter(opts.rawText, opts.bluetoothAddress, opts.autoCut ?? true);
     if (ok) return true;
+  }
+
+  // USB OTG thermal printer (Android only, text/ESC-POS mode)
+  if (Platform.OS === "android" && opts.usbVendorId != null && opts.rawText) {
+    try {
+      const { connectUsbPrinter, printUsbText } = require("./usbPrinter") as typeof import("./usbPrinter");
+      const connected = await connectUsbPrinter({ vendorId: opts.usbVendorId, productId: opts.usbProductId ?? 0 });
+      if (connected) {
+        const ok = await printUsbText(opts.rawText, { autoCut: opts.autoCut ?? true });
+        if (ok) return true;
+      }
+    } catch (e: any) {
+      console.warn("[printBridge] USB text print failed:", e?.message ?? e);
+    }
   }
 
   const api = getElectronAPI();

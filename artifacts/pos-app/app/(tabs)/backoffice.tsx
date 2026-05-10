@@ -154,6 +154,9 @@ export default function BackOfficeScreen() {
   const [btScanning, setBtScanning] = useState(false);
   const [networkTestState, setNetworkTestState] = useState<"idle" | "testing" | "ok" | "fail">("idle");
   const [btTestState, setBtTestState] = useState<"idle" | "testing" | "ok" | "fail">("idle");
+  const [usbDevices, setUsbDevices] = useState<{ vendorId: number; productId: number; deviceId?: number; productName?: string; manufacturerName?: string }[]>([]);
+  const [usbScanning, setUsbScanning] = useState(false);
+  const [usbTestState, setUsbTestState] = useState<"idle" | "testing" | "ok" | "fail">("idle");
   const refreshWindowsPrinters = useCallback(async () => {
     if (!isElectron()) return;
     const list = await listWindowsPrinters();
@@ -1628,6 +1631,168 @@ export default function BackOfficeScreen() {
                         )}
                       </TouchableOpacity>
                     ))}
+                  </View>
+                )}
+              </>
+            )}
+          </View>
+        )}
+
+        {/* ── USB OTG Thermal Printer ──────────────────────────────────────── */}
+        {Platform.OS === "android" && (
+          <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: colors.border }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <Feather name="link" size={15} color={colors.foreground} />
+              <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 14 }}>USB OTG Thermal Printer</Text>
+            </View>
+            <Text style={{ color: colors.mutedForeground, fontSize: 12, marginBottom: 10 }}>
+              Connect an ESC/POS thermal printer directly via USB OTG cable. No Bluetooth pairing needed — plug in and tap "Detect USB Printers". Requires a development or EAS build.
+            </Text>
+            {renderSwitch(
+              "Enable USB OTG printer",
+              !!printerSettings.usbPrinterEnabled,
+              (v: boolean) => setPrinterSettings({ ...printerSettings, usbPrinterEnabled: v }),
+            )}
+            {printerSettings.usbPrinterEnabled && (
+              <>
+                {/* Selected device info */}
+                {printerSettings.usbPrinterVendorId != null ? (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8, padding: 8, backgroundColor: colors.primary + "12", borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary + "40" }}>
+                    <Feather name="link" size={14} color={colors.primary} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: colors.foreground, fontWeight: "600", fontSize: 13 }}>
+                        {printerSettings.usbPrinterName || `VID:${printerSettings.usbPrinterVendorId} PID:${printerSettings.usbPrinterProductId ?? 0}`}
+                      </Text>
+                      <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>
+                        Vendor ID: {printerSettings.usbPrinterVendorId} · Product ID: {printerSettings.usbPrinterProductId ?? 0}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => setPrinterSettings({ ...printerSettings, usbPrinterVendorId: undefined, usbPrinterProductId: undefined, usbPrinterName: undefined })}
+                      style={{ padding: 4 }}
+                    >
+                      <Feather name="x" size={14} color={colors.mutedForeground} />
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+
+                {/* Print mode selector */}
+                <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 10, marginBottom: 6 }]}>Print Mode</Text>
+                <View style={s.chipRow}>
+                  {(["text", "bitmap"] as const).map((mode) => (
+                    <TouchableOpacity
+                      key={mode}
+                      onPress={() => setPrinterSettings({ ...printerSettings, usbPrintMode: mode })}
+                      style={[s.chip, {
+                        backgroundColor: (printerSettings.usbPrintMode ?? "text") === mode ? colors.primary : colors.secondary,
+                        borderColor: (printerSettings.usbPrintMode ?? "text") === mode ? colors.primary : colors.border,
+                        borderRadius: colors.radius,
+                      }]}
+                    >
+                      <Text style={{ color: (printerSettings.usbPrintMode ?? "text") === mode ? "#fff" : colors.mutedForeground, fontWeight: "600" }}>
+                        {mode === "text" ? "Text (ESC/POS)" : "Bitmap (HTML image)"}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <Text style={{ color: colors.mutedForeground, fontSize: 11, marginTop: 4 }}>
+                  {(printerSettings.usbPrintMode ?? "text") === "text"
+                    ? "Fast, wide compatibility. Sends ESC/POS text commands."
+                    : "Renders the full HTML receipt as an image. Slower but preserves Arabic text and logos."}
+                </Text>
+
+                {/* Scan + Test row */}
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
+                  <TouchableOpacity
+                    style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 9, borderRadius: colors.radius, borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.background }}
+                    onPress={async () => {
+                      try {
+                        setUsbScanning(true);
+                        setUsbDevices([]);
+                        const { listUsbPrinters } = await import("@/lib/usbPrinter");
+                        const devs = await listUsbPrinters();
+                        setUsbDevices(devs);
+                        if (devs.length === 0) Alert.alert("No USB Printers Found", "No USB devices were detected.\n\nCheck that:\n• The OTG cable is connected\n• The printer is powered on\n• This is a development or EAS build (not Expo Go)");
+                      } catch {
+                        Alert.alert("USB Error", "Could not scan for USB devices. This feature requires a development build.");
+                      } finally {
+                        setUsbScanning(false);
+                      }
+                    }}
+                  >
+                    <Feather name={usbScanning ? "loader" : "search"} size={12} color={colors.primary} />
+                    <Text style={{ color: colors.primary, fontWeight: "600", fontSize: 12 }}>{usbScanning ? "Scanning..." : "Detect USB Printers"}</Text>
+                  </TouchableOpacity>
+
+                  {printerSettings.usbPrinterVendorId != null && (
+                    <TouchableOpacity
+                      style={{
+                        flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 9,
+                        borderRadius: colors.radius, borderWidth: 1.5,
+                        borderColor: usbTestState === "ok" ? colors.success : usbTestState === "fail" ? "#E74C3C" : colors.success,
+                        backgroundColor: colors.background,
+                      }}
+                      disabled={usbTestState === "testing"}
+                      onPress={async () => {
+                        try {
+                          setUsbTestState("testing");
+                          const { testUsbPrinter } = await import("@/lib/usbPrinter");
+                          const ok = await testUsbPrinter(
+                            { vendorId: printerSettings.usbPrinterVendorId!, productId: printerSettings.usbPrinterProductId ?? 0 },
+                            printerSettings.autoCutPaper !== false,
+                          );
+                          setUsbTestState(ok ? "ok" : "fail");
+                          if (!ok) Alert.alert("Test Print Failed", "Could not print. Check the printer is connected, powered on, and USB permission was granted.");
+                          setTimeout(() => setUsbTestState("idle"), 3000);
+                        } catch {
+                          setUsbTestState("fail");
+                          setTimeout(() => setUsbTestState("idle"), 3000);
+                        }
+                      }}
+                    >
+                      <Feather
+                        name={usbTestState === "testing" ? "loader" : usbTestState === "ok" ? "check-circle" : usbTestState === "fail" ? "x-circle" : "printer"}
+                        size={12}
+                        color={usbTestState === "ok" ? colors.success : usbTestState === "fail" ? "#E74C3C" : colors.success}
+                      />
+                      <Text style={{ color: usbTestState === "ok" ? colors.success : usbTestState === "fail" ? "#E74C3C" : colors.success, fontWeight: "600", fontSize: 12 }}>
+                        {usbTestState === "testing" ? "Sending..." : usbTestState === "ok" ? "Printed!" : usbTestState === "fail" ? "Failed" : "Test Print"}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Detected USB device list */}
+                {usbDevices.length > 0 && (
+                  <View style={{ marginTop: 8, gap: 6 }}>
+                    {usbDevices.map((d, idx) => {
+                      const isSelected = printerSettings.usbPrinterVendorId === d.vendorId && printerSettings.usbPrinterProductId === d.productId;
+                      const label = d.productName || d.manufacturerName || `Device ${idx + 1}`;
+                      return (
+                        <TouchableOpacity
+                          key={`${d.vendorId}-${d.productId}-${idx}`}
+                          onPress={() => setPrinterSettings({
+                            ...printerSettings,
+                            usbPrinterVendorId: d.vendorId,
+                            usbPrinterProductId: d.productId,
+                            usbPrinterName: label,
+                          })}
+                          style={{
+                            flexDirection: "row", alignItems: "center", gap: 8, padding: 10,
+                            borderRadius: colors.radius, borderWidth: 1,
+                            backgroundColor: isSelected ? colors.primary + "15" : colors.background,
+                            borderColor: isSelected ? colors.primary : colors.border,
+                          }}
+                        >
+                          <Feather name="link" size={14} color={isSelected ? colors.primary : colors.mutedForeground} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: "600" }}>{label}</Text>
+                            <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>VID: {d.vendorId} · PID: {d.productId}</Text>
+                          </View>
+                          {isSelected && <Feather name="check" size={14} color={colors.primary} />}
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 )}
               </>
