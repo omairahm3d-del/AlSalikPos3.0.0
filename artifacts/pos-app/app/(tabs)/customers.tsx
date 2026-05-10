@@ -23,6 +23,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import type { CreditPayment, Customer, Sale } from "@/types";
 import { formatCurrency } from "@/types";
 import { printHtml } from "@/lib/printBridge";
+import { ReceiptModal } from "@/components/ReceiptModal";
 
 function buildCustomerStatementHtml(
   customer: Customer,
@@ -133,7 +134,7 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
   const insets = useSafeAreaInsets();
   const {
     loadCustomers, createCustomer, updateCustomer, deleteCustomer,
-    recordCreditPayment, loadCreditPayments, loadSales, loadBusinessSettings,
+    recordCreditPayment, loadCreditPayments, loadSales, loadSaleWithItems, loadBusinessSettings,
   } = useDatabase();
 
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -156,6 +157,7 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentNote, setPaymentNote] = useState("");
   const [loyaltyRate, setLoyaltyRate] = useState(0.01);
+  const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
 
   const topPadding = embedded ? 0 : (Platform.OS === "web" ? insets.top + 8 : 0);
 
@@ -266,21 +268,40 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
   };
 
   type TxEntry =
-    | { kind: "sale"; id: string; date: number; amount: number; invNum: string; loyaltyPts?: number }
+    | { kind: "sale"; id: string; date: number; amount: number; invNum: string; paymentMethod: string; loyaltyPts?: number; saleObj: Sale }
     | { kind: "payment"; id: string; date: number; amount: number; method: string; ref: string };
 
   const buildTimeline = (): { entry: TxEntry; balance: number }[] => {
     const entries: TxEntry[] = [
-      ...creditSales.map((s) => ({ kind: "sale" as const, id: s.id, date: s.createdAt, amount: s.total, invNum: s.invoiceNumber, loyaltyPts: s.loyaltyPointsEarned })),
-      ...creditHistory.map((p) => { const { method, ref } = parsePaymentNote(p.note || ""); return { kind: "payment" as const, id: p.id, date: p.createdAt, amount: p.amount, method, ref }; }),
+      ...creditSales.map((s) => ({
+        kind: "sale" as const,
+        id: s.id,
+        date: s.createdAt,
+        amount: s.total,
+        invNum: s.invoiceNumber,
+        paymentMethod: s.paymentMethod,
+        loyaltyPts: s.loyaltyPointsEarned,
+        saleObj: s,
+      })),
+      ...creditHistory.map((p) => {
+        const { method, ref } = parsePaymentNote(p.note || "");
+        return { kind: "payment" as const, id: p.id, date: p.createdAt, amount: p.amount, method, ref };
+      }),
     ].sort((a, b) => a.date - b.date);
 
+    // Credit balance only accumulates from credit-method sales and is reduced by payments.
     let running = 0;
     const result = entries.map((entry) => {
-      running = entry.kind === "sale" ? running + entry.amount : running - entry.amount;
+      if (entry.kind === "sale" && entry.paymentMethod === "credit") running += entry.amount;
+      else if (entry.kind === "payment") running -= entry.amount;
       return { entry, balance: Math.round(running * 100) / 100 };
     });
     return result.reverse();
+  };
+
+  const handlePrintReceipt = async (sale: Sale) => {
+    const full = await loadSaleWithItems(sale.id);
+    setReceiptSale(full ?? sale);
   };
 
   const renderCustomer = ({ item }: { item: Customer }) => {
@@ -455,7 +476,14 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
                     {timeline.map(({ entry, balance }, idx) => {
                       const isSale = entry.kind === "sale";
                       const isLast = idx === timeline.length - 1;
-                      const methodColor = !isSale ? (METHOD_COLORS[entry.method] ?? "#6b7280") : "";
+                      const pmColor = isSale
+                        ? (METHOD_COLORS[entry.paymentMethod] ?? "#6b7280")
+                        : (METHOD_COLORS[entry.method] ?? "#6b7280");
+                      const saleLabel = isSale
+                        ? entry.paymentMethod === "credit" ? "Credit Sale"
+                          : entry.paymentMethod === "split" ? "Split Sale"
+                          : `${entry.paymentMethod.charAt(0).toUpperCase() + entry.paymentMethod.slice(1)} Sale`
+                        : "Payment";
                       return (
                         <View key={entry.id} style={[styles.txRow, { borderBottomColor: isLast ? "transparent" : colors.border }]}>
                           <View style={[styles.txIcon, { backgroundColor: isSale ? colors.destructive + "18" : colors.success + "18" }]}>
@@ -464,16 +492,19 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
 
                           <View style={styles.txMiddle}>
                             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                              <Text style={[styles.txType, { color: colors.foreground }]}>
-                                {isSale ? "Credit Sale" : "Payment"}
-                              </Text>
+                              <Text style={[styles.txType, { color: colors.foreground }]}>{saleLabel}</Text>
                               {isSale ? (
-                                <View style={[styles.txBadge, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
-                                  <Text style={[styles.txBadgeText, { color: colors.mutedForeground }]}>{entry.invNum}</Text>
-                                </View>
+                                <>
+                                  <View style={[styles.txBadge, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+                                    <Text style={[styles.txBadgeText, { color: colors.mutedForeground }]}>{entry.invNum}</Text>
+                                  </View>
+                                  <View style={[styles.txBadge, { backgroundColor: pmColor + "18", borderColor: pmColor + "40" }]}>
+                                    <Text style={[styles.txBadgeText, { color: pmColor }]}>{entry.paymentMethod.toUpperCase()}</Text>
+                                  </View>
+                                </>
                               ) : (
-                                <View style={[styles.txBadge, { backgroundColor: methodColor + "18", borderColor: methodColor + "40" }]}>
-                                  <Text style={[styles.txBadgeText, { color: methodColor }]}>{entry.method}</Text>
+                                <View style={[styles.txBadge, { backgroundColor: pmColor + "18", borderColor: pmColor + "40" }]}>
+                                  <Text style={[styles.txBadgeText, { color: pmColor }]}>{entry.method}</Text>
                                 </View>
                               )}
                               {!isSale && entry.ref ? (
@@ -493,9 +524,20 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
                             <Text style={[styles.txAmount, { color: isSale ? colors.destructive : colors.success }]}>
                               {isSale ? "+" : "-"}{formatCurrency(entry.amount)}
                             </Text>
-                            <Text style={[styles.txBalance, { color: balance > 0 ? colors.mutedForeground : colors.success }]}>
-                              {balance > 0 ? `Bal: ${formatCurrency(balance)}` : "Settled"}
-                            </Text>
+                            {entry.kind === "sale" && entry.paymentMethod === "credit" && (
+                              <Text style={[styles.txBalance, { color: balance > 0 ? colors.mutedForeground : colors.success }]}>
+                                {balance > 0 ? `Bal: ${formatCurrency(balance)}` : "Settled"}
+                              </Text>
+                            )}
+                            {isSale && !entry.saleObj.isRefund && (
+                              <TouchableOpacity
+                                onPress={() => handlePrintReceipt(entry.saleObj)}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                style={{ marginTop: 4 }}
+                              >
+                                <Feather name="printer" size={14} color={colors.primary} />
+                              </TouchableOpacity>
+                            )}
                           </View>
                         </View>
                       );
@@ -507,6 +549,8 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
           )}
         </View>
       </Modal>
+
+      <ReceiptModal visible={!!receiptSale} sale={receiptSale} onClose={() => setReceiptSale(null)} />
 
       <Modal visible={showPaymentModal} animationType="fade" transparent>
         <View style={styles.payOverlay}>
