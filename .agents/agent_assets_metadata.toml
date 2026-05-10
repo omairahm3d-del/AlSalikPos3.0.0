@@ -101,3 +101,15 @@ id = "MbLd-XJCKKAFia-VaYXIV"
 uri = "file://desktop-installer/dist/AlSalikPOS-1.0.0-debug.zip"
 type = "unspecified"
 title = "Android APK — Al Salik POS v1.0.0 (ZIP)"
+
+[[outputs]]
+id = "HHMBHsw_41CfyF-2qRt_-"
+uri = "file://desktop-installer/dist/AlSalikPOS-Setup-2.0.0-64bit.zip"
+type = "unspecified"
+title = "Al Salik POS Setup 2.0.0 — 64-bit (Windows)"
+
+[[outputs]]
+id = "bLQUXheiKIIlEg3_3FkGh"
+uri = "file://desktop-installer/dist-32/AlSalikPOS-Setup-2.0.0-32bit.zip"
+type = "unspecified"
+title = "Al Salik POS Setup 2.0.0 — 32-bit (Windows)"
