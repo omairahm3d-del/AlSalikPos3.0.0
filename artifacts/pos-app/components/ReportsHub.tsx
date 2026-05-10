@@ -14,6 +14,7 @@ import { Feather } from "@expo/vector-icons";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
 import type { CreditPayment, Customer, Rider, Sale, SaleItem, ZReport } from "@/types";
+import type { LocalPurchase } from "@/context/DatabaseCore";
 import { formatCurrency } from "@/types";
 import { buildCsv, downloadCsv } from "@/lib/csvExport";
 import { generateZReportHTML } from "@/lib/receiptTemplate";
@@ -21,7 +22,7 @@ import { printHtml } from "@/lib/printBridge";
 import { generateReportPdfHtml, printReportPdf } from "@/lib/reportPdf";
 import { ReceiptModal } from "@/components/ReceiptModal";
 
-type ReportView = null | "zhistory" | "payment" | "staff" | "stylist" | "rider" | "customer" | "items";
+type ReportView = null | "zhistory" | "payment" | "staff" | "stylist" | "rider" | "customer" | "items" | "vat-sales" | "vat-purchases";
 type DatePreset = "today" | "yesterday" | "last7" | "last30" | "thismonth" | "lastmonth" | "thisyear" | "custom";
 
 const PRESETS: { key: DatePreset; label: string }[] = [
@@ -119,6 +120,7 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
   const [itemDate, setItemDate] = useState(new Date());
   const [expandedSaleId, setExpandedSaleId] = useState<string | null>(null);
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
+  const [localPurchases, setLocalPurchases] = useState<LocalPurchase[]>([]);
 
   const handlePrintCustReceipt = (sale: Sale) => {
     const items = rangeItems.filter(i => i.saleId === sale.id);
@@ -197,6 +199,21 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
     try { setCustomers(await db.loadCustomers()); } catch { setCustomers([]); }
   }, [db]);
 
+  const loadVatPurchases = useCallback(async () => {
+    try { setLocalPurchases(await db.loadLocalPurchases()); }
+    catch { setLocalPurchases([]); }
+  }, [db]);
+
+  const getActiveRange = useCallback((): { startMs: number; endMs: number } => {
+    if (preset === "custom") {
+      const s = customFrom ? new Date(customFrom).getTime() : 0;
+      const e = customTo ? new Date(customTo + "T23:59:59.999").getTime() : Date.now();
+      return { startMs: Number.isFinite(s) ? s : 0, endMs: Number.isFinite(e) ? e : Date.now() };
+    }
+    const r = getPresetRange(preset);
+    return { startMs: r.startMs, endMs: r.endMs };
+  }, [preset, customFrom, customTo]);
+
   const handleExport = useCallback(async (slug: string, rows: any[], headers?: string[]) => {
     if (rows.length === 0) {
       if (Platform.OS === "web") window.alert("Nothing to export — there are no rows in this report yet.");
@@ -244,6 +261,7 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
     if (view === "zhistory") loadZHistory();
     else if (view === "customer") { loadCustomers(); loadRangeData(); }
     else if (view === "items") loadItemDetail(itemDate);
+    else if (view === "vat-purchases") { loadVatPurchases(); loadRangeData(); }
     else if (view !== null) loadRangeData();
   }, [view]);
 
@@ -541,6 +559,57 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
       }),
     });
   }, [handlePdf, itemDate, rangeSales, rangeItems]);
+
+  const handleVatSalesPdf = useCallback(() => {
+    const txns = validSales;
+    const refunds = rangeSales.filter(s => s.isRefund);
+    const taxableSupplies = txns.reduce((s, x) => s + x.subtotal, 0);
+    const outputVat = txns.reduce((s, x) => s + x.vatAmount, 0);
+    const refundVat = refunds.reduce((s, x) => s + Math.abs(x.vatAmount), 0);
+    const netVat = outputVat - refundVat;
+    handlePdf({
+      title: "Sales VAT Filing Report",
+      filters: [`Period: ${rangeLabel}`],
+      summary: [
+        { label: "Taxable Supplies (excl. VAT)", value: `AED ${taxableSupplies.toFixed(2)}` },
+        { label: "Output VAT Due (5%)", value: `AED ${outputVat.toFixed(2)}`, highlight: true },
+        { label: "Refund VAT Adj.", value: refundVat > 0 ? `-AED ${refundVat.toFixed(2)}` : "—" },
+        { label: "Net VAT Payable", value: `AED ${netVat.toFixed(2)}`, highlight: true },
+        { label: "Transactions", value: String(txns.length) },
+      ],
+      columns: [
+        { header: "Date" }, { header: "Invoice" }, { header: "Customer" }, { header: "Method" },
+        { header: "Excl. VAT (AED)", align: "right" }, { header: "VAT 5% (AED)", align: "right" }, { header: "Total (AED)", align: "right" },
+      ],
+      rows: [
+        ...txns.map(s => [fmtDate(s.createdAt), s.invoiceNumber, s.customerName ?? "—", s.paymentMethod, s.subtotal.toFixed(2), s.vatAmount.toFixed(2), s.total.toFixed(2)]),
+        ...refunds.map(s => [fmtDate(s.createdAt), `${s.invoiceNumber} (Refund)`, s.customerName ?? "—", s.paymentMethod, (-Math.abs(s.subtotal)).toFixed(2), (-Math.abs(s.vatAmount)).toFixed(2), (-Math.abs(s.total)).toFixed(2)]),
+      ],
+    });
+  }, [handlePdf, validSales, rangeSales, rangeLabel]);
+
+  const handleVatPurchasesPdf = useCallback(() => {
+    const { startMs, endMs } = getActiveRange();
+    const filtered = localPurchases.filter(p => p.receivedAt >= startMs && p.receivedAt <= endMs);
+    const subtotal = filtered.reduce((s, x) => s + x.subtotal, 0);
+    const inputVat = filtered.reduce((s, x) => s + x.vatAmount, 0);
+    const total = filtered.reduce((s, x) => s + x.total, 0);
+    handlePdf({
+      title: "Purchase VAT Filing Report",
+      filters: [`Period: ${rangeLabel}`],
+      summary: [
+        { label: "Taxable Purchases (excl. VAT)", value: `AED ${subtotal.toFixed(2)}` },
+        { label: "Input VAT Recoverable (5%)", value: `AED ${inputVat.toFixed(2)}`, highlight: true },
+        { label: "Total Purchases (incl. VAT)", value: `AED ${total.toFixed(2)}` },
+        { label: "GRN Count", value: String(filtered.length) },
+      ],
+      columns: [
+        { header: "Date" }, { header: "Reference" }, { header: "Supplier" },
+        { header: "Excl. VAT (AED)", align: "right" }, { header: "VAT 5% (AED)", align: "right" }, { header: "Total (AED)", align: "right" },
+      ],
+      rows: filtered.map(p => [fmtDate(p.receivedAt), p.referenceNumber ?? "—", p.supplierName, p.subtotal.toFixed(2), p.vatAmount.toFixed(2), p.total.toFixed(2)]),
+    });
+  }, [handlePdf, getActiveRange, localPurchases, rangeLabel]);
 
   const renderHdr = (title: string, backFn: () => void, onExport?: () => void, onPdfExport?: () => void) => (
     <View style={[st.header, { borderBottomColor: colors.border }]}>
@@ -1341,6 +1410,149 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
     );
   };
 
+  // ─── Sales VAT Filing ──────────────────────────────────────────────────────
+  const renderVatSales = () => {
+    const txns = validSales;
+    const refunds = rangeSales.filter(s => s.isRefund);
+    const taxableSupplies = txns.reduce((s, x) => s + x.subtotal, 0);
+    const outputVat = txns.reduce((s, x) => s + x.vatAmount, 0);
+    const totalInclVat = txns.reduce((s, x) => s + x.total, 0);
+    const refundSubtotal = refunds.reduce((s, x) => s + Math.abs(x.subtotal), 0);
+    const refundVat = refunds.reduce((s, x) => s + Math.abs(x.vatAmount), 0);
+    const netVat = outputVat - refundVat;
+    return (
+      <View style={[st.root, { backgroundColor: colors.background }]}>
+        {renderHdr("Sales VAT Filing", () => setView(null),
+          () => handleExport("sales-vat-filing", [
+            ...txns.map(s => ({ Date: new Date(s.createdAt).toISOString(), Invoice: s.invoiceNumber, Customer: s.customerName ?? "", Method: s.paymentMethod, ExclVAT: s.subtotal.toFixed(2), VAT: s.vatAmount.toFixed(2), Total: s.total.toFixed(2) })),
+            ...refunds.map(s => ({ Date: new Date(s.createdAt).toISOString(), Invoice: `${s.invoiceNumber} (Refund)`, Customer: s.customerName ?? "", Method: s.paymentMethod, ExclVAT: (-Math.abs(s.subtotal)).toFixed(2), VAT: (-Math.abs(s.vatAmount)).toFixed(2), Total: (-Math.abs(s.total)).toFixed(2) })),
+          ]),
+          handleVatSalesPdf)}
+        <ScrollView contentContainerStyle={st.scroll}>
+          {renderPresets(p => loadRangeData(p))}
+          {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} /> :
+            !loaded ? null :
+            txns.length === 0 && refunds.length === 0 ? (
+              <View style={st.empty}>
+                <Feather name="file-text" size={44} color={colors.mutedForeground} style={{ opacity: 0.35 }} />
+                <Text style={[st.emptyTitle, { color: colors.foreground }]}>No Sales</Text>
+                <Text style={[st.emptySub, { color: colors.mutedForeground }]}>No taxable sales in {rangeLabel}</Text>
+              </View>
+            ) : (
+              <>
+                {/* UAE VAT Return summary */}
+                <View style={[st.summaryBox, { backgroundColor: "#f0fdf4", borderColor: "#86efac", borderRadius: colors.radius }]}>
+                  {sectionHead("OUTPUT TAX (BOX 1)")}
+                  {row("Taxable Supplies (excl. VAT)", formatCurrency(taxableSupplies))}
+                  {row("VAT Rate", "5%")}
+                  {row("Output VAT Due", formatCurrency(outputVat), colors.destructive)}
+                  {refundVat > 0 && sectionHead("ADJUSTMENTS (BOX 7)")}
+                  {refundSubtotal > 0 && row("Refunds — excl. VAT", `-${formatCurrency(refundSubtotal)}`)}
+                  {refundVat > 0 && row("Refund VAT Adj.", `-${formatCurrency(refundVat)}`, "#F39C12")}
+                  {sectionHead("NET POSITION")}
+                  {row("Net Output VAT Payable", formatCurrency(netVat), colors.destructive)}
+                  {row("Total Revenue (incl. VAT)", formatCurrency(totalInclVat), colors.success)}
+                  {row("Transactions", String(txns.length))}
+                  {refunds.length > 0 && row("Refunds", String(refunds.length))}
+                </View>
+                {/* Transaction detail */}
+                {[...txns, ...refunds].sort((a, b) => b.createdAt - a.createdAt).map(s => {
+                  const isRef = !!s.isRefund;
+                  return (
+                    <View key={s.id} style={[st.card, { backgroundColor: isRef ? "#fff8f0" : colors.card, borderColor: isRef ? "#F39C12" + "55" : colors.border, borderRadius: colors.radius }]}>
+                      <View style={st.cardRow}>
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                            <Text style={[st.cardTitle, { color: colors.foreground }]}>{s.invoiceNumber}</Text>
+                            {isRef && <View style={{ backgroundColor: "#F39C1222", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}><Text style={{ color: "#F39C12", fontSize: 9, fontWeight: "700" }}>REFUND</Text></View>}
+                          </View>
+                          <Text style={[st.cardSub, { color: colors.mutedForeground }]}>
+                            {fmtDate(s.createdAt)} · {s.paymentMethod}{s.customerName ? ` · ${s.customerName}` : ""}
+                          </Text>
+                          <View style={{ flexDirection: "row", gap: 14, marginTop: 4 }}>
+                            <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Excl. VAT {formatCurrency(Math.abs(s.subtotal))}</Text>
+                            <Text style={{ color: colors.destructive, fontSize: 11, fontWeight: "600" }}>VAT {formatCurrency(Math.abs(s.vatAmount))}</Text>
+                          </View>
+                        </View>
+                        <Text style={[st.cardAmt, { color: isRef ? "#F39C12" : colors.foreground }]}>
+                          {isRef ? "-" : "+"}{formatCurrency(Math.abs(s.total))}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
+                <View style={{ height: 40 }} />
+              </>
+            )}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  // ─── Purchase VAT Filing ────────────────────────────────────────────────────
+  const renderVatPurchases = () => {
+    const { startMs, endMs } = getActiveRange();
+    const filtered = localPurchases
+      .filter(p => p.receivedAt >= startMs && p.receivedAt <= endMs)
+      .sort((a, b) => b.receivedAt - a.receivedAt);
+    const taxablePurchases = filtered.reduce((s, x) => s + x.subtotal, 0);
+    const inputVat = filtered.reduce((s, x) => s + x.vatAmount, 0);
+    const totalInclVat = filtered.reduce((s, x) => s + x.total, 0);
+    return (
+      <View style={[st.root, { backgroundColor: colors.background }]}>
+        {renderHdr("Purchase VAT Filing", () => setView(null),
+          () => handleExport("purchase-vat-filing", filtered.map(p => ({
+            Date: new Date(p.receivedAt).toISOString(), Reference: p.referenceNumber ?? "",
+            Supplier: p.supplierName, ExclVAT: p.subtotal.toFixed(2), VAT: p.vatAmount.toFixed(2), Total: p.total.toFixed(2),
+          }))),
+          handleVatPurchasesPdf)}
+        <ScrollView contentContainerStyle={st.scroll}>
+          {renderPresets(p => loadRangeData(p))}
+          {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} /> :
+            filtered.length === 0 ? (
+              <View style={st.empty}>
+                <Feather name="shopping-bag" size={44} color={colors.mutedForeground} style={{ opacity: 0.35 }} />
+                <Text style={[st.emptyTitle, { color: colors.foreground }]}>No Purchases</Text>
+                <Text style={[st.emptySub, { color: colors.mutedForeground }]}>No purchase records in {rangeLabel}</Text>
+              </View>
+            ) : (
+              <>
+                {/* UAE Input VAT summary */}
+                <View style={[st.summaryBox, { backgroundColor: "#f5f3ff", borderColor: "#c4b5fd", borderRadius: colors.radius }]}>
+                  {sectionHead("INPUT TAX (BOX 9)")}
+                  {row("Taxable Purchases (excl. VAT)", formatCurrency(taxablePurchases))}
+                  {row("VAT Rate", "5%")}
+                  {row("Input VAT Recoverable", formatCurrency(inputVat), colors.success)}
+                  {sectionHead("SUMMARY")}
+                  {row("Total Purchases (incl. VAT)", formatCurrency(totalInclVat))}
+                  {row("GRN Count", String(filtered.length))}
+                </View>
+                {/* GRN detail */}
+                {filtered.map(p => (
+                  <View key={p.id} style={[st.card, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+                    <View style={st.cardRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[st.cardTitle, { color: colors.foreground }]}>{p.supplierName}</Text>
+                        <Text style={[st.cardSub, { color: colors.mutedForeground }]}>
+                          {fmtDate(p.receivedAt)}{p.referenceNumber ? ` · Ref: ${p.referenceNumber}` : ""}
+                        </Text>
+                        <View style={{ flexDirection: "row", gap: 14, marginTop: 4 }}>
+                          <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Excl. VAT {formatCurrency(p.subtotal)}</Text>
+                          <Text style={{ color: colors.success, fontSize: 11, fontWeight: "600" }}>VAT {formatCurrency(p.vatAmount)}</Text>
+                        </View>
+                      </View>
+                      <Text style={[st.cardAmt, { color: colors.foreground }]}>{formatCurrency(p.total)}</Text>
+                    </View>
+                  </View>
+                ))}
+                <View style={{ height: 40 }} />
+              </>
+            )}
+        </ScrollView>
+      </View>
+    );
+  };
+
   // ─── Hub Menu ──────────────────────────────────────────────────────────────
   const ALL_HUB_ITEMS: { key: ReportView; icon: string; title: string; sub: string; color: string; saloonOnly?: boolean; saloonHide?: boolean }[] = [
     { key: "zhistory", icon: "archive", title: "Z-Report History", sub: "View all previous end-of-day reports", color: "#E74C3C" },
@@ -1350,6 +1562,8 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
     { key: "rider", icon: "truck", title: "Rider Delivery Report", sub: "Deliveries and revenue per rider", color: "#3498DB", saloonHide: true },
     { key: "customer", icon: "users", title: "Customer Transactions", sub: "Transaction history per customer", color: "#9B59B6" },
     { key: "items", icon: "list", title: "Daily Item Detail", sub: "Full transaction & line-item breakdown", color: "#F39C12" },
+    { key: "vat-sales", icon: "file-text", title: "Sales VAT Filing", sub: "Output VAT return — taxable supplies & VAT collected", color: "#16a34a" },
+    { key: "vat-purchases", icon: "shopping-bag", title: "Purchase VAT Filing", sub: "Input VAT return — taxable purchases & VAT recoverable", color: "#7c3aed" },
   ];
   const HUB_ITEMS = ALL_HUB_ITEMS.filter(it => {
     if (it.saloonOnly && !isSaloon) return false;
@@ -1387,6 +1601,8 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
     case "rider": return renderRider();
     case "customer": return renderCustomer();
     case "items": return renderItems();
+    case "vat-sales": return renderVatSales();
+    case "vat-purchases": return renderVatPurchases();
     default: return renderHub();
   }
 }

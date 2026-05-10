@@ -77,7 +77,9 @@ type View =
   | "rider"
   | "customer"
   | "items"
-  | "stylist";
+  | "stylist"
+  | "vat-sales"
+  | "vat-purchases";
 
 const BASE_HUB_ITEMS: {
   key: Exclude<View, null>;
@@ -94,6 +96,8 @@ const BASE_HUB_ITEMS: {
   { key: "rider", title: "Rider Delivery Report", sub: "Deliveries and revenue per rider", color: "#3498DB", saloonHide: true },
   { key: "customer", title: "Customer Transactions", sub: "Transaction history per customer", color: "#9B59B6" },
   { key: "items", title: "Daily Item Detail", sub: "Full transaction & line-item breakdown", color: "#F39C12" },
+  { key: "vat-sales", title: "Sales VAT Filing", sub: "Output VAT return — taxable supplies & VAT collected", color: "#16a34a" },
+  { key: "vat-purchases", title: "Purchase VAT Filing", sub: "Input VAT return — taxable purchases & VAT recoverable", color: "#7c3aed" },
 ];
 
 export default function ReportsHub({
@@ -149,7 +153,289 @@ export default function ReportsHub({
     case "rider": return <RiderReport {...common} />;
     case "customer": return <CustomerReport {...common} />;
     case "items": return <ItemsReport {...common} />;
+    case "vat-sales": return <VatSalesReport {...common} />;
+    case "vat-purchases": return <VatPurchasesReport {...common} />;
   }
+}
+
+/* ------------------------------------------------------------------------ */
+/* VAT Sales Filing Report                                                  */
+/* ------------------------------------------------------------------------ */
+
+function VatSalesReport({ token, branchId, onBack }: { token: string; branchId: string; onBack: () => void }) {
+  const [preset, setPreset] = useState<Preset>("thismonth");
+  const { range, q } = useRangeSales(token, branchId, preset);
+  const sales = q.data?.sales ?? [];
+  const txns = useMemo(() => sales.filter(s => !s.isRefund), [sales]);
+  const refunds = useMemo(() => sales.filter(s => s.isRefund), [sales]);
+
+  const totals = useMemo(() => {
+    const taxableSupplies = txns.reduce((sum, s) => sum + n(s.payload?.subtotal ?? s.total), 0);
+    const outputVat = txns.reduce((sum, s) => sum + n(s.vatAmount), 0);
+    const totalInclVat = txns.reduce((sum, s) => sum + n(s.total), 0);
+    const refundSubtotal = refunds.reduce((sum, s) => sum + Math.abs(n(s.payload?.subtotal ?? s.total)), 0);
+    const refundVat = refunds.reduce((sum, s) => sum + Math.abs(n(s.vatAmount)), 0);
+    const netVat = outputVat - refundVat;
+    return { taxableSupplies, outputVat, totalInclVat, refundSubtotal, refundVat, netVat };
+  }, [txns, refunds]);
+
+  const handleExport = () => {
+    if (txns.length === 0) return alert("Nothing to export.");
+    downloadCsv("sales-vat-filing", buildCsv([
+      ...txns.map(s => ({
+        Date: fmtDate(s.createdAtClient), Invoice: s.invoiceNumber,
+        Customer: s.payload?.customerName ?? "", Method: s.paymentMethod,
+        ExclVAT: n(s.payload?.subtotal ?? s.total).toFixed(2),
+        VAT: n(s.vatAmount).toFixed(2), Total: n(s.total).toFixed(2),
+      })),
+      ...refunds.map(s => ({
+        Date: fmtDate(s.createdAtClient), Invoice: `${s.invoiceNumber} (Refund)`,
+        Customer: s.payload?.customerName ?? "", Method: s.paymentMethod,
+        ExclVAT: (-Math.abs(n(s.payload?.subtotal ?? s.total))).toFixed(2),
+        VAT: (-Math.abs(n(s.vatAmount))).toFixed(2), Total: (-Math.abs(n(s.total))).toFixed(2),
+      })),
+    ]));
+  };
+
+  const handlePrint = () => {
+    const rows = [
+      ...txns.map(s => `<tr><td>${fmtDate(s.createdAtClient)}</td><td>${s.invoiceNumber}</td><td>${s.payload?.customerName ?? "—"}</td><td>${s.paymentMethod}</td><td style="text-align:right">${fmtAED(n(s.payload?.subtotal ?? s.total))}</td><td style="text-align:right;color:#b91c1c">${fmtAED(n(s.vatAmount))}</td><td style="text-align:right;font-weight:600">${fmtAED(n(s.total))}</td></tr>`),
+      ...refunds.map(s => `<tr style="background:#fff5f5"><td>${fmtDate(s.createdAtClient)}</td><td style="color:#b91c1c">${s.invoiceNumber} <small>REFUND</small></td><td>${s.payload?.customerName ?? "—"}</td><td>${s.paymentMethod}</td><td style="text-align:right;color:#b91c1c">-${fmtAED(Math.abs(n(s.payload?.subtotal ?? s.total)))}</td><td style="text-align:right;color:#b91c1c">-${fmtAED(Math.abs(n(s.vatAmount)))}</td><td style="text-align:right;color:#b91c1c;font-weight:600">-${fmtAED(Math.abs(n(s.total)))}</td></tr>`),
+    ].join("");
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Sales VAT Filing — ${range.label}</title>
+      <style>body{font-family:Arial,sans-serif;padding:24px;color:#111}h2{margin:0 0 4px}p{margin:0 0 16px;color:#555;font-size:13px}
+      table{width:100%;border-collapse:collapse;font-size:12px}th{background:#166534;color:#fff;padding:7px 10px;text-align:left}
+      td{padding:6px 10px;border-bottom:1px solid #eee}tfoot td{background:#f4f4f4;font-weight:700;border-top:2px solid #ccc}
+      .box{background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:14px;margin-bottom:16px;font-size:13px}
+      .box-row{display:flex;justify-content:space-between;padding:3px 0}.box-row.total{border-top:1px solid #86efac;margin-top:6px;padding-top:6px;font-weight:700}</style></head>
+      <body><h2>Sales VAT Filing Report</h2><p>Period: ${range.label} &nbsp;·&nbsp; Generated ${new Date().toLocaleString("en-GB")}</p>
+      <div class="box"><div style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;color:#166534">UAE VAT Return — Output Tax (Box 1)</div>
+      <div class="box-row"><span>Taxable Supplies (excl. VAT)</span><span>${fmtAED(totals.taxableSupplies)}</span></div>
+      <div class="box-row"><span>VAT Rate</span><span>5%</span></div>
+      <div class="box-row"><span>Output VAT Due</span><span style="color:#b91c1c">${fmtAED(totals.outputVat)}</span></div>
+      ${totals.refundVat > 0 ? `<div class="box-row"><span>Refund VAT Adj. (Box 7)</span><span style="color:#d97706">-${fmtAED(totals.refundVat)}</span></div>` : ""}
+      <div class="box-row total"><span>Net VAT Payable</span><span style="color:#b91c1c">${fmtAED(totals.netVat)}</span></div></div>
+      <table><thead><tr><th>Date</th><th>Invoice</th><th>Customer</th><th>Method</th><th style="text-align:right">Excl. VAT</th><th style="text-align:right">VAT 5%</th><th style="text-align:right">Total</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><td colspan="4">Total (${txns.length} sales)</td><td style="text-align:right">${fmtAED(totals.taxableSupplies)}</td><td style="text-align:right;color:#b91c1c">${fmtAED(totals.outputVat)}</td><td style="text-align:right">${fmtAED(totals.totalInclVat)}</td></tr></tfoot>
+      </table></body></html>`;
+    const w = window.open("", "_blank", "width=900,height=700");
+    if (w) { w.document.write(html); w.document.close(); setTimeout(() => { try { w.print(); } catch {} }, 400); }
+  };
+
+  return (
+    <ReportFrame title="Sales VAT Filing" onBack={onBack} onExport={handleExport} onPrint={handlePrint}
+      controls={<PresetBar preset={preset} onChange={setPreset} />}>
+      <StatGrid stats={[
+        { label: "Period", value: range.label },
+        { label: "Taxable Supplies (excl. VAT)", value: fmtAED(totals.taxableSupplies) },
+        { label: "Output VAT Due (5%)", value: fmtAED(totals.outputVat), accent: "bad" },
+        { label: "Refund VAT Adj.", value: totals.refundVat > 0 ? `-${fmtAED(totals.refundVat)}` : "—", accent: totals.refundVat > 0 ? "warn" : undefined },
+        { label: "Net VAT Payable", value: fmtAED(totals.netVat), accent: "bad" },
+        { label: "Total Revenue (incl. VAT)", value: fmtAED(totals.totalInclVat), accent: "good" },
+        { label: "Transactions", value: String(txns.length) },
+        { label: "Refunds", value: refunds.length > 0 ? String(refunds.length) : "—" },
+      ]} />
+      {q.isLoading ? <EmptyState label="Loading…" /> : txns.length === 0 && refunds.length === 0 ? (
+        <EmptyState label={`No taxable sales in ${range.label}`} />
+      ) : (
+        <div className="space-y-3">
+          {/* UAE VAT Return box */}
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 text-sm">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-emerald-800 mb-3">UAE VAT Return — Output Tax (Box 1)</div>
+            <div className="grid grid-cols-2 gap-y-1.5 text-emerald-900">
+              <div>Taxable Supplies (excl. VAT)</div><div className="text-right font-medium">{fmtAED(totals.taxableSupplies)}</div>
+              <div>VAT Rate</div><div className="text-right font-medium">5%</div>
+              <div className="font-semibold">Output VAT Due</div><div className="text-right font-bold text-rose-700">{fmtAED(totals.outputVat)}</div>
+              {totals.refundVat > 0 && <>
+                <div className="text-amber-700">Refund VAT Adj. (Box 7)</div>
+                <div className="text-right text-amber-700 font-medium">-{fmtAED(totals.refundVat)}</div>
+              </>}
+              <div className="border-t border-emerald-300 pt-2 font-bold">Net VAT Payable</div>
+              <div className="border-t border-emerald-300 pt-2 text-right font-bold text-rose-700">{fmtAED(totals.netVat)}</div>
+            </div>
+          </div>
+          {/* Transaction table */}
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">Transaction Detail</div>
+            <div className="bg-white border border-gray-200 rounded-lg overflow-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-emerald-700 text-white">
+                    <th className="px-3 py-2 text-left font-semibold">Date</th>
+                    <th className="px-3 py-2 text-left font-semibold">Invoice</th>
+                    <th className="px-3 py-2 text-left font-semibold">Customer</th>
+                    <th className="px-3 py-2 text-left font-semibold">Method</th>
+                    <th className="px-3 py-2 text-right font-semibold">Excl. VAT</th>
+                    <th className="px-3 py-2 text-right font-semibold">VAT (5%)</th>
+                    <th className="px-3 py-2 text-right font-semibold">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {txns.map(s => (
+                    <tr key={s.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                      <td className="px-3 py-2 text-gray-500">{fmtDate(s.createdAtClient)}</td>
+                      <td className="px-3 py-2 font-medium">{s.invoiceNumber}</td>
+                      <td className="px-3 py-2 text-gray-500">{s.payload?.customerName ?? "—"}</td>
+                      <td className="px-3 py-2 text-gray-500">{s.paymentMethod}</td>
+                      <td className="px-3 py-2 text-right">{fmtAED(n(s.payload?.subtotal ?? s.total))}</td>
+                      <td className="px-3 py-2 text-right text-rose-700">{fmtAED(n(s.vatAmount))}</td>
+                      <td className="px-3 py-2 text-right font-semibold">{fmtAED(n(s.total))}</td>
+                    </tr>
+                  ))}
+                  {refunds.map(s => (
+                    <tr key={s.id} className="border-b border-gray-100 last:border-0 bg-rose-50">
+                      <td className="px-3 py-2 text-gray-500">{fmtDate(s.createdAtClient)}</td>
+                      <td className="px-3 py-2 font-medium text-rose-700">{s.invoiceNumber} <span className="text-[10px] bg-rose-100 px-1 py-0.5 rounded">REFUND</span></td>
+                      <td className="px-3 py-2 text-gray-500">{s.payload?.customerName ?? "—"}</td>
+                      <td className="px-3 py-2 text-gray-500">{s.paymentMethod}</td>
+                      <td className="px-3 py-2 text-right text-rose-700">-{fmtAED(Math.abs(n(s.payload?.subtotal ?? s.total)))}</td>
+                      <td className="px-3 py-2 text-right text-rose-700">-{fmtAED(Math.abs(n(s.vatAmount)))}</td>
+                      <td className="px-3 py-2 text-right font-semibold text-rose-700">-{fmtAED(Math.abs(n(s.total)))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-gray-100 font-semibold border-t-2 border-gray-300">
+                    <td colSpan={4} className="px-3 py-2">Total ({txns.length} sales{refunds.length > 0 ? `, ${refunds.length} refunds` : ""})</td>
+                    <td className="px-3 py-2 text-right">{fmtAED(totals.taxableSupplies)}</td>
+                    <td className="px-3 py-2 text-right text-rose-700">{fmtAED(totals.outputVat)}</td>
+                    <td className="px-3 py-2 text-right">{fmtAED(totals.totalInclVat)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </ReportFrame>
+  );
+}
+
+/* ------------------------------------------------------------------------ */
+/* VAT Purchases Filing Report                                              */
+/* ------------------------------------------------------------------------ */
+
+function VatPurchasesReport({ token, branchId, onBack }: { token: string; branchId: string; onBack: () => void }) {
+  const [preset, setPreset] = useState<Preset>("thismonth");
+  const { range, q } = useRangePurchases(token, branchId, preset);
+
+  const purchases = useMemo(() => {
+    const from = new Date(range.from).getTime();
+    const to = new Date(range.to).getTime();
+    return (q.data?.purchases ?? []).filter(p => {
+      const t = new Date(p.receivedAt).getTime();
+      return t >= from && t <= to;
+    }).sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime());
+  }, [q.data, range]);
+
+  const totals = useMemo(() => {
+    const subtotal = purchases.reduce((s, p) => s + n(p.subtotal), 0);
+    const inputVat = purchases.reduce((s, p) => s + n(p.vatAmount), 0);
+    const total = purchases.reduce((s, p) => s + n(p.total), 0);
+    return { subtotal, inputVat, total };
+  }, [purchases]);
+
+  const handleExport = () => {
+    if (purchases.length === 0) return alert("Nothing to export.");
+    downloadCsv("purchase-vat-filing", buildCsv(purchases.map(p => ({
+      Date: fmtDate(p.receivedAt), Reference: p.referenceNumber ?? "",
+      Supplier: p.supplierName,
+      ExclVAT: n(p.subtotal).toFixed(2), VAT: n(p.vatAmount).toFixed(2), Total: n(p.total).toFixed(2),
+    }))));
+  };
+
+  const handlePrint = () => {
+    const rows = purchases.map(p =>
+      `<tr><td>${fmtDate(p.receivedAt)}</td><td>${p.referenceNumber ?? "—"}</td><td>${p.supplierName}</td><td style="text-align:right">${fmtAED(n(p.subtotal))}</td><td style="text-align:right;color:#7c3aed">${fmtAED(n(p.vatAmount))}</td><td style="text-align:right;font-weight:600">${fmtAED(n(p.total))}</td></tr>`
+    ).join("");
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Purchase VAT Filing — ${range.label}</title>
+      <style>body{font-family:Arial,sans-serif;padding:24px;color:#111}h2{margin:0 0 4px}p{margin:0 0 16px;color:#555;font-size:13px}
+      table{width:100%;border-collapse:collapse;font-size:12px}th{background:#5b21b6;color:#fff;padding:7px 10px;text-align:left}
+      td{padding:6px 10px;border-bottom:1px solid #eee}tfoot td{background:#f4f4f4;font-weight:700;border-top:2px solid #ccc}
+      .box{background:#f5f3ff;border:1px solid #c4b5fd;border-radius:6px;padding:14px;margin-bottom:16px;font-size:13px}
+      .box-row{display:flex;justify-content:space-between;padding:3px 0}.box-row.total{border-top:1px solid #c4b5fd;margin-top:6px;padding-top:6px;font-weight:700}</style></head>
+      <body><h2>Purchase VAT Filing Report</h2><p>Period: ${range.label} &nbsp;·&nbsp; Generated ${new Date().toLocaleString("en-GB")}</p>
+      <div class="box"><div style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;color:#5b21b6">UAE VAT Return — Input Tax (Box 9)</div>
+      <div class="box-row"><span>Taxable Purchases (excl. VAT)</span><span>${fmtAED(totals.subtotal)}</span></div>
+      <div class="box-row"><span>VAT Rate</span><span>5%</span></div>
+      <div class="box-row total"><span>Input VAT Recoverable</span><span style="color:#5b21b6">${fmtAED(totals.inputVat)}</span></div>
+      <div class="box-row"><span>Total Purchases (incl. VAT)</span><span>${fmtAED(totals.total)}</span></div></div>
+      <table><thead><tr><th>Date</th><th>Reference</th><th>Supplier</th><th style="text-align:right">Excl. VAT</th><th style="text-align:right">VAT 5%</th><th style="text-align:right">Total</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><td colspan="3">Total (${purchases.length} GRNs)</td><td style="text-align:right">${fmtAED(totals.subtotal)}</td><td style="text-align:right;color:#7c3aed">${fmtAED(totals.inputVat)}</td><td style="text-align:right">${fmtAED(totals.total)}</td></tr></tfoot>
+      </table></body></html>`;
+    const w = window.open("", "_blank", "width=900,height=700");
+    if (w) { w.document.write(html); w.document.close(); setTimeout(() => { try { w.print(); } catch {} }, 400); }
+  };
+
+  return (
+    <ReportFrame title="Purchase VAT Filing" onBack={onBack} onExport={handleExport} onPrint={handlePrint}
+      controls={<PresetBar preset={preset} onChange={setPreset} />}>
+      <StatGrid stats={[
+        { label: "Period", value: range.label },
+        { label: "Taxable Purchases (excl. VAT)", value: fmtAED(totals.subtotal) },
+        { label: "Input VAT Recoverable (5%)", value: fmtAED(totals.inputVat), accent: "good" },
+        { label: "Total Purchases (incl. VAT)", value: fmtAED(totals.total) },
+        { label: "GRN Count", value: String(purchases.length) },
+      ]} />
+      {q.isLoading ? <EmptyState label="Loading…" /> : purchases.length === 0 ? (
+        <EmptyState label={`No purchase records in ${range.label}`} />
+      ) : (
+        <div className="space-y-3">
+          {/* UAE Input VAT box */}
+          <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 text-sm">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-violet-800 mb-3">UAE VAT Return — Input Tax (Box 9)</div>
+            <div className="grid grid-cols-2 gap-y-1.5 text-violet-900">
+              <div>Taxable Purchases (excl. VAT)</div><div className="text-right font-medium">{fmtAED(totals.subtotal)}</div>
+              <div>VAT Rate</div><div className="text-right font-medium">5%</div>
+              <div className="font-semibold">Input VAT Recoverable</div><div className="text-right font-bold text-violet-700">{fmtAED(totals.inputVat)}</div>
+              <div className="border-t border-violet-300 pt-2">Total Purchases (incl. VAT)</div>
+              <div className="border-t border-violet-300 pt-2 text-right font-semibold">{fmtAED(totals.total)}</div>
+            </div>
+          </div>
+          {/* GRN table */}
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">Goods Received Detail</div>
+            <div className="bg-white border border-gray-200 rounded-lg overflow-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-violet-700 text-white">
+                    <th className="px-3 py-2 text-left font-semibold">Date</th>
+                    <th className="px-3 py-2 text-left font-semibold">Reference</th>
+                    <th className="px-3 py-2 text-left font-semibold">Supplier</th>
+                    <th className="px-3 py-2 text-right font-semibold">Excl. VAT</th>
+                    <th className="px-3 py-2 text-right font-semibold">VAT (5%)</th>
+                    <th className="px-3 py-2 text-right font-semibold">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {purchases.map(p => (
+                    <tr key={p.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                      <td className="px-3 py-2 text-gray-500">{fmtDate(p.receivedAt)}</td>
+                      <td className="px-3 py-2 font-medium">{p.referenceNumber ?? "—"}</td>
+                      <td className="px-3 py-2">{p.supplierName}</td>
+                      <td className="px-3 py-2 text-right">{fmtAED(n(p.subtotal))}</td>
+                      <td className="px-3 py-2 text-right text-violet-700">{fmtAED(n(p.vatAmount))}</td>
+                      <td className="px-3 py-2 text-right font-semibold">{fmtAED(n(p.total))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-gray-100 font-semibold border-t-2 border-gray-300">
+                    <td colSpan={3} className="px-3 py-2">Total ({purchases.length} GRN{purchases.length !== 1 ? "s" : ""})</td>
+                    <td className="px-3 py-2 text-right">{fmtAED(totals.subtotal)}</td>
+                    <td className="px-3 py-2 text-right text-violet-700">{fmtAED(totals.inputVat)}</td>
+                    <td className="px-3 py-2 text-right">{fmtAED(totals.total)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </ReportFrame>
+  );
 }
 
 /* ------------------------------------------------------------------------ */
@@ -244,12 +530,14 @@ function ReportFrame({
   title,
   onBack,
   onExport,
+  onPrint,
   controls,
   children,
 }: {
   title: string;
   onBack: () => void;
   onExport?: () => void;
+  onPrint?: () => void;
   controls?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -263,19 +551,42 @@ function ReportFrame({
           <span aria-hidden>←</span> Reports
         </button>
         <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-        {onExport ? (
-          <button
-            onClick={onExport}
-            className="ml-auto text-xs font-semibold text-blue-700 border border-blue-200 hover:bg-blue-50 rounded px-2.5 py-1.5"
-          >
-            ↓ CSV
-          </button>
-        ) : null}
+        <div className="ml-auto flex items-center gap-2">
+          {onPrint ? (
+            <button
+              onClick={onPrint}
+              className="text-xs font-semibold text-violet-700 border border-violet-200 hover:bg-violet-50 rounded px-2.5 py-1.5"
+            >
+              ⎙ Print / PDF
+            </button>
+          ) : null}
+          {onExport ? (
+            <button
+              onClick={onExport}
+              className="text-xs font-semibold text-blue-700 border border-blue-200 hover:bg-blue-50 rounded px-2.5 py-1.5"
+            >
+              ↓ CSV
+            </button>
+          ) : null}
+        </div>
       </div>
       {controls}
       {children}
     </div>
   );
+}
+
+/* ------------------------------------------------------------------------ */
+/* useRangePurchases — fetch purchases for the active date preset           */
+/* ------------------------------------------------------------------------ */
+
+function useRangePurchases(token: string, branchId: string, preset: Preset) {
+  const range = useMemo(() => presetRange(preset), [preset]);
+  const q = useQuery({
+    queryKey: ["range-purchases", branchId, preset],
+    queryFn: () => api.purchases(token, branchId, { from: range.from, to: range.to }),
+  });
+  return { range, q };
 }
 
 function PresetBar({
