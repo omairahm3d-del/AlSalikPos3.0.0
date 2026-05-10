@@ -1,0 +1,264 @@
+name: Windows Installer Build
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      build_only:
+        description: "Skip signing (produce unsigned installers — useful for testing the build pipeline)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Build Windows Installer (${{ github.ref_name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    permissions:
+      contents: write
+
+    env:
+      # Pin electron-builder's download cache to the workspace so the
+      # actions/cache step and the npm scripts (which reference
+      # ../.cache/electron-builder/nsis/…/makensis) agree on the same path.
+      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        run: echo "dir=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.dir }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Cache electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ELECTRON_BUILDER_CACHE }}
+          key: electron-builder-${{ hashFiles('desktop-installer/package.json') }}
+          restore-keys: |
+            electron-builder-
+
+      - name: Install osslsigncode (required by sign-exe.sh to sign NSIS setup EXEs on Linux)
+        run: sudo apt-get install -y osslsigncode
+
+      - name: Install workspace dependencies (needed for Expo web export)
+        run: pnpm install --frozen-lockfile
+
+      - name: Install desktop-installer dependencies
+        working-directory: desktop-installer
+        run: npm install
+
+      # ── Signing preflight ────────────────────────────────────────────────────
+      # Fail fast before spending time on the build if the signing secrets are
+      # missing and signing is expected.
+      #   • Tag builds: always require signing — unsigned release installers
+      #     would trigger the Windows SmartScreen "Unknown Publisher" warning.
+      #   • workflow_dispatch: required unless build_only=true was chosen.
+      - name: Verify signing secrets are present (when signing is expected)
+        if: |
+          startsWith(github.ref, 'refs/tags/v') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.build_only != 'true')
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          missing=()
+          [ -z "$WIN_CSC_LINK" ]         && missing+=("WIN_CSC_LINK")
+          [ -z "$WIN_CSC_KEY_PASSWORD" ] && missing+=("WIN_CSC_KEY_PASSWORD")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::The following required secrets are not set: ${missing[*]}"
+            echo "::error::Signing is enabled but the secrets are missing. Either:"
+            echo "::error::  • Add WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD to repository secrets, or"
+            echo "::error::  • Re-run with build_only=true to produce an unsigned installer."
+            exit 1
+          fi
+          echo "Signing secrets present — proceeding with signed build."
+
+      # ── Version bump ────────────────────────────────────────────────────────
+      # Fires only for tags matching vX.Y.Z (e.g. v1.2.3).
+      #
+      # Tag contract:
+      #   • Tags must follow the exact pattern vMAJOR.MINOR.PATCH (no pre-release
+      #     suffixes like -rc1 or -hotfix1). Non-conforming tags fail the job so
+      #     no release build starts with a stale version.
+      #
+      # The bump is applied in-place on the CI runner only — nothing is committed
+      # back to the repository.
+      - name: Bump version from tag
+        id: version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Tag '$TAG' does not match the required vX.Y.Z format (e.g. v1.2.3)."
+            echo "::error::Pre-release suffixes (-rc1, -hotfix1, etc.) are not supported."
+            echo "::error::Please push a conforming tag to trigger a versioned release build."
+            exit 1
+          fi
+
+          echo "Bumping installer version to $VERSION"
+
+          # Update desktop-installer/package.json — sign-installers.js reads
+          # this to construct the output EXE filename.
+          node -e "
+            const fs = require('fs');
+            const path = 'desktop-installer/package.json';
+            const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+            pkg.version = '$VERSION';
+            fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
+            console.log('package.json updated to $VERSION');
+          "
+
+          # Update APP_VERSION in both NSIS scripts — controls OutFile name
+          # and the version string written to Add/Remove Programs registry.
+          sed -i "s/^!define APP_VERSION.*$/!define APP_VERSION   \"$VERSION\"/" desktop-installer/installer.nsi
+          sed -i "s/^!define APP_VERSION.*$/!define APP_VERSION   \"$VERSION\"/" desktop-installer/installer-32.nsi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      # ── Determine whether to sign ────────────────────────────────────────────
+      # For tag pushes: always sign (secrets check already passed above).
+      # For workflow_dispatch: sign unless build_only=true was explicitly chosen.
+      - name: Resolve signing mode
+        id: sign-mode
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.build_only }}" == "true" ]]; then
+            echo "enabled=false" >> $GITHUB_OUTPUT
+            echo "Signing disabled by build_only=true input."
+          else
+            echo "enabled=true" >> $GITHUB_OUTPUT
+            echo "Signing enabled."
+          fi
+
+      # ── Expo web export ─────────────────────────────────────────────────────
+      # Produces desktop-installer/www-new — shared by both editions.
+      - name: Export Expo web build
+        working-directory: desktop-installer
+        run: npm run export-web
+
+      # ── 64-bit build ────────────────────────────────────────────────────────
+      - name: Build 64-bit Electron binary
+        working-directory: desktop-installer
+        env:
+          WIN_CSC_LINK: ${{ steps.sign-mode.outputs.enabled == 'true' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ steps.sign-mode.outputs.enabled == 'true' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+        run: npm run build:win
+
+      - name: Stage web assets into 64-bit Electron package
+        working-directory: desktop-installer
+        run: npm run rebuild-web
+
+      - name: Build 64-bit NSIS installer and sign
+        working-directory: desktop-installer
+        env:
+          WIN_CSC_LINK: ${{ steps.sign-mode.outputs.enabled == 'true' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ steps.sign-mode.outputs.enabled == 'true' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+        run: npm run build:installer
+
+      # ── 32-bit build ────────────────────────────────────────────────────────
+      - name: Build 32-bit Electron binary, stage web assets, build NSIS installer, and sign
+        working-directory: desktop-installer
+        env:
+          WIN_CSC_LINK: ${{ steps.sign-mode.outputs.enabled == 'true' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ steps.sign-mode.outputs.enabled == 'true' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+        run: npm run build:all-32
+
+      # ── Artifacts ───────────────────────────────────────────────────────────
+      - name: List built installers
+        run: |
+          echo "=== 64-bit installer ==="
+          ls -lh desktop-installer/dist/*.exe 2>/dev/null || echo "(none found)"
+          echo "=== 32-bit installer ==="
+          ls -lh desktop-installer/dist-32/*.exe 2>/dev/null || echo "(none found)"
+
+      - name: Upload 64-bit installer as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: al-salik-pos-windows-x64-${{ steps.version.outputs.version || github.sha }}
+          path: desktop-installer/dist/*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload 32-bit installer as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: al-salik-pos-windows-x86-${{ steps.version.outputs.version || github.sha }}
+          path: desktop-installer/dist-32/*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach installers to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop-installer/dist/*.exe
+            desktop-installer/dist-32/*.exe
+
+      # ── Job summary ─────────────────────────────────────────────────────────
+      - name: Write job summary
+        if: always()
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          sign_enabled="${{ steps.sign-mode.outputs.enabled }}"
+          status="${{ job.status }}"
+          ref="${{ github.ref_name }}"
+          sha="${{ github.sha }}"
+
+          echo "## Windows Installer Build" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Ref | \`${ref}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${sha:0:7}\` |" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${version}" ]; then
+            echo "| Version | \`${version}\` |" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${sign_enabled}" = "true" ]; then
+            echo "| Signing | Enabled |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Signing | **Skipped** (build_only=true) |" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "| Status | ${status} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${status}" = "success" ]; then
+            echo "64-bit and 32-bit installers are available as **GitHub Actions artifacts** on this run." >> $GITHUB_STEP_SUMMARY
+            if [[ "${ref}" == v* ]]; then
+              echo "They have also been attached to the **[GitHub Release](https://github.com/${{ github.repository }}/releases/tag/${ref})**." >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "> Build failed. Check the step logs above for details." >> $GITHUB_STEP_SUMMARY
+          fi
