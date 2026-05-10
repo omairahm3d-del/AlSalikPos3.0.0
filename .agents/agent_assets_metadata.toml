@@ -95,3 +95,9 @@ id = "WO0LmNMXShEE6f1SWKMnU"
 uri = "file://desktop-installer/dist-32/Al Salik POS Setup 1.0.0 (32-bit).zip"
 type = "unspecified"
 title = "Al Salik POS Setup 1.0.0 — 32-bit (Windows 7 SP1+)"
+
+[[outputs]]
+id = "MbLd-XJCKKAFia-VaYXIV"
+uri = "file://desktop-installer/dist/AlSalikPOS-1.0.0-debug.zip"
+type = "unspecified"
+title = "Al Salik POS 1.0.0 — Android Debug APK"
