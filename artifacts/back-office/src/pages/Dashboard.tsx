@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { ManagerSession } from "@/lib/session";
+import type { ApiPackage, ApiPackageInput } from "@/lib/api";
+import type { ManagerSession as ManagerSessionType } from "@/lib/session";
 import ReportsHub from "./ReportsHub";
 import SuppliersTab from "./SuppliersTab";
 import PurchasesTab from "./PurchasesTab";
@@ -9,8 +10,8 @@ import StockTab from "./StockTab";
 import { fmtAED, buildCsv, downloadCsv } from "@/lib/csv";
 
 interface Props {
-  session: ManagerSession;
-  onSession: (s: ManagerSession) => void;
+  session: ManagerSessionType;
+  onSession: (s: ManagerSessionType) => void;
   onLogout: () => void;
 }
 
@@ -20,10 +21,11 @@ type Tab =
   | "purchases"
   | "suppliers"
   | "products"
-  | "customers";
+  | "customers"
+  | "packages";
 
 function buildTabs(isSaloon: boolean): { id: Tab; label: string }[] {
-  return [
+  const tabs: { id: Tab; label: string }[] = [
     { id: "reports", label: "Reports" },
     { id: "stock", label: "Stock" },
     { id: "purchases", label: "Purchases" },
@@ -31,6 +33,8 @@ function buildTabs(isSaloon: boolean): { id: Tab; label: string }[] {
     { id: "products", label: isSaloon ? "Services" : "Products" },
     { id: "customers", label: "Customers" },
   ];
+  if (isSaloon) tabs.push({ id: "packages", label: "Packages" });
+  return tabs;
 }
 
 export default function Dashboard({ session, onSession, onLogout }: Props) {
@@ -105,6 +109,9 @@ export default function Dashboard({ session, onSession, onLogout }: Props) {
         {tab === "customers" && (
           <CustomersTab token={session.token} branchId={branchId} />
         )}
+        {tab === "packages" && isSaloon && (
+          <PackagesTab token={session.token} branchId={branchId} />
+        )}
       </div>
     </Shell>
   );
@@ -115,7 +122,7 @@ function Shell({
   onLogout,
   children,
 }: {
-  session: ManagerSession;
+  session: ManagerSessionType;
   onLogout: () => void;
   children: React.ReactNode;
 }) {
@@ -528,6 +535,361 @@ function CatalogTable({
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ============================================================
+   PACKAGES TAB  (saloon mode only)
+   ============================================================ */
+
+function PackagesTab({
+  token,
+  branchId,
+}: {
+  token: string;
+  branchId: string;
+}) {
+  const qc = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<ApiPackage | null>(null);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["packages", branchId],
+    queryFn: () =>
+      api
+        .packages(token, { branchId, includeInactive: true })
+        .then((r) => r.packages),
+  });
+
+  const createMut = useMutation({
+    mutationFn: (body: ApiPackageInput) => api.createPackage(token, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["packages", branchId] });
+      setShowForm(false);
+      setEditing(null);
+    },
+  });
+
+  const updateMut = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Partial<ApiPackageInput> }) =>
+      api.updatePackage(token, id, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["packages", branchId] });
+      setShowForm(false);
+      setEditing(null);
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => api.deletePackage(token, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["packages", branchId] }),
+  });
+
+  function openCreate() {
+    setEditing(null);
+    setShowForm(true);
+  }
+
+  function openEdit(pkg: ApiPackage) {
+    setEditing(pkg);
+    setShowForm(true);
+  }
+
+  function handleSubmit(values: ApiPackageInput) {
+    if (editing) {
+      updateMut.mutate({ id: editing.id, body: values });
+    } else {
+      createMut.mutate({ ...values, branchId });
+    }
+  }
+
+  const packages = data ?? [];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">
+            Prepaid Packages
+          </h2>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Define session bundles that customers can purchase and redeem at the
+            POS.
+          </p>
+        </div>
+        <button
+          onClick={openCreate}
+          className="px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded hover:bg-gray-700"
+        >
+          + New Package
+        </button>
+      </div>
+
+      {isLoading && (
+        <div className="text-sm text-gray-500 py-4">Loading…</div>
+      )}
+      {error && (
+        <div className="text-sm text-red-600 py-4">{(error as Error).message}</div>
+      )}
+      {!isLoading && !error && (
+        <div className="overflow-x-auto rounded border border-gray-200 bg-white">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50 text-gray-600 text-left">
+              <tr>
+                <th className="px-4 py-2">Name</th>
+                <th className="px-4 py-2">Description</th>
+                <th className="px-4 py-2 text-right">Sessions</th>
+                <th className="px-4 py-2 text-right">Price (AED)</th>
+                <th className="px-4 py-2">Status</th>
+                <th className="px-4 py-2">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {packages.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-8 text-center text-gray-400"
+                  >
+                    No packages yet. Create one to get started.
+                  </td>
+                </tr>
+              )}
+              {packages.map((pkg) => (
+                <tr key={pkg.id} className="border-t border-gray-100 hover:bg-gray-50">
+                  <td className="px-4 py-2 font-medium text-gray-900">
+                    {pkg.name}
+                  </td>
+                  <td className="px-4 py-2 text-gray-600 max-w-xs truncate">
+                    {pkg.description || "—"}
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums">
+                    {pkg.totalSessions}
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums font-medium">
+                    {pkg.price.toFixed(2)}
+                  </td>
+                  <td className="px-4 py-2">
+                    <span
+                      className={
+                        "inline-block px-2 py-0.5 rounded-full text-xs font-medium " +
+                        (pkg.isActive
+                          ? "bg-green-100 text-green-700"
+                          : "bg-gray-100 text-gray-500")
+                      }
+                    >
+                      {pkg.isActive ? "Active" : "Inactive"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => openEdit(pkg)}
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        Edit
+                      </button>
+                      {pkg.isActive && (
+                        <button
+                          onClick={() => {
+                            if (
+                              confirm(
+                                `Deactivate "${pkg.name}"? Customers with remaining sessions can still redeem them at the POS.`,
+                              )
+                            ) {
+                              deleteMut.mutate(pkg.id);
+                            }
+                          }}
+                          className="text-xs text-red-500 hover:underline"
+                        >
+                          Deactivate
+                        </button>
+                      )}
+                      {!pkg.isActive && (
+                        <button
+                          onClick={() =>
+                            updateMut.mutate({
+                              id: pkg.id,
+                              body: { isActive: true },
+                            })
+                          }
+                          className="text-xs text-green-600 hover:underline"
+                        >
+                          Reactivate
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showForm && (
+        <PackageFormModal
+          initial={editing}
+          onSubmit={handleSubmit}
+          onClose={() => {
+            setShowForm(false);
+            setEditing(null);
+          }}
+          saving={createMut.isPending || updateMut.isPending}
+          error={createMut.error || updateMut.error}
+        />
+      )}
+    </div>
+  );
+}
+
+function PackageFormModal({
+  initial,
+  onSubmit,
+  onClose,
+  saving,
+  error,
+}: {
+  initial: ApiPackage | null;
+  onSubmit: (values: ApiPackageInput) => void;
+  onClose: () => void;
+  saving: boolean;
+  error: Error | null;
+}) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
+  const [totalSessions, setTotalSessions] = useState(
+    initial?.totalSessions?.toString() ?? "5",
+  );
+  const [price, setPrice] = useState(initial?.price?.toString() ?? "");
+  const [isActive, setIsActive] = useState(initial?.isActive ?? true);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const sessions = parseInt(totalSessions, 10);
+    const priceNum = parseFloat(price);
+    if (!name.trim()) return;
+    if (isNaN(sessions) || sessions < 1) return;
+    if (isNaN(priceNum) || priceNum < 0) return;
+    onSubmit({
+      name: name.trim(),
+      description: description.trim(),
+      totalSessions: sessions,
+      price: priceNum,
+      isActive,
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <h3 className="text-base font-semibold text-gray-900">
+            {initial ? "Edit Package" : "New Package"}
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+          >
+            ×
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Package Name *
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              placeholder="e.g. Hair Treatment Bundle"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Description
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              placeholder="Optional description"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Sessions *
+              </label>
+              <input
+                type="number"
+                value={totalSessions}
+                onChange={(e) => setTotalSessions(e.target.value)}
+                required
+                min={1}
+                max={9999}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Price (AED) *
+              </label>
+              <input
+                type="number"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                required
+                min={0}
+                step={0.01}
+                placeholder="0.00"
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+              />
+            </div>
+          </div>
+          {initial && (
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="pkg-active"
+                checked={isActive}
+                onChange={(e) => setIsActive(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              <label
+                htmlFor="pkg-active"
+                className="text-sm text-gray-700"
+              >
+                Active
+              </label>
+            </div>
+          )}
+          {error && (
+            <p className="text-sm text-red-600">{(error as Error).message}</p>
+          )}
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 text-sm text-white bg-gray-900 rounded hover:bg-gray-700 disabled:opacity-50"
+            >
+              {saving ? "Saving…" : initial ? "Save Changes" : "Create Package"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

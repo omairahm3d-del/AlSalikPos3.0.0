@@ -1656,6 +1656,83 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     return { id, productClientId: data.productClientId, productName: data.productName, kind: "adjustment", delta: data.delta, refId: id, reason: data.reason ?? null, createdAt };
   }, [db]);
 
+  // ---- Prepaid packages (saloon mode) ----
+  const loadPackages = useCallback(async (): Promise<import("@/types").PrepaidPackage[]> => {
+    const rows = await db.getAllAsync<any>("SELECT * FROM packages ORDER BY name ASC");
+    return rows.map((r: any) => ({
+      id: r.id, name: r.name, description: r.description ?? "",
+      totalSessions: r.total_sessions, price: r.price,
+      applicableServiceIds: r.applicable_service_ids ? JSON.parse(r.applicable_service_ids) : null,
+      isActive: !!r.is_active, createdAt: r.created_at,
+    }));
+  }, [db]);
+
+  const createPackage = useCallback(async (pkg: Omit<import("@/types").PrepaidPackage, "id" | "createdAt">): Promise<import("@/types").PrepaidPackage> => {
+    const id = generateId();
+    const createdAt = Date.now();
+    await db.runAsync(
+      "INSERT INTO packages (id, name, description, total_sessions, price, applicable_service_ids, is_active, created_at) VALUES (?,?,?,?,?,?,?,?)",
+      [id, pkg.name, pkg.description, pkg.totalSessions, pkg.price,
+       pkg.applicableServiceIds ? JSON.stringify(pkg.applicableServiceIds) : null,
+       pkg.isActive ? 1 : 0, createdAt]
+    );
+    return { id, ...pkg, createdAt };
+  }, [db]);
+
+  const updatePackage = useCallback(async (pkg: import("@/types").PrepaidPackage): Promise<void> => {
+    await db.runAsync(
+      "UPDATE packages SET name=?, description=?, total_sessions=?, price=?, applicable_service_ids=?, is_active=? WHERE id=?",
+      [pkg.name, pkg.description, pkg.totalSessions, pkg.price,
+       pkg.applicableServiceIds ? JSON.stringify(pkg.applicableServiceIds) : null,
+       pkg.isActive ? 1 : 0, pkg.id]
+    );
+  }, [db]);
+
+  const deletePackage = useCallback(async (id: string): Promise<void> => {
+    await db.runAsync("UPDATE packages SET is_active=0 WHERE id=?", [id]);
+  }, [db]);
+
+  const loadCustomerPackages = useCallback(async (customerId: string): Promise<import("@/types").CustomerPackage[]> => {
+    const rows = await db.getAllAsync<any>(
+      "SELECT * FROM customer_packages WHERE customer_id=? ORDER BY purchased_at DESC", [customerId]
+    );
+    return rows.map((r: any) => ({
+      id: r.id, packageId: r.package_id, customerId: r.customer_id,
+      customerName: r.customer_name, packageName: r.package_name,
+      totalSessions: r.total_sessions, usedSessions: r.used_sessions,
+      purchaseSaleId: r.purchase_sale_id ?? null,
+      purchasedAt: r.purchased_at, expiresAt: r.expires_at ?? null, isActive: !!r.is_active,
+    }));
+  }, [db]);
+
+  const purchaseCustomerPackage = useCallback(async (data: {
+    packageId: string; customerId: string; customerName: string; packageName: string;
+    totalSessions: number; purchaseSaleId?: string | null; expiresAt?: number | null;
+  }): Promise<import("@/types").CustomerPackage> => {
+    const id = generateId();
+    const purchasedAt = Date.now();
+    await db.runAsync(
+      "INSERT INTO customer_packages (id, package_id, customer_id, customer_name, package_name, total_sessions, used_sessions, purchase_sale_id, purchased_at, expires_at, is_active) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+      [id, data.packageId, data.customerId, data.customerName, data.packageName,
+       data.totalSessions, 0, data.purchaseSaleId ?? null,
+       purchasedAt, data.expiresAt ?? null, 1]
+    );
+    return {
+      id, packageId: data.packageId, customerId: data.customerId,
+      customerName: data.customerName, packageName: data.packageName,
+      totalSessions: data.totalSessions, usedSessions: 0,
+      purchaseSaleId: data.purchaseSaleId ?? null,
+      purchasedAt, expiresAt: data.expiresAt ?? null, isActive: true,
+    };
+  }, [db]);
+
+  const redeemPackageSession = useCallback(async (customerPackageId: string): Promise<void> => {
+    await db.runAsync(
+      "UPDATE customer_packages SET used_sessions = MIN(used_sessions + 1, total_sessions) WHERE id=?",
+      [customerPackageId]
+    );
+  }, [db]);
+
   return (
     <DatabaseContext.Provider value={{
       loadProducts, createProduct, updateProduct, deleteProduct, updateStock,
@@ -1683,6 +1760,8 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       loadLocalSuppliers, createLocalSupplier, updateLocalSupplier,
       loadLocalPurchases, getLocalPurchase, createLocalPurchase,
       loadLocalMovements, createLocalAdjustment,
+      loadPackages, createPackage, updatePackage, deletePackage,
+      loadCustomerPackages, purchaseCustomerPackage, redeemPackageSession,
     }}>
       {children}
     </DatabaseContext.Provider>

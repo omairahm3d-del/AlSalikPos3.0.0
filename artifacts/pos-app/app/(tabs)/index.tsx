@@ -37,7 +37,7 @@ import { useWorkMode } from "@/context/WorkModeContext";
 import { useColors } from "@/hooks/useColors";
 import { generateKitchenTicketHTML, getUniqueStations } from "@/lib/kitchenTicketTemplate";
 import { generateBillHTML } from "@/lib/billTemplate";
-import type { BusinessSettings, Category, Customer, KOTSettings, ModifierGroup, OrderType, PosTable, Product, Rider, Sale, SaleItem, SelectedModifier, SplitPaymentEntry, TaxGroup } from "@/types";
+import type { BusinessSettings, Category, Customer, CustomerPackage, KOTSettings, ModifierGroup, OrderType, PosTable, PrepaidPackage, Product, Rider, Sale, SaleItem, SelectedModifier, SplitPaymentEntry, TaxGroup } from "@/types";
 import { DEFAULT_KOT_SETTINGS, VAT_RATE, formatCurrency } from "@/types";
 
 type PaymentMethod = "Card" | "Cash" | "Credit" | "Split";
@@ -64,7 +64,7 @@ export default function POSScreen() {
   const phoneColumns = isLandscape ? 3 : 2;
   const cartPaneWidth = Math.max(260, Math.min(Math.floor(width * 0.36), 380));
 
-  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder, loadStaff, loadAllModifierGroups } = useDatabase();
+  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder, loadStaff, loadAllModifierGroups, loadPackages, purchaseCustomerPackage, loadCustomerPackages, redeemPackageSession } = useDatabase();
   const { currentStaff } = useStaff();
   const { isSaloon, isLaundry, isRetail, tableLabelSingular, tableLabel, productLabel } = useWorkMode();
   const { session } = useLicense();
@@ -152,6 +152,13 @@ export default function POSScreen() {
 
   const [showItemNotes, setShowItemNotes] = useState<string | null>(null);
   const [itemNotesValue, setItemNotesValue] = useState("");
+
+  // Saloon mode: prepaid packages
+  const [showPackagePicker, setShowPackagePicker] = useState(false);
+  const [allPackages, setAllPackages] = useState<PrepaidPackage[]>([]);
+  const [activeCustomerPackages, setActiveCustomerPackages] = useState<CustomerPackage[]>([]);
+  /** lineKey → customerPackageId being redeemed for that cart line */
+  const [packageRedemptions, setPackageRedemptions] = useState<Record<string, string>>({});
 
   const router = useRouter();
   const params = useLocalSearchParams<{
@@ -249,7 +256,10 @@ export default function POSScreen() {
   const splitRemaining = finalTotal - splitEntries.reduce((s, e) => s + e.amount, 0);
 
   const fetchData = useCallback(async () => {
-    const [prods, tbls, biz, tgs, cats, rdrs, staff, allGroups] = await Promise.all([loadProducts(), loadTables(), loadBusinessSettings(), loadTaxGroups(), loadCategories(), loadRiders(), loadStaff(), loadAllModifierGroups()]);
+    const [prods, tbls, biz, tgs, cats, rdrs, staff, allGroups, pkgs] = await Promise.all([
+      loadProducts(), loadTables(), loadBusinessSettings(), loadTaxGroups(),
+      loadCategories(), loadRiders(), loadStaff(), loadAllModifierGroups(), loadPackages(),
+    ]);
     setProducts(prods.filter((p: Product) => p.isActive !== false));
     setTables(tbls);
     setRiders(rdrs.filter((r: Rider) => r.active));
@@ -267,8 +277,9 @@ export default function POSScreen() {
       (byProduct[g.productId] ??= []).push(g);
     }
     setModifierGroupsByProduct(byProduct);
+    setAllPackages(pkgs.filter((p: PrepaidPackage) => p.isActive));
     setLoading(false);
-  }, [loadProducts, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, loadRiders, loadStaff, loadAllModifierGroups]);
+  }, [loadProducts, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, loadRiders, loadStaff, loadAllModifierGroups, loadPackages]);
 
   // Fetches on first focus AND every time the Register tab regains focus,
   // so newly added/edited products, categories, tables, riders and business
@@ -286,6 +297,21 @@ export default function POSScreen() {
       setOrderType("takeaway");
     }
   }, [isLaundry, isRetail, heldOrderInfo]);
+
+  // Load customer packages whenever the selected customer changes (saloon mode).
+  useEffect(() => {
+    if (!isSaloon || !selectedCustomer) {
+      setActiveCustomerPackages([]);
+      return;
+    }
+    let cancelled = false;
+    loadCustomerPackages(selectedCustomer.id).then((cps) => {
+      if (!cancelled) {
+        setActiveCustomerPackages(cps.filter((cp) => cp.isActive && cp.usedSessions < cp.totalSessions));
+      }
+    });
+    return () => { cancelled = true; };
+  }, [isSaloon, selectedCustomer, loadCustomerPackages]);
 
   const filteredProducts = useMemo(() => {
     let list = products;
@@ -655,6 +681,34 @@ export default function POSScreen() {
         }
       }
 
+      // Saloon: process package purchases and session redemptions before clearing.
+      // Packages are identified by product.id starting with "pkg_" (set in the
+      // synthetic product created in the PackagePickerModal).
+      if (isSaloon) {
+        for (const item of cartItems) {
+          if (item.product.id.startsWith("pkg_") && selectedCustomer) {
+            const packageId = item.product.id.slice(4);
+            const pkg = allPackages.find((p) => p.id === packageId);
+            if (pkg) {
+              try {
+                await purchaseCustomerPackage({
+                  packageId: pkg.id,
+                  customerId: selectedCustomer.id,
+                  customerName: selectedCustomer.name,
+                  packageName: pkg.name,
+                  totalSessions: pkg.totalSessions,
+                  purchaseSaleId: sale.id,
+                });
+              } catch {}
+            }
+          }
+        }
+        for (const [, cpId] of Object.entries(packageRedemptions)) {
+          try { await redeemPackageSession(cpId); } catch {}
+        }
+        setPackageRedemptions({});
+      }
+
       clearCart();
       setShowPayment(false);
       setShowCart(false);
@@ -674,7 +728,7 @@ export default function POSScreen() {
   }, [cartItems, paymentMethod, selectedCustomer, splitRemaining, orderDiscAmt, loyaltyRedeemAmount,
     saveSale, currentStaff, selectedTable, heldOrderInfo, selectedRider, orderType, orderDiscountType, orderDiscountValue,
     loyaltyRedeemPtsActual, splitEntries, clearCart, fetchData, kotSettings, businessSettings,
-    cashTendered, finalTotal]);
+    cashTendered, finalTotal, isSaloon, allPackages, purchaseCustomerPackage, redeemPackageSession, packageRedemptions]);
 
   const handleAddSplit = useCallback(() => {
     const amt = parseFloat(splitAmount);
@@ -741,13 +795,15 @@ export default function POSScreen() {
 
   const openPayment = useCallback(() => {
     setPaymentMethod("Card");
-    setSelectedCustomer(null);
+    // Saloon mode: keep the selected customer through to payment so package
+    // redemptions are preserved. Other modes reset the customer selection here.
+    if (!isSaloon) setSelectedCustomer(null);
     setOrderDiscountValue("");
     setShowDiscountInput(false);
     setSplitEntries([]);
     setLoyaltyRedeemPts("");
     setShowPayment(true);
-  }, []);
+  }, [isSaloon]);
 
   const openScanner = useCallback(() => setShowScanner(true), []);
   const closeCart = useCallback(() => setShowCart(false), []);
@@ -812,6 +868,49 @@ export default function POSScreen() {
             </Text>
           </TouchableOpacity>
         )}
+        {isSaloon && !item.isPackagePurchase && activeCustomerPackages.length > 0 && (() => {
+          const redeemedCpId = packageRedemptions[lineKey];
+          const cp = redeemedCpId ? activeCustomerPackages.find((c) => c.id === redeemedCpId) : null;
+          const eligible = activeCustomerPackages.filter((c) => c.isActive && c.usedSessions < c.totalSessions);
+          if (eligible.length === 0 && !cp) return null;
+          return (
+            <TouchableOpacity
+              onPress={() => {
+                if (cp) {
+                  // Remove redemption and restore price
+                  setPackageRedemptions((prev) => {
+                    const next = { ...prev };
+                    delete next[lineKey];
+                    return next;
+                  });
+                  setItemDiscount(lineKey, undefined, undefined);
+                } else if (eligible.length === 1) {
+                  setPackageRedemptions((prev) => ({ ...prev, [lineKey]: eligible[0]!.id }));
+                  setItemDiscount(lineKey, "fixed", item.product.price * item.quantity);
+                } else {
+                  Alert.alert(
+                    "Select Package",
+                    "Choose which package to redeem for this service:",
+                    eligible.map((c) => ({
+                      text: `${c.packageName} (${c.totalSessions - c.usedSessions} left)`,
+                      onPress: () => {
+                        setPackageRedemptions((prev) => ({ ...prev, [lineKey]: c.id }));
+                        setItemDiscount(lineKey, "fixed", item.product.price * item.quantity);
+                      },
+                    })).concat([{ text: "Cancel", onPress: () => {} }]),
+                  );
+                }
+              }}
+              style={{ paddingHorizontal: 12, paddingBottom: 4 }}
+            >
+              <Text style={{ fontSize: 11, color: cp ? "#9C27B0" : colors.mutedForeground }}>
+                {cp
+                  ? `📦 Package: ${cp.packageName} (${cp.totalSessions - cp.usedSessions} left) — tap to remove`
+                  : `📦 Redeem from package…`}
+              </Text>
+            </TouchableOpacity>
+          );
+        })()}
         {isLaundry && (
           <TouchableOpacity
             onPress={() => { setShowItemNotes(lineKey); setItemNotesValue(item.notes ?? ""); }}
@@ -860,7 +959,9 @@ export default function POSScreen() {
         </View>
       </View>
     );
-  }, [colors, isSaloon, isLaundry, setItemDiscount, updateQuantity, removeItem, setItemPrice, setShowStylistPicker, setShowItemNotes, setItemNotesValue]);
+  }, [colors, isSaloon, isLaundry, setItemDiscount, updateQuantity, removeItem, setItemPrice,
+    setShowStylistPicker, setShowItemNotes, setItemNotesValue,
+    activeCustomerPackages, packageRedemptions, setPackageRedemptions, cartItems]);
 
   const cartKeyExtractor = useCallback((item: import("@/types").CartItem) => item.lineId ?? item.product.id, []);
 
@@ -1048,6 +1149,33 @@ export default function POSScreen() {
                   </TouchableOpacity>
                 );
               })}
+            </View>
+          )}
+          {isSaloon && (
+            <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, gap: 8 }}>
+              <TouchableOpacity
+                onPress={() => setShowCustomerSelect(true)}
+                style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: selectedCustomer ? colors.primary + "60" : colors.border, paddingHorizontal: 10, paddingVertical: 6 }}
+              >
+                <Feather name="user" size={14} color={selectedCustomer ? colors.primary : colors.mutedForeground} />
+                <Text style={{ fontSize: 13, color: selectedCustomer ? colors.foreground : colors.mutedForeground, fontWeight: selectedCustomer ? "600" : "400", flex: 1 }} numberOfLines={1}>
+                  {selectedCustomer ? selectedCustomer.name : "Select customer…"}
+                </Text>
+                {selectedCustomer && (
+                  <TouchableOpacity onPress={() => { setSelectedCustomer(null); setActiveCustomerPackages([]); setPackageRedemptions({}); }}>
+                    <Feather name="x" size={13} color={colors.mutedForeground} />
+                  </TouchableOpacity>
+                )}
+              </TouchableOpacity>
+              {selectedCustomer && allPackages.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setShowPackagePicker(true)}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#9C27B0" + "18", borderRadius: colors.radius, borderWidth: 1, borderColor: "#9C27B0" + "50", paddingHorizontal: 10, paddingVertical: 6 }}
+                >
+                  <Feather name="package" size={14} color="#9C27B0" />
+                  <Text style={{ fontSize: 12, color: "#9C27B0", fontWeight: "700" }}>Buy Pkg</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
         </View>
@@ -2044,6 +2172,89 @@ export default function POSScreen() {
                 </Text>
               )}
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Package picker — saloon mode, buy a package for selected customer */}
+      <Modal visible={isSaloon && showPackagePicker} transparent animationType="fade" onRequestClose={() => setShowPackagePicker(false)}>
+        <View style={styles.paymentOverlay}>
+          <View style={[styles.paymentSheet, { backgroundColor: colors.card, borderRadius: colors.radius }]}>
+            <Text style={[styles.paymentTitle, { color: colors.foreground }]}>Buy a Package</Text>
+            <Text style={[styles.paymentLabel, { color: colors.mutedForeground, marginBottom: 12 }]}>
+              Choose a package for {selectedCustomer?.name}
+            </Text>
+            <ScrollView style={{ maxHeight: 360 }}>
+              {allPackages.length === 0 && (
+                <Text style={{ color: colors.mutedForeground, fontSize: 13, textAlign: "center", padding: 16 }}>
+                  No active packages. Create them in Back Office → Packages.
+                </Text>
+              )}
+              {allPackages.map((pkg) => {
+                const alreadyInCart = cartItems.some((ci) => ci.product.id === `pkg_${pkg.id}`);
+                return (
+                  <TouchableOpacity
+                    key={pkg.id}
+                    disabled={alreadyInCart}
+                    onPress={() => {
+                      const vatEnabled = businessSettings?.vatEnabled !== false;
+                      const rate = vatEnabled ? VAT_RATE : 0;
+                      const syntheticProduct = {
+                        id: `pkg_${pkg.id}`,
+                        name: `📦 ${pkg.name}`,
+                        price: pkg.price,
+                        category: "Packages",
+                        stock: 999,
+                        isActive: true,
+                        taxGroupId: null,
+                      } as any;
+                      addItem(syntheticProduct, rate);
+                      // Patch the cart item to flag it as a package purchase
+                      // We use the isPackagePurchase + packageId fields by setting item properties
+                      // via a side-channel flag stored in lineId prefix:
+                      // The item is added; we locate it and set flags.
+                      // Since addItem doesn't support extra fields, we'll handle at checkout by
+                      // detecting lineId prefix "pkg_" (set via the product.id above).
+                      setShowPackagePicker(false);
+                    }}
+                    style={[
+                      styles.customerPickerBtn,
+                      {
+                        borderColor: alreadyInCart ? colors.success : colors.border,
+                        borderRadius: colors.radius,
+                        marginBottom: 8,
+                        backgroundColor: alreadyInCart ? colors.success + "10" : "transparent",
+                        opacity: alreadyInCart ? 0.6 : 1,
+                      },
+                    ]}
+                  >
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 14 }}>{pkg.name}</Text>
+                        {pkg.description ? (
+                          <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 2 }}>{pkg.description}</Text>
+                        ) : null}
+                        <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 2 }}>
+                          {pkg.totalSessions} session{pkg.totalSessions !== 1 ? "s" : ""}
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: "flex-end", marginLeft: 8 }}>
+                        <Text style={{ color: colors.foreground, fontWeight: "700", fontSize: 15 }}>{formatCurrency(pkg.price)}</Text>
+                        {alreadyInCart && (
+                          <Text style={{ color: colors.success, fontSize: 11, marginTop: 2 }}>In cart</Text>
+                        )}
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <TouchableOpacity
+              onPress={() => setShowPackagePicker(false)}
+              style={[styles.customerPickerBtn, { borderColor: colors.border, borderRadius: colors.radius, marginTop: 8 }]}
+            >
+              <Text style={{ color: colors.mutedForeground, fontWeight: "600", textAlign: "center" }}>Cancel</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>

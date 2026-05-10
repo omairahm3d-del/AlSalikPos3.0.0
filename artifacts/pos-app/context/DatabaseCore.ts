@@ -1,9 +1,9 @@
 import { createContext, useContext } from "react";
 import type {
-  Appointment, BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment, Customer,
-  Expense, HeldOrder, Ingredient, ModifierGroup, OrderType, PosTable, Product,
-  RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
-  Staff, TaxGroup,
+  Appointment, BackupData, BusinessSettings, CartItem, Category, ClearDataOptions,
+  CreditPayment, Customer, CustomerPackage, Expense, HeldOrder, Ingredient, ModifierGroup,
+  OrderType, PosTable, PrepaidPackage, Product, RecipeIngredient, Rider, Sale, SaleItem,
+  SplitPaymentEntry, Staff, TaxGroup,
 } from "@/types";
 
 /** Phase 3b: outbound sync queue entry visible to the sync engine. */
@@ -369,6 +369,36 @@ export interface DatabaseContextValue {
     delta: number;
     reason?: string | null;
   }) => Promise<LocalStockMovement>;
+
+  // ---- Prepaid packages (saloon mode) ----
+  /** Load all package definitions, active and inactive. */
+  loadPackages: () => Promise<PrepaidPackage[]>;
+  /** Create a new package definition. */
+  createPackage: (pkg: Omit<PrepaidPackage, "id" | "createdAt">) => Promise<PrepaidPackage>;
+  /** Update an existing package definition. */
+  updatePackage: (pkg: PrepaidPackage) => Promise<void>;
+  /** Soft-delete a package (sets isActive=false). */
+  deletePackage: (id: string) => Promise<void>;
+  /** Load all purchased packages for a specific customer (all statuses). */
+  loadCustomerPackages: (customerId: string) => Promise<CustomerPackage[]>;
+  /**
+   * Record a package purchase for a customer. Called after a successful
+   * checkout that contained a package cart line.
+   */
+  purchaseCustomerPackage: (data: {
+    packageId: string;
+    customerId: string;
+    customerName: string;
+    packageName: string;
+    totalSessions: number;
+    purchaseSaleId?: string | null;
+    expiresAt?: number | null;
+  }) => Promise<CustomerPackage>;
+  /**
+   * Consume one session from a customer package.
+   * Increments usedSessions by 1, capped at totalSessions.
+   */
+  redeemPackageSession: (customerPackageId: string) => Promise<void>;
 }
 
 export const DatabaseContext = createContext<DatabaseContextValue | null>(null);

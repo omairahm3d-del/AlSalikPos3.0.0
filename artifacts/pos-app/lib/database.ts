@@ -342,6 +342,7 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     // NULL for non-cash sales or when the cashier skips entering the amount.
     "ALTER TABLE sales ADD COLUMN cash_tendered REAL DEFAULT NULL",
     "ALTER TABLE sales ADD COLUMN change_due REAL DEFAULT NULL",
+    "ALTER TABLE sale_items ADD COLUMN package_redemption_id TEXT DEFAULT NULL",
   ];
 
   // Sync event log. Append-only ring buffer (capped to 200 rows by the
@@ -409,6 +410,37 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
       created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS lsm_product_idx ON local_stock_movements(product_client_id, created_at DESC);
+  `);
+
+  // Prepaid packages (saloon mode). Created outside migrations so they are
+  // idempotent on every open (IF NOT EXISTS). Package definitions + per-customer
+  // purchased instances are both local — they sync to the cloud separately.
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS packages (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      total_sessions INTEGER NOT NULL DEFAULT 1,
+      price REAL NOT NULL DEFAULT 0,
+      applicable_service_ids TEXT DEFAULT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS customer_packages (
+      id TEXT PRIMARY KEY,
+      package_id TEXT NOT NULL,
+      customer_id TEXT NOT NULL,
+      customer_name TEXT NOT NULL DEFAULT '',
+      package_name TEXT NOT NULL DEFAULT '',
+      total_sessions INTEGER NOT NULL DEFAULT 1,
+      used_sessions INTEGER NOT NULL DEFAULT 0,
+      purchase_sale_id TEXT DEFAULT NULL,
+      purchased_at INTEGER NOT NULL,
+      expires_at INTEGER DEFAULT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS cp_customer_idx ON customer_packages(customer_id, is_active);
   `);
 
   // Cash-out / petty-cash log. Created outside the migrations array so it

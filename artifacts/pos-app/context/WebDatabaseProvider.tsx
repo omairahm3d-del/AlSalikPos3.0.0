@@ -1,9 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback } from "react";
 import type {
-  Appointment, BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment, Customer,
-  Expense, HeldOrder, HeldOrderItem, Ingredient, ModifierGroup, PosTable, Product,
-  RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
+  Appointment, BackupData, BusinessSettings, CartItem, Category, ClearDataOptions, CreditPayment,
+  Customer, CustomerPackage, Expense, HeldOrder, HeldOrderItem, Ingredient, ModifierGroup, PosTable,
+  PrepaidPackage, Product, RecipeIngredient, Rider, Sale, SaleItem, SplitPaymentEntry,
   Staff, TaxGroup,
 } from "@/types";
 import { DEFAULT_BUSINESS_SETTINGS, SEED_CATEGORIES, SEED_PRODUCTS, SEED_STAFF, SEED_TABLES, SEED_TAX_GROUPS, SEED_CUSTOMERS, VAT_RATE } from "@/types";
@@ -33,6 +33,8 @@ const K = {
   localPurchaseItems: "@pos_local_purchase_items",
   localStockMovements: "@pos_local_stock_movements",
   appointments: "@pos_appointments",
+  packages: "@pos_packages",
+  customerPackages: "@pos_customer_packages",
 };
 
 interface WebCatalogOutboxRow {
@@ -1454,6 +1456,59 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     return row;
   }
 
+  // ---- Prepaid packages (saloon mode) ----
+
+  async function loadPackages(): Promise<PrepaidPackage[]> {
+    return getJson<PrepaidPackage[]>(K.packages, []);
+  }
+
+  async function createPackage(pkg: Omit<PrepaidPackage, "id" | "createdAt">): Promise<PrepaidPackage> {
+    const row: PrepaidPackage = { id: generateId(), createdAt: Date.now(), ...pkg };
+    const all = await getJson<PrepaidPackage[]>(K.packages, []);
+    await setJson(K.packages, [...all, row]);
+    return row;
+  }
+
+  async function updatePackage(pkg: PrepaidPackage): Promise<void> {
+    const all = await getJson<PrepaidPackage[]>(K.packages, []);
+    await setJson(K.packages, all.map((p) => (p.id === pkg.id ? pkg : p)));
+  }
+
+  async function deletePackage(id: string): Promise<void> {
+    const all = await getJson<PrepaidPackage[]>(K.packages, []);
+    await setJson(K.packages, all.map((p) => (p.id === id ? { ...p, isActive: false } : p)));
+  }
+
+  async function loadCustomerPackages(customerId: string): Promise<CustomerPackage[]> {
+    const all = await getJson<CustomerPackage[]>(K.customerPackages, []);
+    return all.filter((cp) => cp.customerId === customerId).sort((a, b) => b.purchasedAt - a.purchasedAt);
+  }
+
+  async function purchaseCustomerPackage(data: {
+    packageId: string; customerId: string; customerName: string; packageName: string;
+    totalSessions: number; purchaseSaleId?: string | null; expiresAt?: number | null;
+  }): Promise<CustomerPackage> {
+    const row: CustomerPackage = {
+      id: generateId(), packageId: data.packageId, customerId: data.customerId,
+      customerName: data.customerName, packageName: data.packageName,
+      totalSessions: data.totalSessions, usedSessions: 0,
+      purchaseSaleId: data.purchaseSaleId ?? null,
+      purchasedAt: Date.now(), expiresAt: data.expiresAt ?? null, isActive: true,
+    };
+    const all = await getJson<CustomerPackage[]>(K.customerPackages, []);
+    await setJson(K.customerPackages, [row, ...all]);
+    return row;
+  }
+
+  async function redeemPackageSession(customerPackageId: string): Promise<void> {
+    const all = await getJson<CustomerPackage[]>(K.customerPackages, []);
+    await setJson(K.customerPackages, all.map((cp) =>
+      cp.id === customerPackageId
+        ? { ...cp, usedSessions: Math.min(cp.usedSessions + 1, cp.totalSessions) }
+        : cp
+    ));
+  }
+
   return (
     <DatabaseContext.Provider value={{
       loadProducts, createProduct, updateProduct, deleteProduct, updateStock,
@@ -1481,6 +1536,8 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       loadLocalSuppliers, createLocalSupplier, updateLocalSupplier,
       loadLocalPurchases, getLocalPurchase, createLocalPurchase,
       loadLocalMovements, createLocalAdjustment,
+      loadPackages, createPackage, updatePackage, deletePackage,
+      loadCustomerPackages, purchaseCustomerPackage, redeemPackageSession,
     }}>
       {children}
     </DatabaseContext.Provider>

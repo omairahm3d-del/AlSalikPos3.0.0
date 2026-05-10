@@ -142,6 +142,20 @@ export interface CartItem {
    * line (never merges) via a unique lineId.
    */
   weightKg?: number;
+  /**
+   * Saloon mode: set when this line is being redeemed from a customer prepaid
+   * package. The value is the CustomerPackage.id. The line total is zeroed via
+   * a full-price discount applied at the time of redemption toggle.
+   */
+  packageRedemptionId?: string;
+  /**
+   * Saloon mode: when true this cart line represents a prepaid package being
+   * sold to the selected customer (not a regular service). `packageId` must be
+   * set; on checkout success `purchaseCustomerPackage` is called automatically.
+   */
+  isPackagePurchase?: boolean;
+  /** Saloon mode: the PrepaidPackage.id being sold when isPackagePurchase=true. */
+  packageId?: string;
 }
 
 export interface SaleItem {
@@ -159,6 +173,50 @@ export interface SaleItem {
   /** Restaurant mode: snapshot of modifier choices at time of sale. */
   modifiers?: SelectedModifier[];
   modifierTotal?: number;
+  /** Saloon mode: the CustomerPackage.id if this session was redeemed from a prepaid package. */
+  packageRedemptionId?: string;
+}
+
+/**
+ * A prepaid package definition (saloon mode only).
+ * Customers purchase these upfront and redeem sessions against their balance.
+ * The `price` is the total package price (all sessions bundled).
+ */
+export interface PrepaidPackage {
+  id: string;
+  name: string;
+  description: string;
+  /** Number of sessions included in this package. */
+  totalSessions: number;
+  /** Total package price in AED. */
+  price: number;
+  /**
+   * When null the package can be redeemed against any service.
+   * When set, only the listed product IDs are eligible for redemption.
+   */
+  applicableServiceIds: string[] | null;
+  isActive: boolean;
+  createdAt: number;
+}
+
+/**
+ * A customer's purchased instance of a PrepaidPackage.
+ * Created on checkout when a package cart line is present.
+ * Each service redemption increments `usedSessions` by 1.
+ */
+export interface CustomerPackage {
+  id: string;
+  packageId: string;
+  customerId: string;
+  customerName: string;
+  packageName: string;
+  totalSessions: number;
+  usedSessions: number;
+  purchaseSaleId: string | null;
+  purchasedAt: number;
+  /** Optional expiry epoch ms. null = never expires. */
+  expiresAt: number | null;
+  isActive: boolean;
 }
 
 export interface SplitPaymentEntry {

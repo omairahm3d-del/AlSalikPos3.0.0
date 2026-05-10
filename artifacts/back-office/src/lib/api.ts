@@ -225,6 +225,50 @@ export interface AdjustmentInput {
   reason?: string | null;
 }
 
+/* ---------- Prepaid packages ---------- */
+
+export interface ApiPackage {
+  id: string;
+  companyId: string;
+  branchId: string | null;
+  name: string;
+  description: string;
+  totalSessions: number;
+  price: number;
+  applicableServiceIds: string[] | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiPackageInput {
+  name: string;
+  description?: string;
+  totalSessions: number;
+  price: number;
+  applicableServiceIds?: string[] | null;
+  branchId?: string | null;
+  isActive?: boolean;
+}
+
+export interface ApiCustomerPackage {
+  id: string;
+  companyId: string;
+  branchId: string | null;
+  packageId: string | null;
+  customerClientId: string;
+  customerName: string;
+  packageName: string;
+  totalSessions: number;
+  usedSessions: number;
+  remainingSessions: number;
+  purchaseSaleClientId: string | null;
+  expiresAt: string | null;
+  isActive: boolean;
+  purchasedAt: string;
+  createdAt: string;
+}
+
 export const api = {
   login: (body: LoginRequest) =>
     request<LoginResponse>("/api/manager/login", {
@@ -423,4 +467,53 @@ export const api = {
       token,
       body: JSON.stringify(body),
     }),
+
+  // ---- Prepaid packages ----
+  packages: (
+    token: string,
+    opts: { branchId?: string; includeInactive?: boolean } = {},
+  ) => {
+    const qs = new URLSearchParams();
+    if (opts.branchId) qs.set("branchId", opts.branchId);
+    if (opts.includeInactive) qs.set("includeInactive", "true");
+    return request<{ packages: ApiPackage[] }>(
+      `/api/manager/packages?${qs}`,
+      { token },
+    );
+  },
+  createPackage: (token: string, body: ApiPackageInput) =>
+    request<{ package: ApiPackage }>(`/api/manager/packages`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(body),
+    }),
+  updatePackage: (token: string, id: string, body: Partial<ApiPackageInput>) =>
+    request<{ package: ApiPackage }>(`/api/manager/packages/${id}`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(body),
+    }),
+  deletePackage: (token: string, id: string) =>
+    request<{ success: boolean }>(`/api/manager/packages/${id}`, {
+      method: "DELETE",
+      token,
+    }),
+  customerPackages: (
+    token: string,
+    opts: {
+      branchId?: string;
+      customerClientId?: string;
+      includeInactive?: boolean;
+    } = {},
+  ) => {
+    const qs = new URLSearchParams();
+    if (opts.branchId) qs.set("branchId", opts.branchId);
+    if (opts.customerClientId)
+      qs.set("customerClientId", opts.customerClientId);
+    if (opts.includeInactive) qs.set("includeInactive", "true");
+    return request<{ customerPackages: ApiCustomerPackage[] }>(
+      `/api/manager/customer-packages?${qs}`,
+      { token },
+    );
+  },
 };
