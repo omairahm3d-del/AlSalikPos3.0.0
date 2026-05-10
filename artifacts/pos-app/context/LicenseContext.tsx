@@ -13,6 +13,7 @@ import {
   loadSavedLicenseKey,
   loadSession,
   saveSession,
+  setCompanyWipePending,
   type LicenseSession,
 } from "@/lib/saasStorage";
 import {
@@ -198,6 +199,14 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
         deviceUid,
         workMode: res.workMode ?? "standard",
       };
+      // If the device is switching to a different company, mark a wipe as
+      // pending BEFORE saving the new session. CompanyWipeGuard in _layout.tsx
+      // will detect this flag on next render, clear all company data (keeping
+      // staff and business settings), then remove the flag so it only runs once.
+      const prevCompanyId = sessionRef.current?.company.id ?? null;
+      if (prevCompanyId && prevCompanyId !== next.company.id) {
+        await setCompanyWipePending(next.company.id);
+      }
       await saveSession(next);
       if (myOp !== opSeq.current) return { kind: "ok" };
       setActivationReason(null);

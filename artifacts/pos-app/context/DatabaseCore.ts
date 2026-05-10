@@ -290,6 +290,12 @@ export interface DatabaseContextValue {
   exportData: () => Promise<BackupData>;
   importData: (data: BackupData) => Promise<void>;
   clearData: (opts: ClearDataOptions) => Promise<void>;
+  /**
+   * Wipe all company-specific data from the local database while keeping
+   * staff credentials and business settings. Called by `CompanyWipeGuard`
+   * when the device switches to a different company's license.
+   */
+  clearCompanyData: () => Promise<void>;
 
   // ---- Cash-out / petty-cash ledger ----
   /** Load expenses, optionally restricted to a [from, to) ms window. */

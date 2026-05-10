@@ -1133,6 +1133,53 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     try { await clearOwningCompanyId(); } catch {}
   }, [db]);
 
+  const clearCompanyData = useCallback(async (): Promise<void> => {
+    await db.withTransactionAsync(async () => {
+      // Transactional data
+      await db.runAsync("DELETE FROM sale_items");
+      await db.runAsync("DELETE FROM split_payments");
+      await db.runAsync("DELETE FROM sales");
+      await db.runAsync("DELETE FROM credit_payments");
+      await db.runAsync("DELETE FROM z_reports");
+      await db.runAsync("DELETE FROM held_order_items");
+      await db.runAsync("DELETE FROM held_orders");
+      await db.runAsync("UPDATE pos_tables SET status='available', current_order_id=NULL");
+      await db.runAsync("DELETE FROM expenses");
+      // Catalog
+      await db.runAsync("DELETE FROM recipe_ingredients");
+      await db.runAsync("DELETE FROM products");
+      await db.runAsync("DELETE FROM categories");
+      await db.runAsync("DELETE FROM customers");
+      await db.runAsync("DELETE FROM ingredients");
+      await db.runAsync("DELETE FROM tax_groups");
+      await db.runAsync("DELETE FROM riders");
+      try { await db.runAsync("DELETE FROM modifier_options"); } catch {}
+      try { await db.runAsync("DELETE FROM modifier_groups"); } catch {}
+      // Mode-specific
+      try { await db.runAsync("DELETE FROM appointments"); } catch {}
+      try { await db.runAsync("DELETE FROM customer_packages"); } catch {}
+      try { await db.runAsync("DELETE FROM packages"); } catch {}
+      try { await db.runAsync("DELETE FROM service_bundles"); } catch {}
+      try { await db.runAsync("DELETE FROM laundry_order_items"); } catch {}
+      try { await db.runAsync("DELETE FROM laundry_orders"); } catch {}
+      // Purchasing & stock
+      try { await db.runAsync("DELETE FROM local_purchase_items"); } catch {}
+      try { await db.runAsync("DELETE FROM local_purchases"); } catch {}
+      try { await db.runAsync("DELETE FROM local_suppliers"); } catch {}
+      try { await db.runAsync("DELETE FROM local_stock_movements"); } catch {}
+      // Sync plumbing
+      await db.runAsync("DELETE FROM sync_queue");
+      await db.runAsync("DELETE FROM catalog_outbox");
+      // Counters reset
+      await db.runAsync("UPDATE invoice_counter SET next_value=1 WHERE id=1");
+      try { await db.runAsync("UPDATE order_counter SET next_value=1 WHERE id=1"); } catch {}
+      try { await db.runAsync("UPDATE laundry_counter SET next_value=1 WHERE id=1"); } catch {}
+    });
+    // Clear the catalog pull cursor and tenant ownership stamp so the next
+    // sync starts fresh and pulls the new company's full catalog.
+    try { await clearOwningCompanyId(); } catch {}
+  }, [db]);
+
   const clearData = useCallback(async (opts: ClearDataOptions): Promise<void> => {
     await db.withTransactionAsync(async () => {
       if (opts.sales) {
@@ -1927,7 +1974,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       loadIngredients, createIngredient, updateIngredient, deleteIngredient, updateIngredientStock,
       loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,
       loadModifierGroups, loadAllModifierGroups, saveModifierGroups,
-      exportData, importData, clearData,
+      exportData, importData, clearData, clearCompanyData,
       loadExpenses, createExpense, deleteExpense,
       enqueueSync, reconcilePendingSync, loadSyncBatch, markSyncResults, countPendingSync,
       loadCatalogBatch, markCatalogResults, countPendingCatalog, applyRemoteCatalog, clearSeedCatalog,

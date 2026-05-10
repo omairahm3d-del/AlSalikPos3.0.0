@@ -17,6 +17,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { CartProvider } from "@/context/CartContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { DatabaseProvider } from "@/context/DatabaseProvider";
+import { useDatabase } from "@/context/DatabaseCore";
 import { StaffProvider, useStaff } from "@/context/StaffContext";
 import { LicenseProvider, useLicense } from "@/context/LicenseContext";
 import { WorkModeProvider } from "@/context/WorkModeContext";
@@ -27,6 +28,10 @@ import { ActivationScreen } from "@/components/ActivationScreen";
 import { VirtualKeyboard } from "@/components/VirtualKeyboard";
 import { SyncStatusPill } from "@/components/SyncStatusPill";
 import { activityResetFn } from "@/lib/activityReset";
+import {
+  clearCompanyWipePending,
+  getCompanyWipePending,
+} from "@/lib/saasStorage";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -87,6 +92,35 @@ function AppContent() {
       <SyncStatusPill />
     </View>
   );
+}
+
+/**
+ * Detects a pending company-switch wipe and clears all company data (products,
+ * sales, catalog, etc.) while keeping staff credentials and business settings.
+ *
+ * Runs once on mount and re-runs whenever the session's company ID changes.
+ * The flag (`saas.companyWipePending`) is written by `LicenseContext.activate()`
+ * before the new session is saved, ensuring the wipe always runs even if the
+ * app is killed mid-activation and relaunched.
+ */
+function CompanyWipeGuard({ children }: { children: React.ReactNode }) {
+  const { session } = useLicense();
+  const { clearCompanyData } = useDatabase();
+  const companyId = session?.company.id;
+
+  useEffect(() => {
+    if (!companyId) return;
+    (async () => {
+      try {
+        const pending = await getCompanyWipePending();
+        if (pending !== companyId) return;
+        await clearCompanyData();
+        await clearCompanyWipePending();
+      } catch {}
+    })();
+  }, [companyId, clearCompanyData]);
+
+  return <>{children}</>;
 }
 
 /**
@@ -168,15 +202,17 @@ export default function RootLayout() {
                 <WorkModeProvider>
                   <LicenseGate>
                     <DatabaseProvider>
-                      <SyncProvider>
-                        <CartProvider>
-                          <StaffProvider>
-                            <UsbPrintProvider>
-                              <AppContent />
-                            </UsbPrintProvider>
-                          </StaffProvider>
-                        </CartProvider>
-                      </SyncProvider>
+                      <CompanyWipeGuard>
+                        <SyncProvider>
+                          <CartProvider>
+                            <StaffProvider>
+                              <UsbPrintProvider>
+                                <AppContent />
+                              </UsbPrintProvider>
+                            </StaffProvider>
+                          </CartProvider>
+                        </SyncProvider>
+                      </CompanyWipeGuard>
                     </DatabaseProvider>
                   </LicenseGate>
                 </WorkModeProvider>

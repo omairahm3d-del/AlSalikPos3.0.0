@@ -1025,6 +1025,51 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     try { await clearOwningCompanyId(); } catch {}
   }, []);
 
+  const clearCompanyData = useCallback(async (): Promise<void> => {
+    const wipe = async (k: string) => { await AsyncStorage.setItem(k, JSON.stringify([])); };
+    // Transactional data
+    await wipe(K.sales);
+    await wipe(K.saleItems);
+    await wipe(K.splitPayments);
+    await wipe(K.creditPayments);
+    await wipe(K.zReports);
+    await wipe(K.heldOrders);
+    await wipe(K.expenses);
+    // Catalog
+    await wipe(K.products);
+    await wipe(K.categories);
+    await wipe(K.customers);
+    await wipe(K.recipeIngredients);
+    await wipe(K.ingredients);
+    await wipe(K.taxGroups);
+    await wipe(K.riders);
+    await wipe(K.modifierGroups);
+    await wipe(K.modifierOptions);
+    // Mode-specific
+    await wipe(K.appointments);
+    await wipe(K.customerPackages);
+    await wipe(K.packages);
+    await wipe(K.serviceBundles);
+    await wipe(K.laundryOrders);
+    await wipe(K.laundryOrderItems);
+    await AsyncStorage.setItem(K.laundryCounter, "1");
+    // Purchasing & stock
+    await wipe(K.localPurchaseItems);
+    await wipe(K.localPurchases);
+    await wipe(K.localSuppliers);
+    await wipe(K.localStockMovements);
+    // Sync plumbing
+    await wipe(K.syncQueue);
+    await wipe(K.catalogOutbox);
+    // Counters reset
+    await AsyncStorage.setItem(K.counter, "1");
+    await AsyncStorage.setItem(K.orderCounter, "1");
+    // Clear the catalog pull cursor and tenant ownership stamp so the next
+    // sync starts fresh and pulls the new company's full catalog.
+    try { await clearOwningCompanyId(); } catch {}
+    // Keep: K.staff (staff credentials) and K.settings (business settings)
+  }, []);
+
   const clearData = useCallback(async (opts: ClearDataOptions): Promise<void> => {
     const wipe = async (k: string) => { await AsyncStorage.setItem(k, JSON.stringify([])); };
     if (opts.sales) {
@@ -1636,7 +1681,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       loadIngredients, createIngredient, updateIngredient, deleteIngredient, updateIngredientStock,
       loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,
       loadModifierGroups, loadAllModifierGroups, saveModifierGroups,
-      exportData, importData, clearData,
+      exportData, importData, clearData, clearCompanyData,
       loadExpenses, createExpense, deleteExpense,
       enqueueSync, reconcilePendingSync, loadSyncBatch, markSyncResults, countPendingSync,
       loadCatalogBatch, markCatalogResults, countPendingCatalog, applyRemoteCatalog, clearSeedCatalog,

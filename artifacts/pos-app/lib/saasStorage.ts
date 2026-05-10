@@ -60,6 +60,26 @@ export async function clearOwningCompanyId(): Promise<void> {
   await AsyncStorage.multiRemove([K_OWNING_COMPANY, K_CATALOG_CURSOR]);
 }
 
+/**
+ * Written by `LicenseContext.activate()` when the incoming company differs
+ * from the currently active one. The value is the new company's ID.
+ * `CompanyWipeGuard` in `_layout.tsx` reads this on mount and after every
+ * session change, calls `clearCompanyData()`, then removes the flag.
+ */
+const K_COMPANY_WIPE_PENDING = "saas.companyWipePending";
+
+export async function getCompanyWipePending(): Promise<string | null> {
+  return AsyncStorage.getItem(K_COMPANY_WIPE_PENDING);
+}
+
+export async function setCompanyWipePending(newCompanyId: string): Promise<void> {
+  await AsyncStorage.setItem(K_COMPANY_WIPE_PENDING, newCompanyId);
+}
+
+export async function clearCompanyWipePending(): Promise<void> {
+  await AsyncStorage.removeItem(K_COMPANY_WIPE_PENDING);
+}
+
 export async function getCatalogCursor(): Promise<string | null> {
   return AsyncStorage.getItem(K_CATALOG_CURSOR);
 }
