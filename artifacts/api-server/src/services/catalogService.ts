@@ -11,8 +11,8 @@ const clientUpdatedAtMs = z
   .int()
   .refine((n) => n >= MIN_EPOCH_MS, "updatedAt is too far in the past")
   .refine(
-    (n) => n <= Date.now() + 24 * 60 * 60 * 1000,
-    "updatedAt is in the future",
+    (n) => n <= Date.now() + 7 * 24 * 60 * 60 * 1000,
+    "updatedAt is too far in the future (check device clock)",
   );
 
 const catalogEntrySchema = z.object({

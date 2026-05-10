@@ -34,7 +34,7 @@ const createdAtMs = z
   .number()
   .int()
   .refine((n) => n >= MIN_EPOCH_MS, "createdAt is too far in the past (expected ms epoch)")
-  .refine((n) => n <= Date.now() + 24 * 60 * 60 * 1000, "createdAt is in the future");
+  .refine((n) => n <= Date.now() + 7 * 24 * 60 * 60 * 1000, "createdAt is too far in the future (check device clock)");
 
 const splitPaymentSchema = z.object({
   method: z.string(),
