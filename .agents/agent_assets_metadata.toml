@@ -88,7 +88,7 @@ title = "Al Salik POS — Android APK v1.0.0 (tar.gz)"
 id = "PSjejmCs4WgzyqJrA0c7s"
 uri = "file://desktop-installer/dist/Al Salik POS Setup 1.0.0 (64-bit).zip"
 type = "unspecified"
-title = "Al Salik POS Setup 1.0.0 — 64-bit (Windows 10/11)"
+title = "Al Salik POS Setup 1.0.0 — Windows 64-bit Installer"
 
 [[outputs]]
 id = "WO0LmNMXShEE6f1SWKMnU"
