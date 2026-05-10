@@ -17,7 +17,7 @@ import {
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import * as Print from "expo-print";
 import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
 import { CartItemRow } from "@/components/CartItemRow";
@@ -152,6 +152,65 @@ export default function POSScreen() {
 
   const [showItemNotes, setShowItemNotes] = useState<string | null>(null);
   const [itemNotesValue, setItemNotesValue] = useState("");
+
+  const router = useRouter();
+  const params = useLocalSearchParams<{
+    apptId?: string;
+    apptCustomerId?: string;
+    apptCustomerName?: string;
+    apptCustomerPhone?: string;
+    apptStylistId?: string;
+    apptStylistName?: string;
+    apptServiceName?: string;
+  }>();
+  const [pendingAppt, setPendingAppt] = useState<typeof params | null>(null);
+
+  // Capture appointment checkout params when navigated from the Appointments tab.
+  // Clear URL params immediately so re-focus doesn't re-trigger the fill.
+  useEffect(() => {
+    if (!params.apptId) return;
+    setPendingAppt({ ...params });
+    router.setParams({
+      apptId: undefined, apptCustomerId: undefined, apptCustomerName: undefined,
+      apptCustomerPhone: undefined, apptStylistId: undefined,
+      apptStylistName: undefined, apptServiceName: undefined,
+    });
+  }, [params.apptId]);
+
+  // Process a pending appointment fill once products and business settings are ready.
+  // Adds the service to the cart (with stylist pre-assigned), sets the customer,
+  // and skips the stylist-picker modal that normally appears in saloon mode.
+  useEffect(() => {
+    if (!pendingAppt || loading) return;
+    const appt = pendingAppt;
+    setPendingAppt(null);
+
+    const vatEnabled = businessSettings?.vatEnabled !== false;
+    if (appt.apptServiceName) {
+      const product = products.find((p) =>
+        p.name.toLowerCase() === (appt.apptServiceName ?? "").toLowerCase()
+      );
+      if (product) {
+        const rate = vatEnabled
+          ? product.taxGroupId ? (taxGroupMap[product.taxGroupId] ?? VAT_RATE) : VAT_RATE
+          : 0;
+        addItem(product, rate);
+        if (appt.apptStylistId && appt.apptStylistName) {
+          setItemStylist(product.id, appt.apptStylistId, appt.apptStylistName);
+        }
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+    }
+
+    if (appt.apptCustomerId || appt.apptCustomerName) {
+      loadCustomers().then((all) => {
+        const c = appt.apptCustomerId
+          ? all.find((cu) => cu.id === appt.apptCustomerId)
+          : all.find((cu) => cu.name === appt.apptCustomerName);
+        if (c) setSelectedCustomer(c);
+      });
+    }
+  }, [pendingAppt, loading]);
 
   const orderDiscAmt = useMemo(() => {
     const val = parseFloat(orderDiscountValue);

@@ -11,7 +11,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { useDatabase } from "@/context/DatabaseCore";
 import { Appointment, AppointmentStatus, Customer, PosTable, Product, Rider } from "@/types";
@@ -118,10 +118,12 @@ function AppointmentCard({
   appt,
   onStatusChange,
   onEdit,
+  onCheckIn,
 }: {
   appt: Appointment;
   onStatusChange: (id: string, status: AppointmentStatus) => void;
   onEdit: (appt: Appointment) => void;
+  onCheckIn?: (appt: Appointment) => void;
 }) {
   const color = STATUS_COLORS[appt.status];
   const isActive = appt.status === "scheduled" || appt.status === "in-progress";
@@ -181,7 +183,7 @@ function AppointmentCard({
                 <>
                   <Pressable
                     style={[styles.chip, { borderColor: "#F39C12", backgroundColor: "#F39C1218" }]}
-                    onPress={() => onStatusChange(appt.id, "in-progress")}
+                    onPress={() => onCheckIn ? onCheckIn(appt) : onStatusChange(appt.id, "in-progress")}
                   >
                     <Feather name="play" size={12} color="#F39C12" />
                     <Text style={[styles.chipText, { color: "#F39C12" }]}>Check In</Text>
@@ -229,6 +231,7 @@ function AppointmentCard({
 }
 
 export default function AppointmentsScreen() {
+  const router = useRouter();
   const {
     loadAppointments, createAppointment, updateAppointment, deleteAppointment,
     loadRiders, loadCustomers, loadTables, loadProducts,
@@ -347,6 +350,23 @@ export default function AppointmentsScreen() {
     await refresh();
   };
 
+  const handleCheckIn = async (appt: Appointment) => {
+    await updateAppointment({ ...appt, status: "in-progress" });
+    await refresh();
+    router.navigate({
+      pathname: "/(tabs)",
+      params: {
+        apptId: appt.id,
+        apptCustomerId: appt.customerId ?? "",
+        apptCustomerName: appt.customerName,
+        apptCustomerPhone: appt.customerPhone,
+        apptStylistId: appt.stylistId ?? "",
+        apptStylistName: appt.stylistName,
+        apptServiceName: appt.serviceName,
+      },
+    });
+  };
+
   const handleDelete = async (id: string) => {
     await deleteAppointment(id);
     setShowModal(false);
@@ -462,7 +482,7 @@ export default function AppointmentsScreen() {
           keyExtractor={(a) => a.id}
           contentContainerStyle={styles.list}
           renderItem={({ item }) => (
-            <AppointmentCard appt={item} onStatusChange={handleStatusChange} onEdit={openEdit} />
+            <AppointmentCard appt={item} onStatusChange={handleStatusChange} onEdit={openEdit} onCheckIn={handleCheckIn} />
           )}
         />
       )}
