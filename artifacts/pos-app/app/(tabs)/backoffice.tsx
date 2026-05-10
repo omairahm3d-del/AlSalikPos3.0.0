@@ -169,6 +169,7 @@ export default function BackOfficeScreen() {
   const [kotSettings, setKotSettings] = useState<KOTSettings>({ ...DEFAULT_KOT_SETTINGS });
   const [customerDisplay, setCustomerDisplay] = useState<CustomerDisplaySettings>({ ...DEFAULT_CUSTOMER_DISPLAY });
   const [weightBarcodeSettings, setWeightBarcodeSettings] = useState<WeightBarcodeSettings>({ ...DEFAULT_WEIGHT_BARCODE_SETTINGS });
+  const [customPrefixInput, setCustomPrefixInput] = useState("");
   const [bizSettings, setBizSettings] = useState<BusinessSettings | null>(null);
 
   const [staffList, setStaffList] = useState<Staff[]>([]);
@@ -2009,6 +2010,59 @@ export default function BackOfficeScreen() {
                     );
                   })}
                 </View>
+
+                {/* Custom prefix input */}
+                <Text style={[s.fieldLabel, { color: colors.mutedForeground, marginTop: 14 }]}>Custom Prefix</Text>
+                <Text style={[s.fieldHint, { color: colors.mutedForeground }]}>
+                  Add any 2-digit prefix used by your scale that is outside the 20–29 range.
+                </Text>
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 6, alignItems: "center" }}>
+                  <TextInput
+                    style={[s.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card, flex: 1, marginBottom: 0 }]}
+                    keyboardType="numeric"
+                    maxLength={2}
+                    placeholder="e.g. 10"
+                    placeholderTextColor={colors.mutedForeground}
+                    value={customPrefixInput}
+                    onChangeText={(v) => setCustomPrefixInput(v.replace(/[^0-9]/g, "").slice(0, 2))}
+                  />
+                  <TouchableOpacity
+                    onPress={() => {
+                      const p = customPrefixInput.trim().padStart(2, "0");
+                      if (p.length === 2 && !weightBarcodeSettings.prefixes.includes(p)) {
+                        setWeightBarcodeSettings({
+                          ...weightBarcodeSettings,
+                          prefixes: [...weightBarcodeSettings.prefixes, p].sort(),
+                        });
+                      }
+                      setCustomPrefixInput("");
+                    }}
+                    style={[s.chip, { backgroundColor: colors.primary, borderColor: colors.primary, borderRadius: colors.radius, paddingHorizontal: 14 }]}
+                  >
+                    <Feather name="plus" size={14} color="#fff" />
+                    <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+                {/* Chips for custom (non-standard) prefixes already in the list */}
+                {weightBarcodeSettings.prefixes.filter((p) => !["20","21","22","23","24","25","26","27","28","29"].includes(p)).length > 0 && (
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                    {weightBarcodeSettings.prefixes
+                      .filter((p) => !["20","21","22","23","24","25","26","27","28","29"].includes(p))
+                      .map((p) => (
+                        <TouchableOpacity
+                          key={p}
+                          onPress={() => setWeightBarcodeSettings({
+                            ...weightBarcodeSettings,
+                            prefixes: weightBarcodeSettings.prefixes.filter((x) => x !== p),
+                          })}
+                          style={[s.chip, { backgroundColor: colors.primary, borderColor: colors.primary, borderRadius: colors.radius }]}
+                        >
+                          <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>{p}</Text>
+                          <Feather name="x" size={12} color="#fff" />
+                        </TouchableOpacity>
+                      ))}
+                  </View>
+                )}
               </>
             )}
           </>
