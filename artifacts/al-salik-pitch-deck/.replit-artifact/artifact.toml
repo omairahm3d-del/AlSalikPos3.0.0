@@ -1,0 +1,31 @@
+kind = "slides"
+previewPath = "/al-salik-pitch-deck/"
+title = "Al Salik POS Pitch Deck"
+version = "1.0.0"
+id = "artifacts/al-salik-pitch-deck"
+router = "path"
+
+[[integratedSkills]]
+name = "slides"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/al-salik-pitch-deck/" ]
+localPort = 20015
+
+[services.development]
+run = "pnpm --filter @workspace/al-salik-pitch-deck run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/al-salik-pitch-deck", "run", "build" ]
+publicDir = "artifacts/al-salik-pitch-deck/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20015"
+BASE_PATH = "/al-salik-pitch-deck/"
