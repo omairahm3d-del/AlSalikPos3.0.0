@@ -186,6 +186,7 @@ export default function POSScreen() {
   }>();
   const [pendingAppt, setPendingAppt] = useState<typeof params | null>(null);
   const [activeApptId, setActiveApptId] = useState<string | null>(null);
+  const [activeApptChairId, setActiveApptChairId] = useState<string | null>(null);
 
   // Capture appointment checkout params when navigated from the Appointments tab.
   // Clear URL params immediately so re-focus doesn't re-trigger the fill.
@@ -213,8 +214,10 @@ export default function POSScreen() {
       setActiveApptId(appt.apptId);
     }
 
-    // Occupy the chair that was booked for this appointment.
+    // Occupy the chair that was booked for this appointment, and remember it
+    // so the void and billing handlers can free it when the order is resolved.
     if (appt.apptChairId) {
+      setActiveApptChairId(appt.apptChairId);
       setTableStatus(appt.apptChairId, "occupied").catch(() => {});
     }
 
@@ -743,10 +746,14 @@ export default function POSScreen() {
         setPendingLaundryOrderId(null);
       }
 
-      // Saloon: mark the checked-in appointment as completed on billing.
+      // Saloon: mark the checked-in appointment as completed and free the chair.
       if (isSaloon && activeApptId) {
         try { await updateAppointmentStatus(activeApptId, "completed"); } catch {}
         setActiveApptId(null);
+      }
+      if (isSaloon && activeApptChairId) {
+        try { await setTableStatus(activeApptChairId, "available"); } catch {}
+        setActiveApptChairId(null);
       }
 
       clearCart();
@@ -769,7 +776,7 @@ export default function POSScreen() {
     saveSale, currentStaff, selectedTable, heldOrderInfo, selectedRider, orderType, orderDiscountType, orderDiscountValue,
     loyaltyRedeemPtsActual, splitEntries, clearCart, fetchData, kotSettings, businessSettings,
     cashTendered, finalTotal, isSaloon, isLaundry, allPackages, purchaseCustomerPackage, redeemPackageSession,
-    packageRedemptions, collectLaundryOrder, pendingLaundryOrderId, activeApptId, updateAppointmentStatus]);
+    packageRedemptions, collectLaundryOrder, pendingLaundryOrderId, activeApptId, activeApptChairId, updateAppointmentStatus]);
 
   const handleAddSplit = useCallback(() => {
     const amt = parseFloat(splitAmount);
@@ -1214,11 +1221,13 @@ export default function POSScreen() {
                       const tableId = heldOrderInfo?.tableId ?? selectedTable?.id;
                       const heldId = heldOrderInfo?.id;
                       const voidingApptId = activeApptId;
+                      const voidingChairId = activeApptChairId;
                       clearCart();
                       setVoidConfirm(false);
                       setSelectedTable(null);
                       setSelectedRider(null);
                       setActiveApptId(null);
+                      setActiveApptChairId(null);
                       if (tableId) {
                         try { await setTableStatus(tableId, "available"); } catch {}
                       }
@@ -1227,6 +1236,9 @@ export default function POSScreen() {
                       }
                       if (isSaloon && voidingApptId) {
                         try { await updateAppointmentStatus(voidingApptId, "no-show"); } catch {}
+                      }
+                      if (isSaloon && voidingChairId) {
+                        try { await setTableStatus(voidingChairId, "available"); } catch {}
                       }
                     }}
                     style={{ backgroundColor: colors.destructive, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}
