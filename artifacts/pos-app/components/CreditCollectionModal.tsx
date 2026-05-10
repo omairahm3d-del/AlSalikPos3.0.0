@@ -16,7 +16,7 @@ import * as Haptics from "expo-haptics";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
 import { generateCreditPaymentReceiptHTML } from "@/lib/receiptTemplate";
-import type { Customer, Sale } from "@/types";
+import type { CreditPayment, Customer, Sale } from "@/types";
 import { formatCurrency } from "@/types";
 
 interface CreditEntry {
@@ -40,7 +40,7 @@ const PAYMENT_METHODS: { key: PayMethod; icon: "dollar-sign" | "credit-card" | "
 
 export function CreditCollectionModal({ visible, onClose }: Props) {
   const colors = useColors();
-  const { loadCustomers, loadSales, recordCreditPayment, loadBusinessSettings } = useDatabase();
+  const { loadCustomers, loadSales, recordCreditPayment, loadBusinessSettings, loadCreditPayments } = useDatabase();
 
   const [query, setQuery] = useState("");
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
@@ -48,6 +48,7 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
   const [loading, setLoading] = useState(false);
 
   const [selected, setSelected] = useState<CreditEntry | null>(null);
+  const [selectedPayments, setSelectedPayments] = useState<CreditPayment[]>([]);
   const [payAmount, setPayAmount] = useState("");
   const [payNote, setPayNote] = useState("");
   const [payMethod, setPayMethod] = useState<PayMethod>("Cash");
@@ -129,12 +130,18 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
     }));
   }, [query, creditCustomers, allSales, allCustomers]);
 
-  const handleSelectEntry = (entry: CreditEntry) => {
+  const handleSelectEntry = async (entry: CreditEntry) => {
     setSelected(entry);
     setPayAmount(entry.customer.creditBalance.toFixed(2));
     setPayNote("");
     setPayMethod("Cash");
     setErrorMsg("");
+    try {
+      const payments = await loadCreditPayments(entry.customer.id);
+      setSelectedPayments(payments);
+    } catch {
+      setSelectedPayments([]);
+    }
   };
 
   const handleRecordPayment = async () => {
@@ -280,25 +287,53 @@ export function CreditCollectionModal({ visible, onClose }: Props) {
             </View>
           </View>
 
-          {/* Invoices */}
-          {selected.sales.length > 0 && (
-            <View style={[s.invoiceBox, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}>
-              <Text style={[s.sectionLabel, { color: colors.foreground }]}>Credit Invoices</Text>
-              {[...selected.sales]
-                .sort((a, b) => b.createdAt - a.createdAt)
-                .map((sale) => (
+          {/* Invoices — only show outstanding / partially-paid ones */}
+          {(() => {
+            // Greedy FIFO settlement: oldest invoices settled first by payment history.
+            const sorted = [...selected.sales].sort((a, b) => a.createdAt - b.createdAt);
+            const totalPaid = selectedPayments.reduce((s, p) => s + p.amount, 0);
+            let remaining = totalPaid;
+            type InvStatus = { sale: Sale; outstanding: number; partial: boolean };
+            const statuses: InvStatus[] = sorted.map((sale) => {
+              if (remaining >= sale.total) {
+                remaining -= sale.total;
+                return { sale, outstanding: 0, partial: false };
+              }
+              const paid = remaining;
+              remaining = 0;
+              return { sale, outstanding: Math.round((sale.total - paid) * 100) / 100, partial: paid > 0 };
+            });
+            const visible = statuses.filter((st) => st.outstanding > 0);
+            if (visible.length === 0) return null;
+            return (
+              <View style={[s.invoiceBox, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}>
+                <Text style={[s.sectionLabel, { color: colors.foreground }]}>
+                  Outstanding Invoices ({visible.length})
+                </Text>
+                {[...visible].reverse().map(({ sale, outstanding, partial }) => (
                   <View key={sale.id} style={[s.invoiceRow, { borderTopColor: colors.border }]}>
                     <View style={{ flex: 1 }}>
-                      <Text style={[s.invNum, { color: colors.foreground }]}>{sale.invoiceNumber}</Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <Text style={[s.invNum, { color: colors.foreground }]}>{sale.invoiceNumber}</Text>
+                        {partial && (
+                          <View style={{ backgroundColor: "#F39C12" + "22", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                            <Text style={{ color: "#F39C12", fontSize: 9, fontWeight: "700" }}>PARTIAL</Text>
+                          </View>
+                        )}
+                      </View>
                       <Text style={[s.invDate, { color: colors.mutedForeground }]}>
                         {new Date(sale.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                        {partial ? `  ·  Invoice total ${formatCurrency(sale.total)}` : ""}
                       </Text>
                     </View>
-                    <Text style={[s.invAmt, { color: colors.foreground }]}>{formatCurrency(sale.total)}</Text>
+                    <Text style={[s.invAmt, { color: partial ? "#F39C12" : colors.destructive }]}>
+                      {formatCurrency(outstanding)}
+                    </Text>
                   </View>
                 ))}
-            </View>
-          )}
+              </View>
+            );
+          })()}
 
           {/* Payment method */}
           <Text style={[s.fieldLabel, { color: colors.mutedForeground }]}>Payment Method</Text>
