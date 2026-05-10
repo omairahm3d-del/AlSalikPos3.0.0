@@ -148,8 +148,13 @@ export default function LaundryOrdersScreen() {
           <View style={styles.cardTopLeft}>
             <Text style={[styles.ticketNum, { color: colors.foreground }]}>{item.ticketNumber}</Text>
             <View style={[styles.typeBadge, { backgroundColor: item.orderType === "express" ? "#EF444418" : "#3B82F618" }]}>
+              <Feather
+                name={item.orderType === "express" ? "zap" : "package"}
+                size={10}
+                color={item.orderType === "express" ? "#EF4444" : "#3B82F6"}
+              />
               <Text style={[styles.typeBadgeTxt, { color: item.orderType === "express" ? "#EF4444" : "#3B82F6" }]}>
-                {item.orderType === "express" ? "⚡ Express" : "📦 Drop-off"}
+                {item.orderType === "express" ? "Express" : "Drop-off"}
               </Text>
             </View>
           </View>
@@ -459,8 +464,8 @@ const styles = StyleSheet.create({
   cardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   cardTopLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
   ticketNum: { fontSize: 16, fontWeight: "700", fontFamily: "Inter_700Bold" },
-  typeBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
-  typeBadgeTxt: { fontSize: 11, fontWeight: "600" },
+  typeBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  typeBadgeTxt: { fontSize: 11, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
   total: { fontSize: 16, fontWeight: "700", fontFamily: "Inter_700Bold" },
   customerName: { fontSize: 14, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
   customerPhone: { fontSize: 12 },
