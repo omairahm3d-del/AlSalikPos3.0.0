@@ -64,7 +64,7 @@ export default function POSScreen() {
   const phoneColumns = isLandscape ? 3 : 2;
   const cartPaneWidth = Math.max(260, Math.min(Math.floor(width * 0.36), 380));
 
-  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder, loadStaff, loadAllModifierGroups, loadPackages, purchaseCustomerPackage, loadCustomerPackages, redeemPackageSession, createLaundryOrder, collectLaundryOrder } = useDatabase();
+  const { loadProducts, saveSale, loadTables, loadBusinessSettings, loadTaxGroups, loadCategories, saveHeldOrder, loadRiders, loadSaleByInvoiceNumber, loadCustomers, recordCreditPayment, setTableStatus, deleteHeldOrder, loadStaff, loadAllModifierGroups, loadPackages, purchaseCustomerPackage, loadCustomerPackages, redeemPackageSession, createLaundryOrder, collectLaundryOrder, updateAppointmentStatus } = useDatabase();
   const { currentStaff } = useStaff();
   const { isSaloon, isLaundry, isRetail, tableLabelSingular, tableLabel, productLabel } = useWorkMode();
   const { session } = useLicense();
@@ -181,8 +181,10 @@ export default function POSScreen() {
     apptStylistId?: string;
     apptStylistName?: string;
     apptServiceName?: string;
+    apptChairId?: string;
   }>();
   const [pendingAppt, setPendingAppt] = useState<typeof params | null>(null);
+  const [activeApptId, setActiveApptId] = useState<string | null>(null);
 
   // Capture appointment checkout params when navigated from the Appointments tab.
   // Clear URL params immediately so re-focus doesn't re-trigger the fill.
@@ -192,17 +194,28 @@ export default function POSScreen() {
     router.setParams({
       apptId: undefined, apptCustomerId: undefined, apptCustomerName: undefined,
       apptCustomerPhone: undefined, apptStylistId: undefined,
-      apptStylistName: undefined, apptServiceName: undefined,
+      apptStylistName: undefined, apptServiceName: undefined, apptChairId: undefined,
     });
   }, [params.apptId]);
 
   // Process a pending appointment fill once products and business settings are ready.
   // Adds the service to the cart (with stylist pre-assigned), sets the customer,
-  // and skips the stylist-picker modal that normally appears in saloon mode.
+  // occupies the booked chair, and skips the stylist-picker modal that normally
+  // appears in saloon mode.
   useEffect(() => {
     if (!pendingAppt || loading) return;
     const appt = pendingAppt;
     setPendingAppt(null);
+
+    // Track which appointment is being serviced so billing/void can update its status.
+    if (appt.apptId) {
+      setActiveApptId(appt.apptId);
+    }
+
+    // Occupy the chair that was booked for this appointment.
+    if (appt.apptChairId) {
+      setTableStatus(appt.apptChairId, "occupied").catch(() => {});
+    }
 
     const vatEnabled = businessSettings?.vatEnabled !== false;
     if (appt.apptServiceName) {
@@ -729,6 +742,12 @@ export default function POSScreen() {
         setPendingLaundryOrderId(null);
       }
 
+      // Saloon: mark the checked-in appointment as completed on billing.
+      if (isSaloon && activeApptId) {
+        try { await updateAppointmentStatus(activeApptId, "completed"); } catch {}
+        setActiveApptId(null);
+      }
+
       clearCart();
       setShowPayment(false);
       setShowCart(false);
@@ -749,7 +768,7 @@ export default function POSScreen() {
     saveSale, currentStaff, selectedTable, heldOrderInfo, selectedRider, orderType, orderDiscountType, orderDiscountValue,
     loyaltyRedeemPtsActual, splitEntries, clearCart, fetchData, kotSettings, businessSettings,
     cashTendered, finalTotal, isSaloon, isLaundry, allPackages, purchaseCustomerPackage, redeemPackageSession,
-    packageRedemptions, collectLaundryOrder, pendingLaundryOrderId]);
+    packageRedemptions, collectLaundryOrder, pendingLaundryOrderId, activeApptId, updateAppointmentStatus]);
 
   const handleAddSplit = useCallback(() => {
     const amt = parseFloat(splitAmount);
@@ -1193,15 +1212,20 @@ export default function POSScreen() {
                     onPress={async () => {
                       const tableId = heldOrderInfo?.tableId ?? selectedTable?.id;
                       const heldId = heldOrderInfo?.id;
+                      const voidingApptId = activeApptId;
                       clearCart();
                       setVoidConfirm(false);
                       setSelectedTable(null);
                       setSelectedRider(null);
+                      setActiveApptId(null);
                       if (tableId) {
                         try { await setTableStatus(tableId, "available"); } catch {}
                       }
                       if (heldId) {
                         try { await deleteHeldOrder(heldId); } catch {}
+                      }
+                      if (isSaloon && voidingApptId) {
+                        try { await updateAppointmentStatus(voidingApptId, "no-show"); } catch {}
                       }
                     }}
                     style={{ backgroundColor: colors.destructive, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}

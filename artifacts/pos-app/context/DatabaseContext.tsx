@@ -836,6 +836,10 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     );
   }, [db]);
 
+  const updateAppointmentStatus = useCallback(async (id: string, status: Appointment["status"]): Promise<void> => {
+    await db.runAsync("UPDATE appointments SET status=? WHERE id=?", [status, id]);
+  }, [db]);
+
   const deleteAppointment = useCallback(async (id: string): Promise<void> => {
     await db.runAsync("DELETE FROM appointments WHERE id=?", [id]);
   }, [db]);
@@ -1860,7 +1864,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       loadCategories, createCategory, updateCategory, deleteCategory,
       loadSplitPayments, saveZReport, loadZReports,
       loadRiders, createRider, updateRider, deleteRider,
-      loadAppointments, createAppointment, updateAppointment, deleteAppointment,
+      loadAppointments, createAppointment, updateAppointment, updateAppointmentStatus, deleteAppointment,
       saveHeldOrder, loadHeldOrders, loadHeldOrderByTable, deleteHeldOrder, updateKdsStatus,
       loadIngredients, createIngredient, updateIngredient, deleteIngredient, updateIngredientStock,
       loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,

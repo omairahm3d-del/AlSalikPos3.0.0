@@ -363,6 +363,7 @@ export default function AppointmentsScreen() {
         apptStylistId: appt.stylistId ?? "",
         apptStylistName: appt.stylistName,
         apptServiceName: appt.serviceName,
+        apptChairId: appt.chairId ?? "",
       },
     });
   };

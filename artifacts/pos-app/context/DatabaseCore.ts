@@ -254,6 +254,7 @@ export interface DatabaseContextValue {
   loadAppointments: (dateMs?: number) => Promise<Appointment[]>;
   createAppointment: (appt: Omit<Appointment, "id" | "createdAt">) => Promise<Appointment>;
   updateAppointment: (appt: Appointment) => Promise<void>;
+  updateAppointmentStatus: (id: string, status: Appointment["status"]) => Promise<void>;
   deleteAppointment: (id: string) => Promise<void>;
 
   saveHeldOrder: (order: Omit<HeldOrder, "id" | "createdAt" | "updatedAt"> & { id?: string }) => Promise<HeldOrder>;

@@ -832,6 +832,11 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     await setJson(K.appointments, existing.map((a) => a.id === appt.id ? appt : a));
   }, []);
 
+  const updateAppointmentStatus = useCallback(async (id: string, status: Appointment["status"]): Promise<void> => {
+    const existing = await getJson<Appointment[]>(K.appointments, []);
+    await setJson(K.appointments, existing.map((a) => a.id === id ? { ...a, status } : a));
+  }, []);
+
   const deleteAppointment = useCallback(async (id: string): Promise<void> => {
     const existing = await getJson<Appointment[]>(K.appointments, []);
     await setJson(K.appointments, existing.filter((a) => a.id !== id));
@@ -1584,7 +1589,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       loadCategories, createCategory, updateCategory, deleteCategory,
       loadSplitPayments, saveZReport, loadZReports,
       loadRiders, createRider, updateRider, deleteRider,
-      loadAppointments, createAppointment, updateAppointment, deleteAppointment,
+      loadAppointments, createAppointment, updateAppointment, updateAppointmentStatus, deleteAppointment,
       saveHeldOrder, loadHeldOrders, loadHeldOrderByTable, deleteHeldOrder, updateKdsStatus,
       loadIngredients, createIngredient, updateIngredient, deleteIngredient, updateIngredientStock,
       loadRecipeIngredients, saveRecipeIngredients, deleteRecipeIngredients,
