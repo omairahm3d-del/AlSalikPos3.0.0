@@ -248,6 +248,54 @@ A valid signature returns `Valid` / `HashMismatch` will not appear.
 
 ---
 
+## Verifying a Download with SHA-256 Checksums
+
+Every `build:installer` / `build:installer-32` run writes a `SHA256SUMS.txt` file
+into the same folder as the installer EXE. The file uses the standard `sha256sum`
+format (`<hash>  <filename>`) so recipients can confirm the download is unaltered.
+
+### File locations after a build
+
+| Edition | Checksum file |
+|---------|---------------|
+| 64-bit  | `dist/SHA256SUMS.txt` |
+| 32-bit  | `dist-32/SHA256SUMS.txt` |
+
+### Verifying on Linux / macOS
+
+```bash
+# 64-bit
+cd dist
+sha256sum -c SHA256SUMS.txt
+
+# 32-bit
+cd dist-32
+sha256sum -c SHA256SUMS.txt
+```
+
+A successful check prints `Al Salik POS Setup <version>.exe: OK` (or the 32-bit equivalent).
+
+### Verifying on Windows (PowerShell)
+
+```powershell
+# 64-bit — run from the dist\ folder (replace <version> with the actual version)
+$exeName  = "Al Salik POS Setup <version>.exe"
+$expected = (Get-Content SHA256SUMS.txt | Where-Object { $_ -match [regex]::Escape($exeName) }).Split("  ")[0]
+$actual   = (Get-FileHash $exeName -Algorithm SHA256).Hash.ToLower()
+if ($actual -eq $expected) { "OK" } else { "MISMATCH — do not run this file" }
+```
+
+Replace `<version>` with the actual version number (e.g. `1.0.0`). For the 32-bit
+build, use `Al Salik POS Setup <version> (32-bit).exe` and run from `dist-32\`.
+
+### Distributing checksums
+
+Publish `SHA256SUMS.txt` on the same page or channel where the installer is offered
+(website, Teams message, file share). Recipients download it separately and run the
+verification command above before installing.
+
+---
+
 ## Cross-compiling from Linux/macOS
 
 electron-builder supports building Windows installers from Linux/macOS with no extra setup.
