@@ -137,8 +137,9 @@ jobs:
 
           echo "Bumping installer version to $VERSION"
 
-          # Update desktop-installer/package.json — sign-installers.js reads
-          # this to construct the output EXE filename.
+          # Update desktop-installer/package.json — the npm build scripts read
+          # package.json.version and pass it as /DAPP_VERSION to makensis, so
+          # this single update controls the OutFile name and the registry entry.
           node -e "
             const fs = require('fs');
             const path = 'desktop-installer/package.json';
@@ -147,11 +148,6 @@ jobs:
             fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
             console.log('package.json updated to $VERSION');
           "
-
-          # Update APP_VERSION in both NSIS scripts — controls OutFile name
-          # and the version string written to Add/Remove Programs registry.
-          sed -i "s/^!define APP_VERSION.*$/!define APP_VERSION   \"$VERSION\"/" desktop-installer/installer.nsi
-          sed -i "s/^!define APP_VERSION.*$/!define APP_VERSION   \"$VERSION\"/" desktop-installer/installer-32.nsi
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
