@@ -416,6 +416,58 @@ by Al Salik.
 
 ---
 
+## Packaging a Release Archive
+
+After building and checksumming the installer, run `pack:release` to bundle everything
+into a single distributable archive:
+
+```bash
+# 64-bit
+npm run pack:release
+
+# 32-bit
+npm run pack:release-32
+```
+
+### Archive contents
+
+| File | Description |
+|------|-------------|
+| `Al Salik POS Setup <version>.exe` | Installer executable |
+| `SHA256SUMS.txt` | SHA-256 checksum (standard `sha256sum -c` format) |
+| `SHA256SUMS.txt.asc` *(when GPG-signed)* | Detached GPG signature of the checksum file |
+
+The script exits with an error if the installer or checksum file is missing — you must
+run `build:installer` (or `build:installer-32`) before packaging.
+
+### Output files
+
+| Edition | Archive |
+|---------|---------|
+| 64-bit  | `desktop-installer/AlSalikPOS-Installer.tar.gz` |
+| 32-bit  | `desktop-installer/AlSalikPOS-Installer-32.tar.gz` |
+
+### Typical full release workflow
+
+```bash
+# 64-bit release
+npm run export-web
+npm run build:win
+npm run rebuild-web
+npm run build:installer   # also runs sign-installers.js and checksum.js
+npm run pack:release      # bundles EXE + SHA256SUMS.txt (+ .asc) into tar.gz
+
+# 32-bit release (export-web already done above)
+npm run build:all-32      # build:win7-32 + rebuild-web-32 + build:installer-32
+npm run pack:release-32
+```
+
+Upload the resulting `.tar.gz` file to your download page or share it over Teams/email.
+Recipients unpack it and immediately have both the installer and its checksum in the same
+folder — no separate download required.
+
+---
+
 ## Cross-compiling from Linux/macOS
 
 electron-builder supports building Windows installers from Linux/macOS with no extra setup.

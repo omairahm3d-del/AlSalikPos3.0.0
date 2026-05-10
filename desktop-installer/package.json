@@ -21,7 +21,9 @@
     "build:all": "pnpm run export-web && pnpm run rebuild-web && pnpm run build:installer",
     "build:win": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --x64",
     "build:win7-32": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --ia32 --config electron-builder.win7.json",
-    "build:all-32": "pnpm run build:win7-32 && pnpm run rebuild-web-32 && pnpm run build:installer-32"
+    "build:all-32": "pnpm run build:win7-32 && pnpm run rebuild-web-32 && pnpm run build:installer-32",
+    "pack:release": "node pack-release.js",
+    "pack:release-32": "node pack-release.js 32"
   },
   "devDependencies": {
     "electron": "^33.4.1",
