@@ -20,3 +20,20 @@ yarn-error.*
 *.tsbuildinfo
 .vercel
 .build-notify.json
+
+# Workspace-level large directories not needed for Android build
+.cache/
+desktop-installer/dist/
+desktop-installer/dist-32/
+desktop-installer/node_modules/
+desktop-installer/www/
+desktop-installer/www-new/
+desktop-installer/AlSalikPOS-Installer.tar.gz
+desktop-installer/AlSalikPOS-Installer-32.tar.gz
+artifacts/al-salik-demo-video/node_modules/
+artifacts/admin/node_modules/
+artifacts/back-office/node_modules/
+artifacts/api-server/node_modules/
+artifacts/mockup-sandbox/node_modules/
+lib/saas-db/node_modules/
+lib/db/node_modules/
