@@ -89,15 +89,13 @@ jobs:
         run: npm install
 
       # ── Signing preflight ────────────────────────────────────────────────────
-      # Fail fast before spending time on the build if the signing secrets are
-      # missing and signing is expected.
-      #   • Tag builds: always require signing — unsigned release installers
-      #     would trigger the Windows SmartScreen "Unknown Publisher" warning.
-      #   • workflow_dispatch: required unless build_only=true was chosen.
-      - name: Verify signing secrets are present (when signing is expected)
-        if: |
-          startsWith(github.ref, 'refs/tags/v') ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.build_only != 'true')
+      # Check whether signing secrets are present and emit a warning (not a
+      # hard failure) when they are missing.  This lets tag builds still
+      # produce unsigned installers when code-signing is not yet configured,
+      # without blocking the release pipeline.  The Resolve-signing-mode step
+      # below will disable signing automatically if secrets are absent.
+      - name: Check signing secrets
+        id: signing-preflight
         env:
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
@@ -106,13 +104,12 @@ jobs:
           [ -z "$WIN_CSC_LINK" ]         && missing+=("WIN_CSC_LINK")
           [ -z "$WIN_CSC_KEY_PASSWORD" ] && missing+=("WIN_CSC_KEY_PASSWORD")
           if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::The following required secrets are not set: ${missing[*]}"
-            echo "::error::Signing is enabled but the secrets are missing. Either:"
-            echo "::error::  • Add WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD to repository secrets, or"
-            echo "::error::  • Re-run with build_only=true to produce an unsigned installer."
-            exit 1
+            echo "secrets_present=false" >> $GITHUB_OUTPUT
+            echo "::warning::Signing secrets not set (${missing[*]}). Installer will be produced unsigned."
+          else
+            echo "secrets_present=true" >> $GITHUB_OUTPUT
+            echo "Signing secrets present."
           fi
-          echo "Signing secrets present — proceeding with signed build."
 
       # ── Version bump ────────────────────────────────────────────────────────
       # Fires only for tags matching vX.Y.Z (e.g. v1.2.3).
@@ -159,14 +156,17 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       # ── Determine whether to sign ────────────────────────────────────────────
-      # For tag pushes: always sign (secrets check already passed above).
-      # For workflow_dispatch: sign unless build_only=true was explicitly chosen.
+      # Signing is enabled only when secrets are present AND the caller has not
+      # opted out via build_only=true.  Missing secrets always disable signing
+      # (with a warning already emitted above) rather than failing the job.
       - name: Resolve signing mode
         id: sign-mode
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.build_only }}" == "true" ]]; then
+          secrets_present="${{ steps.signing-preflight.outputs.secrets_present }}"
+          build_only="${{ github.event.inputs.build_only }}"
+          if [[ "$secrets_present" != "true" || "$build_only" == "true" ]]; then
             echo "enabled=false" >> $GITHUB_OUTPUT
-            echo "Signing disabled by build_only=true input."
+            echo "Signing disabled (secrets_present=$secrets_present, build_only=$build_only)."
           else
             echo "enabled=true" >> $GITHUB_OUTPUT
             echo "Signing enabled."
@@ -174,8 +174,12 @@ jobs:
 
       # ── Expo web export ─────────────────────────────────────────────────────
       # Produces desktop-installer/www-new — shared by both editions.
+      # GIT_OPTIONAL_LOCKS=0 prevents Expo from acquiring a git index lock
+      # on the CI runner, which can cause stale lock failures.
       - name: Export Expo web build
         working-directory: desktop-installer
+        env:
+          GIT_OPTIONAL_LOCKS: "0"
         run: npm run export-web
 
       # ── 64-bit build ────────────────────────────────────────────────────────
