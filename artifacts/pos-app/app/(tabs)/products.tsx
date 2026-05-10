@@ -25,7 +25,7 @@ import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useWorkMode } from "@/context/WorkModeContext";
-import type { Category, Ingredient, ModifierGroup, PrinterConfig, Product, TaxGroup } from "@/types";
+import type { Category, Ingredient, ModifierGroup, PrepaidPackage, PrinterConfig, Product, TaxGroup } from "@/types";
 import { CURRENCY, PRODUCT_COLORS, formatCurrency } from "@/types";
 
 type ModifierOptionDraft = { name: string; priceAdjustment: number };
@@ -42,6 +42,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     loadTaxGroups, loadCategories, loadBusinessSettings,
     loadIngredients, loadRecipeIngredients, saveRecipeIngredients,
     loadModifierGroups, saveModifierGroups,
+    loadPackages, createPackage, updatePackage, deletePackage,
   } = useDatabase();
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -92,6 +93,19 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
   const [optionDraftName, setOptionDraftName] = useState("");
   const [optionDraftPrice, setOptionDraftPrice] = useState("0");
 
+  // ── Packages tab (saloon only) ──────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState<"services" | "packages">("services");
+  const [packages, setPackages] = useState<PrepaidPackage[]>([]);
+  const [pkgModalVisible, setPkgModalVisible] = useState(false);
+  const [editingPackage, setEditingPackage] = useState<PrepaidPackage | null>(null);
+  const [pkgName, setPkgName] = useState("");
+  const [pkgDescription, setPkgDescription] = useState("");
+  const [pkgPrice, setPkgPrice] = useState("");
+  const [pkgSessions, setPkgSessions] = useState("5");
+  const [pkgApplicableAll, setPkgApplicableAll] = useState(true);
+  const [pkgApplicableIds, setPkgApplicableIds] = useState<string[]>([]);
+  const [pkgIsActive, setPkgIsActive] = useState(true);
+
   const pickImage = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -130,8 +144,9 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     setCategoryOptions(catNames);
     setPrinterConfigs(biz.printerSettings?.printers ?? []);
     setIngredients(ings);
+    if (isSaloon) setPackages(await loadPackages());
     setLoading(false);
-  }, [loadProducts, loadTaxGroups, loadCategories, loadBusinessSettings, loadIngredients]);
+  }, [loadProducts, loadTaxGroups, loadCategories, loadBusinessSettings, loadIngredients, isSaloon, loadPackages]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
@@ -301,6 +316,56 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
     ]);
   };
 
+  // ── Package handlers ────────────────────────────────────────────────────
+  const openAddPkg = () => {
+    setEditingPackage(null);
+    setPkgName(""); setPkgDescription(""); setPkgPrice(""); setPkgSessions("5");
+    setPkgApplicableAll(true); setPkgApplicableIds([]); setPkgIsActive(true);
+    setPkgModalVisible(true);
+  };
+
+  const openEditPkg = (pkg: PrepaidPackage) => {
+    setEditingPackage(pkg);
+    setPkgName(pkg.name); setPkgDescription(pkg.description);
+    setPkgPrice(pkg.price.toFixed(2)); setPkgSessions(String(pkg.totalSessions));
+    setPkgApplicableAll(pkg.applicableServiceIds === null);
+    setPkgApplicableIds(pkg.applicableServiceIds ?? []);
+    setPkgIsActive(pkg.isActive);
+    setPkgModalVisible(true);
+  };
+
+  const handleSavePkg = async () => {
+    const priceNum = parseFloat(pkgPrice);
+    const sessionsNum = parseInt(pkgSessions, 10);
+    if (!pkgName.trim() || isNaN(priceNum) || priceNum <= 0 || isNaN(sessionsNum) || sessionsNum < 1) {
+      Alert.alert("Invalid input", "Enter a valid name, price, and number of sessions.");
+      return;
+    }
+    const payload = {
+      name: pkgName.trim(),
+      description: pkgDescription.trim(),
+      price: priceNum,
+      totalSessions: sessionsNum,
+      applicableServiceIds: pkgApplicableAll ? null : pkgApplicableIds.length > 0 ? pkgApplicableIds : null,
+      isActive: pkgIsActive,
+    };
+    if (editingPackage) {
+      await updatePackage({ ...editingPackage, ...payload });
+    } else {
+      await createPackage(payload);
+    }
+    setPkgModalVisible(false);
+    setPackages(await loadPackages());
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const handleDeletePkg = (pkg: PrepaidPackage) => {
+    Alert.alert("Delete Package", `Delete "${pkg.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => { await deletePackage(pkg.id); setPackages(await loadPackages()); } },
+    ]);
+  };
+
   const numColumns = width >= 1200 ? 5 : width >= 900 ? 4 : width >= 600 ? 3 : 2;
   const topPadding = embedded ? 0 : (Platform.OS === "web" ? insets.top + 8 : 0);
 
@@ -369,41 +434,196 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background, paddingTop: topPadding }]}>
-      <View style={styles.statsRow}>
-        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-          <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{productLabel}</Text>
-          <Text style={[styles.statValue, { color: colors.foreground }]}>{products.length}</Text>
-        </View>
-        <TouchableOpacity
-          onPress={() => setFilterLowStock(!filterLowStock)}
-          style={[styles.statCard, { backgroundColor: colors.card, borderColor: filterLowStock ? "#F39C12" : colors.border, borderRadius: colors.radius }]}
-        >
-          <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Low Stock</Text>
-          <Text style={[styles.statValue, { color: lowStockCount > 0 ? "#F39C12" : colors.foreground }]}>{lowStockCount}</Text>
-        </TouchableOpacity>
-        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-          <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Out of Stock</Text>
-          <Text style={[styles.statValue, { color: outOfStockCount > 0 ? colors.destructive : colors.foreground }]}>{outOfStockCount}</Text>
-        </View>
-      </View>
 
-      <View style={[styles.searchWrap, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius }]}>
-        <Feather name="search" size={16} color={colors.mutedForeground} />
-        <TextInput value={search} onChangeText={setSearch} placeholder={`Search ${productLabel.toLowerCase()}...`} placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} />
-        {search.length > 0 && <TouchableOpacity onPress={() => setSearch("")}><Feather name="x" size={16} color={colors.mutedForeground} /></TouchableOpacity>}
-      </View>
-
-      {loading ? null : filteredProducts.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <EmptyState icon="package" title={filterLowStock ? "No low stock items" : "No products"} subtitle={filterLowStock ? "All products are well stocked" : "Tap + to add your first product"} />
+      {/* Tab bar — only in saloon mode */}
+      {isSaloon && (
+        <View style={{ flexDirection: "row", marginHorizontal: 16, marginTop: 12, marginBottom: 4, borderRadius: colors.radius, overflow: "hidden", borderWidth: 1, borderColor: colors.border }}>
+          {(["services", "packages"] as const).map((tab) => {
+            const active = activeTab === tab;
+            return (
+              <TouchableOpacity
+                key={tab}
+                onPress={() => setActiveTab(tab)}
+                style={{ flex: 1, paddingVertical: 9, alignItems: "center", backgroundColor: active ? colors.primary : colors.secondary }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: "700", color: active ? "#fff" : colors.mutedForeground, textTransform: "capitalize" }}>
+                  {tab === "services" ? "Services" : "📦 Packages"}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
-      ) : (
-        <FlatList data={filteredProducts} renderItem={renderProduct} keyExtractor={(item) => item.id} numColumns={numColumns} key={String(numColumns)} contentContainerStyle={styles.grid} showsVerticalScrollIndicator={false} />
       )}
 
-      <TouchableOpacity onPress={openAdd} style={[styles.fab, { backgroundColor: colors.primary, borderRadius: 28, bottom: insets.bottom + 20 }]}>
+      {activeTab === "packages" ? (
+        /* ── Packages list ─────────────────────────────────────────── */
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+          {packages.length === 0 ? (
+            <EmptyState icon="package" title="No Packages" subtitle="Tap + to create your first service package" />
+          ) : (
+            packages.map((pkg) => (
+              <TouchableOpacity
+                key={pkg.id}
+                onPress={() => openEditPkg(pkg)}
+                onLongPress={() => handleDeletePkg(pkg)}
+                activeOpacity={0.8}
+                style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: pkg.isActive ? "#9C27B0" + "44" : colors.border, marginBottom: 10, padding: 14, opacity: pkg.isActive ? 1 : 0.55 }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: "#9C27B0" + "18", alignItems: "center", justifyContent: "center", marginRight: 12 }}>
+                    <Text style={{ fontSize: 20 }}>📦</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                      <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, flex: 1 }} numberOfLines={1}>{pkg.name}</Text>
+                      {!pkg.isActive && (
+                        <View style={{ backgroundColor: colors.mutedForeground + "22", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                          <Text style={{ fontSize: 9, fontWeight: "700", color: colors.mutedForeground }}>INACTIVE</Text>
+                        </View>
+                      )}
+                    </View>
+                    {!!pkg.description && (
+                      <Text style={{ fontSize: 12, color: colors.mutedForeground, marginBottom: 6 }} numberOfLines={2}>{pkg.description}</Text>
+                    )}
+                    <View style={{ flexDirection: "row", gap: 16 }}>
+                      <View style={{ alignItems: "center" }}>
+                        <Text style={{ fontSize: 18, fontWeight: "700", color: "#9C27B0" }}>{formatCurrency(pkg.price)}</Text>
+                        <Text style={{ fontSize: 10, color: colors.mutedForeground, textTransform: "uppercase" }}>Price</Text>
+                      </View>
+                      <View style={{ alignItems: "center" }}>
+                        <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground }}>{pkg.totalSessions}</Text>
+                        <Text style={{ fontSize: 10, color: colors.mutedForeground, textTransform: "uppercase" }}>Sessions</Text>
+                      </View>
+                      <View style={{ flex: 1, alignItems: "flex-end" }}>
+                        <Text style={{ fontSize: 12, color: pkg.applicableServiceIds ? "#E91E8C" : colors.mutedForeground }}>
+                          {pkg.applicableServiceIds
+                            ? `${pkg.applicableServiceIds.length} service${pkg.applicableServiceIds.length !== 1 ? "s" : ""}`
+                            : "Any service"}
+                        </Text>
+                        <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Applicable to</Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
+        </ScrollView>
+      ) : (
+        /* ── Services / Products list ──────────────────────────────── */
+        <>
+          <View style={styles.statsRow}>
+            <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+              <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{productLabel}</Text>
+              <Text style={[styles.statValue, { color: colors.foreground }]}>{products.length}</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setFilterLowStock(!filterLowStock)}
+              style={[styles.statCard, { backgroundColor: colors.card, borderColor: filterLowStock ? "#F39C12" : colors.border, borderRadius: colors.radius }]}
+            >
+              <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Low Stock</Text>
+              <Text style={[styles.statValue, { color: lowStockCount > 0 ? "#F39C12" : colors.foreground }]}>{lowStockCount}</Text>
+            </TouchableOpacity>
+            <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+              <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Out of Stock</Text>
+              <Text style={[styles.statValue, { color: outOfStockCount > 0 ? colors.destructive : colors.foreground }]}>{outOfStockCount}</Text>
+            </View>
+          </View>
+
+          <View style={[styles.searchWrap, { backgroundColor: colors.secondary, borderColor: colors.border, borderRadius: colors.radius }]}>
+            <Feather name="search" size={16} color={colors.mutedForeground} />
+            <TextInput value={search} onChangeText={setSearch} placeholder={`Search ${productLabel.toLowerCase()}...`} placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} />
+            {search.length > 0 && <TouchableOpacity onPress={() => setSearch("")}><Feather name="x" size={16} color={colors.mutedForeground} /></TouchableOpacity>}
+          </View>
+
+          {loading ? null : filteredProducts.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <EmptyState icon="package" title={filterLowStock ? "No low stock items" : "No products"} subtitle={filterLowStock ? "All products are well stocked" : "Tap + to add your first product"} />
+            </View>
+          ) : (
+            <FlatList data={filteredProducts} renderItem={renderProduct} keyExtractor={(item) => item.id} numColumns={numColumns} key={String(numColumns)} contentContainerStyle={styles.grid} showsVerticalScrollIndicator={false} />
+          )}
+        </>
+      )}
+
+      <TouchableOpacity
+        onPress={activeTab === "packages" ? openAddPkg : openAdd}
+        style={[styles.fab, { backgroundColor: activeTab === "packages" ? "#9C27B0" : colors.primary, borderRadius: 28, bottom: insets.bottom + 20 }]}
+      >
         <Feather name="plus" size={24} color="#fff" />
       </TouchableOpacity>
+
+      {/* ── Package modal ───────────────────────────────────────────── */}
+      <Modal visible={pkgModalVisible} animationType="slide" presentationStyle="pageSheet">
+        <KeyboardAvoidingView style={[styles.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[styles.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={() => setPkgModalVisible(false)}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>{editingPackage ? "Edit Package" : "New Package"}</Text>
+            <TouchableOpacity onPress={handleSavePkg}><Text style={{ color: "#9C27B0", fontWeight: "700", fontSize: 16 }}>Save</Text></TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Package Name</Text>
+            <TextInput value={pkgName} onChangeText={setPkgName} placeholder="e.g. 10 Haircuts Bundle" placeholderTextColor={colors.mutedForeground} style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]} />
+
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Price ({CURRENCY})</Text>
+                <TextInput value={pkgPrice} onChangeText={setPkgPrice} placeholder="0.00" placeholderTextColor={colors.mutedForeground} keyboardType="decimal-pad" style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Sessions</Text>
+                <TextInput value={pkgSessions} onChangeText={setPkgSessions} placeholder="5" placeholderTextColor={colors.mutedForeground} keyboardType="number-pad" style={[styles.input, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]} />
+              </View>
+            </View>
+
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Description (optional)</Text>
+            <TextInput value={pkgDescription} onChangeText={setPkgDescription} placeholder="Short description shown to customer" placeholderTextColor={colors.mutedForeground} multiline numberOfLines={2} style={[styles.input, styles.textArea, { backgroundColor: colors.secondary, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]} />
+
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Applicable Services</Text>
+            <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+              <TouchableOpacity
+                onPress={() => setPkgApplicableAll(true)}
+                style={[styles.chip, { backgroundColor: pkgApplicableAll ? "#9C27B0" : colors.secondary, borderColor: pkgApplicableAll ? "#9C27B0" : colors.border, borderRadius: colors.radius }]}
+              >
+                <Text style={{ color: pkgApplicableAll ? "#fff" : colors.mutedForeground, fontWeight: "600" }}>Any Service</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setPkgApplicableAll(false)}
+                style={[styles.chip, { backgroundColor: !pkgApplicableAll ? "#9C27B0" : colors.secondary, borderColor: !pkgApplicableAll ? "#9C27B0" : colors.border, borderRadius: colors.radius }]}
+              >
+                <Text style={{ color: !pkgApplicableAll ? "#fff" : colors.mutedForeground, fontWeight: "600" }}>Specific Services</Text>
+              </TouchableOpacity>
+            </View>
+            {!pkgApplicableAll && (
+              <>
+                <Text style={{ fontSize: 12, color: colors.mutedForeground, marginBottom: 8 }}>Tap services to include in this package:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips}>
+                  {products.filter((p) => p.isActive !== false).map((p) => {
+                    const selected = pkgApplicableIds.includes(p.id);
+                    return (
+                      <TouchableOpacity
+                        key={p.id}
+                        onPress={() => setPkgApplicableIds((prev) => selected ? prev.filter((id) => id !== p.id) : [...prev, p.id])}
+                        style={[styles.chip, { backgroundColor: selected ? "#E91E8C" : colors.secondary, borderColor: selected ? "#E91E8C" : colors.border, borderRadius: colors.radius, marginRight: 6 }]}
+                      >
+                        <Text style={{ color: selected ? "#fff" : colors.mutedForeground, fontWeight: "600" }}>{p.name}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </>
+            )}
+
+            <View style={[styles.toggleRow, { borderColor: pkgIsActive ? colors.border : colors.destructive + "60", borderRadius: colors.radius, backgroundColor: pkgIsActive ? undefined : colors.destructive + "08", marginTop: 20 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.toggleLabel, { color: pkgIsActive ? colors.foreground : colors.destructive }]}>Active</Text>
+                <Text style={[styles.toggleHint, { color: colors.mutedForeground }]}>Inactive packages cannot be sold or redeemed at the POS.</Text>
+              </View>
+              <Switch value={pkgIsActive} onValueChange={setPkgIsActive} trackColor={{ true: "#9C27B0" }} />
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet">
         <KeyboardAvoidingView style={[styles.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
