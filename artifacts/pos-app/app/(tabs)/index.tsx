@@ -772,7 +772,13 @@ export default function POSScreen() {
       if (isLaundry && pendingLaundryOrderId) {
         try {
           await collectLaundryOrder(pendingLaundryOrderId, sale.id, paymentMethod);
-        } catch {}
+        } catch (collectErr: any) {
+          Alert.alert(
+            "Ticket Not Marked Collected",
+            "Payment was recorded but the laundry ticket could not be updated. Please refresh the Laundry tab and collect it manually.\n\n" +
+              (collectErr?.message ?? "Unknown error"),
+          );
+        }
         setPendingLaundryOrderId(null);
       }
 

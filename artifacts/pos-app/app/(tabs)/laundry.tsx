@@ -14,11 +14,12 @@ import {
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
+import { ReceiptModal } from "@/components/ReceiptModal";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useStaff } from "@/context/StaffContext";
 import { useColors } from "@/hooks/useColors";
 import { formatCurrency } from "@/types";
-import type { BusinessSettings, LaundryOrder, LaundryOrderStatus, Product } from "@/types";
+import type { BusinessSettings, LaundryOrder, LaundryOrderStatus, Product, Sale } from "@/types";
 import type { CartItem } from "@/types";
 
 type StatusTab = LaundryOrderStatus;
@@ -60,14 +61,20 @@ export default function LaundryOrdersScreen() {
   const [collectingOrder, setCollectingOrder] = useState<LaundryOrder | null>(null);
   const [collectMethod, setCollectMethod] = useState<PaymentMethod>("Card");
   const [collectBusy, setCollectBusy] = useState(false);
+  const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
 
   const [detailOrder, setDetailOrder] = useState<LaundryOrder | null>(null);
   const [pendingReadyId, setPendingReadyId] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    const orders = await loadLaundryOrders();
-    setAllOrders(orders);
-    setLoading(false);
+    try {
+      const orders = await loadLaundryOrders();
+      setAllOrders(orders);
+    } catch {
+      // ignore load errors; list stays as-is
+    } finally {
+      setLoading(false);
+    }
   }, [loadLaundryOrders]);
 
   useFocusEffect(useCallback(() => {
@@ -127,6 +134,7 @@ export default function LaundryOrdersScreen() {
 
       await collectLaundryOrder(collectingOrder.id, sale.id, collectMethod);
       setCollectingOrder(null);
+      setReceiptSale(sale);
       reload();
     } catch (e) {
       Alert.alert("Error", e instanceof Error ? e.message : "Could not complete collection.");
@@ -367,6 +375,8 @@ export default function LaundryOrdersScreen() {
           </View>
         </View>
       </Modal>
+
+      <ReceiptModal visible={!!receiptSale} sale={receiptSale} onClose={() => setReceiptSale(null)} />
 
       {/* Detail Modal */}
       <Modal visible={!!detailOrder} animationType="slide" transparent onRequestClose={() => setDetailOrder(null)}>
