@@ -682,6 +682,7 @@ export default function POSScreen() {
               stylistName: ci.stylistName,
               modifiers: ci.selectedModifiers,
               modifierTotal: ci.modifierTotal,
+              bundleServices: ci.bundleServices,
             };
           });
           const { printHtml } = await import("@/lib/printBridge");
@@ -2530,6 +2531,14 @@ export default function POSScreen() {
                     onPress={() => {
                       const vatEnabled = businessSettings?.vatEnabled !== false;
                       const rate = vatEnabled ? VAT_RATE : 0;
+                      // Resolve service names from applicableServiceIds
+                      const pkgServices: Array<{ serviceId: string; serviceName: string }> =
+                        pkg.applicableServiceIds && pkg.applicableServiceIds.length > 0
+                          ? pkg.applicableServiceIds.map((sid) => ({
+                              serviceId: sid,
+                              serviceName: products.find((p) => p.id === sid)?.name ?? sid,
+                            }))
+                          : [{ serviceId: "any", serviceName: "Valid for any service" }];
                       // Synthetic product: id starts with "pkg_" so checkout
                       // can detect this line as a package purchase without
                       // carrying extra fields through CartItem.
@@ -2545,7 +2554,7 @@ export default function POSScreen() {
                         isActive: true,
                         stockTracked: false,
                       };
-                      addItem(syntheticProduct, rate);
+                      addBundleItem(syntheticProduct, rate, pkgServices);
                       setShowPackagePicker(false);
                     }}
                     style={[
