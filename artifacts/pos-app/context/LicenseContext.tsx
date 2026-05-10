@@ -217,7 +217,7 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(async () => {
     const current = sessionRef.current;
     if (!current) return;
-    if (current.license.licenseType === "offline") return;
+    const isOffline = current.license.licenseType === "offline";
     const myOp = ++opSeq.current;
     try {
       const res = await validateLicense({
@@ -227,6 +227,18 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
       });
       if (myOp !== opSeq.current) return;
       if (res.kind === "needs_branch_selection") return;
+      const freshWorkMode = res.workMode ?? "standard";
+      if (isOffline) {
+        // For offline licenses: don't update the token, but DO update workMode
+        // so that admin changes to the company's work mode are picked up.
+        if (freshWorkMode !== current.workMode) {
+          const next: LicenseSession = { ...current, workMode: freshWorkMode };
+          await saveSession(next);
+          if (myOp !== opSeq.current) return;
+          setSession(next);
+        }
+        return;
+      }
       const next: LicenseSession = {
         token: res.token,
         tokenExpiresAt: res.tokenExpiresAt,
@@ -235,13 +247,16 @@ export function LicenseProvider({ children }: { children: React.ReactNode }) {
         branch: res.branch,
         licenseKey: current.licenseKey,
         deviceUid: current.deviceUid,
-        workMode: res.workMode ?? "standard",
+        workMode: freshWorkMode,
       };
       await saveSession(next);
       if (myOp !== opSeq.current) return;
       setSession(next);
     } catch (e) {
       if (myOp !== opSeq.current) return;
+      // For offline licenses: silently ignore network errors — the device
+      // is allowed to keep running from its locally stored session.
+      if (isOffline) return;
       const err = e as ApiError;
       if (
         err?.code === "license_revoked" ||
