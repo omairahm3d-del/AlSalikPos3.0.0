@@ -33,6 +33,7 @@ import { useCart } from "@/context/CartContext";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useLicense } from "@/context/LicenseContext";
 import { useStaff } from "@/context/StaffContext";
+import { activityResetFn } from "@/lib/activityReset";
 import { useWorkMode } from "@/context/WorkModeContext";
 import { useColors } from "@/hooks/useColors";
 import { generateKitchenTicketHTML, getUniqueStations } from "@/lib/kitchenTicketTemplate";
@@ -1470,7 +1471,7 @@ export default function POSScreen() {
             </TouchableOpacity>
           )}
           <Modal visible={showCart} animationType="slide" presentationStyle="pageSheet">
-            <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
+            <View style={[styles.modalRoot, { backgroundColor: colors.background }]} onStartShouldSetResponderCapture={() => { activityResetFn.current(); return false; }}>
               <View style={[styles.modalTopBar, { paddingTop: insets.top + 12, borderBottomColor: colors.border }]}>
                 <Text style={[styles.modalTitle, { color: colors.foreground }]}>Cart</Text>
                 <TouchableOpacity onPress={closeCart}>
@@ -1485,7 +1486,7 @@ export default function POSScreen() {
 
       <Modal visible={showPayment} animationType="fade" transparent>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <View style={styles.paymentOverlay}>
+        <View style={styles.paymentOverlay} onStartShouldSetResponderCapture={() => { activityResetFn.current(); return false; }}>
           <ScrollView contentContainerStyle={styles.paymentScrollContent} keyboardShouldPersistTaps="handled">
             <View style={[styles.paymentSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2 }]}>
               <Text style={[styles.paymentTitle, { color: colors.foreground }]}>Payment</Text>
@@ -1786,7 +1787,7 @@ export default function POSScreen() {
       </Modal>
 
       <Modal visible={showCashNumpad} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowCashNumpad(false)}>
-        <View style={[styles.numpadScreen, { backgroundColor: colors.background }]}>
+        <View style={[styles.numpadScreen, { backgroundColor: colors.background }]} onStartShouldSetResponderCapture={() => { activityResetFn.current(); return false; }}>
           <View style={[styles.numpadScreenHeader, { borderBottomColor: colors.border }]}>
             <TouchableOpacity
               onPress={() => { setShowCashNumpad(false); setCashTendered(""); }}
@@ -1890,7 +1891,7 @@ export default function POSScreen() {
       </Modal>
 
       <Modal visible={!!showPriceEdit} animationType="fade" transparent>
-        <View style={styles.paymentOverlay}>
+        <View style={styles.paymentOverlay} onStartShouldSetResponderCapture={() => { activityResetFn.current(); return false; }}>
           <View style={[styles.itemDiscSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2 }]}>
             <Text style={[styles.paymentTitle, { color: colors.foreground, fontSize: 18 }]}>Edit Price</Text>
             <Text style={{ color: colors.mutedForeground, fontSize: 12, marginBottom: 10 }}>
@@ -1930,7 +1931,7 @@ export default function POSScreen() {
       </Modal>
 
       <Modal visible={!!showItemDiscount} animationType="fade" transparent>
-        <View style={styles.paymentOverlay}>
+        <View style={styles.paymentOverlay} onStartShouldSetResponderCapture={() => { activityResetFn.current(); return false; }}>
           <View style={[styles.itemDiscSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2 }]}>
             <Text style={[styles.paymentTitle, { color: colors.foreground, fontSize: 18 }]}>Item Discount</Text>
             <View style={styles.discTypeRow}>
@@ -1970,7 +1971,7 @@ export default function POSScreen() {
       {/* Laundry care instructions modal */}
       <Modal visible={!!showItemNotes} animationType="fade" transparent>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-          <View style={styles.paymentOverlay}>
+          <View style={styles.paymentOverlay} onStartShouldSetResponderCapture={() => { activityResetFn.current(); return false; }}>
             <View style={[styles.itemDiscSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2 }]}>
               <Text style={[styles.paymentTitle, { color: colors.foreground, fontSize: 18 }]}>Care Instructions</Text>
               <Text style={{ color: colors.mutedForeground, fontSize: 12, marginBottom: 10 }}>
@@ -2022,7 +2023,7 @@ export default function POSScreen() {
       </Modal>
 
       <Modal visible={showHoldTablePicker} animationType="fade" transparent>
-        <View style={styles.paymentOverlay}>
+        <View style={styles.paymentOverlay} onStartShouldSetResponderCapture={() => { activityResetFn.current(); return false; }}>
           <View style={[styles.itemDiscSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2, maxHeight: "85%" }]}>
             <Text style={[styles.paymentTitle, { color: colors.foreground, fontSize: 18 }]}>Select {tableLabelSingular} to Hold</Text>
             {tables.length === 0 ? (
@@ -2198,7 +2199,7 @@ export default function POSScreen() {
       })()}
 
       <Modal visible={!!creditPaySale} animationType="fade" transparent>
-        <View style={styles.paymentOverlay}>
+        <View style={styles.paymentOverlay} onStartShouldSetResponderCapture={() => { activityResetFn.current(); return false; }}>
           <View style={[styles.itemDiscSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2, maxWidth: 400 }]}>
             <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
               <Feather name="credit-card" size={20} color={colors.primary} />
@@ -2246,7 +2247,7 @@ export default function POSScreen() {
 
       {/* Stylist picker — saloon mode only */}
       <Modal visible={isSaloon && showStylistPicker !== null} transparent animationType="fade" onRequestClose={() => setShowStylistPicker(null)}>
-        <View style={[styles.paymentOverlay]}>
+        <View style={[styles.paymentOverlay]} onStartShouldSetResponderCapture={() => { activityResetFn.current(); return false; }}>
           <View style={[styles.paymentSheet, { backgroundColor: colors.card, borderRadius: colors.radius }]}>
             <Text style={[styles.paymentTitle, { color: colors.foreground }]}>Assign Stylist</Text>
             <Text style={[styles.paymentLabel, { color: colors.mutedForeground, marginBottom: 12 }]}>
@@ -2302,7 +2303,7 @@ export default function POSScreen() {
       {/* Laundry Ticket Modal — laundry mode only */}
       <Modal visible={isLaundry && showLaundryTicket} transparent animationType="fade" onRequestClose={() => setShowLaundryTicket(false)}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-          <View style={styles.paymentOverlay}>
+          <View style={styles.paymentOverlay} onStartShouldSetResponderCapture={() => { activityResetFn.current(); return false; }}>
             <ScrollView contentContainerStyle={styles.paymentScrollContent} keyboardShouldPersistTaps="handled">
               <View style={[styles.paymentSheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2 }]}>
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
@@ -2447,7 +2448,7 @@ export default function POSScreen() {
 
       {/* Package picker — saloon mode, buy a package for selected customer */}
       <Modal visible={isSaloon && showPackagePicker} transparent animationType="fade" onRequestClose={() => setShowPackagePicker(false)}>
-        <View style={styles.paymentOverlay}>
+        <View style={styles.paymentOverlay} onStartShouldSetResponderCapture={() => { activityResetFn.current(); return false; }}>
           <View style={[styles.paymentSheet, { backgroundColor: colors.card, borderRadius: colors.radius }]}>
             <Text style={[styles.paymentTitle, { color: colors.foreground }]}>Buy a Package</Text>
             <Text style={[styles.paymentLabel, { color: colors.mutedForeground, marginBottom: 12 }]}>

@@ -25,12 +25,13 @@ import { LockScreen } from "@/components/LockScreen";
 import { ActivationScreen } from "@/components/ActivationScreen";
 import { VirtualKeyboard } from "@/components/VirtualKeyboard";
 import { SyncStatusPill } from "@/components/SyncStatusPill";
+import { activityResetFn } from "@/lib/activityReset";
 
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
-const INACTIVITY_MS = 60_000; // 1 minute
+const INACTIVITY_MS = 5 * 60_000; // 5 minutes
 
 function AppContent() {
   const { currentStaff, staffRequired, logout } = useStaff();
@@ -42,6 +43,14 @@ function AppContent() {
       logout();
     }, INACTIVITY_MS);
   }, [logout]);
+
+  // Expose resetTimer globally so React Native Modals (which render outside
+  // the normal view hierarchy and cannot propagate touches to the outer
+  // onStartShouldSetResponderCapture) can keep the inactivity timer alive.
+  useEffect(() => {
+    activityResetFn.current = resetTimer;
+    return () => { activityResetFn.current = () => {}; };
+  }, [resetTimer]);
 
   // Start / restart the inactivity timer whenever a staff member logs in.
   // Cancel it as soon as they log out so there are no dangling timeouts.
