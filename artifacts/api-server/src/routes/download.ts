@@ -86,6 +86,47 @@ router.get("/download/apk", async (req, res) => {
   }
 });
 
+// Simple semver greater-than for X.Y.Z strings (no pre-release tags needed).
+function semverGt(a: string, b: string): boolean {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const na = pa[i] ?? 0;
+    const nb = pb[i] ?? 0;
+    if (na > nb) return true;
+    if (na < nb) return false;
+  }
+  return false;
+}
+
+/**
+ * GET /api/desktop/update-check?currentVersion=1.0.0&arch=64
+ *
+ * Returns { available: false } when no update is published.
+ * Returns { available: true, version, url64, url32, notes } when
+ * DESKTOP_LATEST_VERSION env var is set to a version > currentVersion.
+ *
+ * The operator sets DESKTOP_LATEST_VERSION (e.g. "1.1.0") and optionally
+ * DESKTOP_UPDATE_NOTES on the API server after uploading new installers to GCS.
+ */
+router.get("/desktop/update-check", (req, res) => {
+  const currentVersion = String(req.query.currentVersion || "0.0.0");
+  const latestVersion = process.env.DESKTOP_LATEST_VERSION || "";
+
+  if (!latestVersion || !semverGt(latestVersion, currentVersion)) {
+    res.json({ available: false });
+    return;
+  }
+
+  res.json({
+    available: true,
+    version: latestVersion,
+    url64: "/api/download/installer",
+    url32: "/api/download/installer-32",
+    notes: process.env.DESKTOP_UPDATE_NOTES || "",
+  });
+});
+
 router.get("/download/info", (_req, res) => {
   res.json({
     available: !!BUCKET_ID,

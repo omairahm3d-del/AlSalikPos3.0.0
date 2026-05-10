@@ -6,6 +6,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const net = require('net');
+const os = require('os');
 
 const WWW_DIR = path.join(__dirname, 'www');
 
@@ -326,7 +327,6 @@ ipcMain.handle('printers:print', async (_evt, payload) => {
 });
 
 // ===== ESC/POS RAW print via PowerShell + Win32 spooler =====
-const os = require('os');
 const { spawn } = require('child_process');
 
 function escposBuild(text, opts) {
@@ -417,9 +417,149 @@ ipcMain.handle('printers:printRaw', async (_evt, payload) => {
   }
 });
 
+// ===== Auto-updater =====
+// Compares X.Y.Z version strings; returns true when a > b.
+function semverGt(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const na = pa[i] ?? 0;
+    const nb = pb[i] ?? 0;
+    if (na > nb) return true;
+    if (na < nb) return false;
+  }
+  return false;
+}
+
+// Performs a single HTTPS/HTTP GET following up to `maxRedirects` redirects.
+// Resolves with the response body Buffer.
+function fetchFollowRedirects(url, maxRedirects = 8) {
+  return new Promise((resolve, reject) => {
+    function doGet(href, depth) {
+      if (depth > maxRedirects) { reject(new Error('Too many redirects')); return; }
+      const transport = href.startsWith('https:') ? https : http;
+      const req = transport.get(href, { timeout: 30000 }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          doGet(res.headers.location, depth + 1);
+          return;
+        }
+        if (res.statusCode !== 200) { reject(new Error(`HTTP ${res.statusCode}`)); return; }
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => resolve(Buffer.concat(chunks)));
+        res.on('error', reject);
+      });
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Request timeout')); });
+    }
+    doGet(url, 0);
+  });
+}
+
+// Downloads `url` to `destPath`, following redirects.
+function downloadFile(url, destPath) {
+  return new Promise((resolve, reject) => {
+    function doGet(href, depth) {
+      if (depth > 8) { reject(new Error('Too many redirects')); return; }
+      const transport = href.startsWith('https:') ? https : http;
+      const req = transport.get(href, { timeout: 120000 }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          doGet(res.headers.location, depth + 1);
+          return;
+        }
+        if (res.statusCode !== 200) { reject(new Error(`HTTP ${res.statusCode}`)); return; }
+        const file = fs.createWriteStream(destPath);
+        res.pipe(file);
+        file.on('finish', () => file.close(resolve));
+        file.on('error', reject);
+        res.on('error', reject);
+      });
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Download timeout')); });
+    }
+    doGet(url, 0);
+  });
+}
+
+async function checkForUpdate() {
+  if (!API_BASE) return;
+  const currentVersion = app.getVersion();
+  const arch = process.arch === 'ia32' ? '32' : '64';
+
+  try {
+    const checkUrl = `${API_BASE}/api/desktop/update-check?currentVersion=${encodeURIComponent(currentVersion)}&arch=${arch}`;
+    const body = await fetchFollowRedirects(checkUrl);
+    const data = JSON.parse(body.toString('utf8'));
+
+    if (!data.available || !semverGt(data.version, currentVersion)) return;
+
+    const detail = data.notes
+      ? `What's new:\n${data.notes}\n\nWould you like to download and install it now?`
+      : 'A newer version is available. Would you like to download and install it now?';
+
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: 'Update Available',
+      message: `Al Salik POS ${data.version} is available`,
+      detail,
+      buttons: ['Update Now', 'Remind Me Later'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+
+    if (response !== 0) return;
+
+    // Pick the right download URL for this architecture
+    const relPath = arch === '32' ? data.url32 : data.url64;
+    const downloadUrl = API_BASE + relPath;
+    const destPath = path.join(os.tmpdir(), `AlSalikPOS-Update-${data.version}.exe`);
+
+    // Show a progress dialog while downloading
+    let progressWin = new BrowserWindow({
+      width: 360,
+      height: 130,
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      alwaysOnTop: true,
+      frame: false,
+      show: true,
+      parent: mainWindow,
+      modal: true,
+      backgroundColor: '#0F1117',
+      webPreferences: { nodeIntegration: false, contextIsolation: true },
+    });
+    progressWin.loadURL(
+      'data:text/html;charset=utf-8,' +
+      encodeURIComponent(
+        `<body style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0F1117;font-family:Segoe UI,sans-serif;color:#fff;">` +
+        `<p style="margin:0 0 14px;font-size:14px;">Downloading update…</p>` +
+        `<div style="width:280px;height:6px;background:#1e2130;border-radius:3px;overflow:hidden;">` +
+        `<div id="bar" style="height:100%;width:0%;background:#3b82f6;border-radius:3px;transition:width .3s;"></div></div>` +
+        `<p id="pct" style="margin:10px 0 0;font-size:12px;color:#8b9ab0;">0%</p>` +
+        `</body>`
+      )
+    );
+
+    await downloadFile(downloadUrl, destPath);
+
+    try { progressWin.close(); } catch {}
+    progressWin = null;
+
+    spawn(destPath, ['/S'], { detached: true, stdio: 'ignore' }).unref();
+    app.quit();
+  } catch (err) {
+    // Never block the app — update check is best-effort only
+    console.log('[auto-update] check failed:', err && err.message);
+  }
+}
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate));
   createWindow();
+  // Delay the update check slightly so the window has time to become visible
+  // before a dialog might appear on top of it.
+  setTimeout(checkForUpdate, 4000);
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
