@@ -60,12 +60,22 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-
 
+      - name: Get Electron dependency versions
+        id: electron-versions
+        run: |
+          ELECTRON=$(node -p "require('./desktop-installer/package.json').devDependencies.electron.replace(/[\^~]/g,'')")
+          ELECTRON_BUILDER=$(node -p "require('./desktop-installer/package.json').devDependencies['electron-builder'].replace(/[\^~]/g,'')")
+          echo "electron=$ELECTRON" >> $GITHUB_OUTPUT
+          echo "electron_builder=$ELECTRON_BUILDER" >> $GITHUB_OUTPUT
+
       - name: Cache electron-builder downloads
         uses: actions/cache@v4
         with:
           path: ${{ env.ELECTRON_BUILDER_CACHE }}
-          key: electron-builder-${{ hashFiles('desktop-installer/package.json') }}
+          key: electron-builder-e${{ steps.electron-versions.outputs.electron }}-eb${{ steps.electron-versions.outputs.electron_builder }}
           restore-keys: |
+            electron-builder-e${{ steps.electron-versions.outputs.electron }}-eb
+            electron-builder-e${{ steps.electron-versions.outputs.electron }}-
             electron-builder-
 
       - name: Install osslsigncode (required by sign-exe.sh to sign NSIS setup EXEs on Linux)
