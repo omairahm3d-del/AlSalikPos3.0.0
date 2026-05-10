@@ -136,10 +136,10 @@ export default function RootLayout() {
     }
   }, [fontsReady]);
 
-  // Check for OTA updates on every launch. In development the Updates API
-  // is a no-op so this is safe to run unconditionally. On a production build
-  // it fetches and immediately applies any new bundle so the restart the user
-  // does after "update available" always lands on the latest code.
+  // Check for OTA updates silently in the background. The downloaded bundle
+  // is applied automatically on the NEXT cold launch by Expo's runtime —
+  // we never call reloadAsync() here so the current session is never
+  // interrupted and the splash screen is never blocked.
   useEffect(() => {
     if (__DEV__) return;
     let cancelled = false;
@@ -148,8 +148,7 @@ export default function RootLayout() {
         const check = await Updates.checkForUpdateAsync();
         if (cancelled || !check.isAvailable) return;
         await Updates.fetchUpdateAsync();
-        if (cancelled) return;
-        await Updates.reloadAsync();
+        // No reloadAsync() — Expo applies the bundle on next cold launch.
       } catch {
         // Silent — never block the app on an update failure.
       }
