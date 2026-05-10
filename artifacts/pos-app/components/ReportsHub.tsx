@@ -18,6 +18,7 @@ import { formatCurrency } from "@/types";
 import { buildCsv, downloadCsv } from "@/lib/csvExport";
 import { generateZReportHTML } from "@/lib/receiptTemplate";
 import { printHtml } from "@/lib/printBridge";
+import { ReceiptModal } from "@/components/ReceiptModal";
 
 type ReportView = null | "zhistory" | "payment" | "staff" | "stylist" | "rider" | "customer" | "items";
 type DatePreset = "today" | "yesterday" | "last7" | "last30" | "thismonth" | "lastmonth" | "thisyear" | "custom";
@@ -115,6 +116,12 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
 
   const [itemDate, setItemDate] = useState(new Date());
   const [expandedSaleId, setExpandedSaleId] = useState<string | null>(null);
+  const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
+
+  const handlePrintCustReceipt = (sale: Sale) => {
+    const items = rangeItems.filter(i => i.saleId === sale.id);
+    setReceiptSale({ ...sale, items });
+  };
 
   const resetState = () => {
     setLoaded(false);
@@ -749,6 +756,7 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
   // ─── Customer Transactions ─────────────────────────────────────────────────
   const renderCustomer = () => (
     <View style={[st.root, { backgroundColor: colors.background }]}>
+      <ReceiptModal visible={!!receiptSale} sale={receiptSale} onClose={() => setReceiptSale(null)} />
       {renderHdr("Customer Transactions", () => setView(null), () => {
         if (selectedCustId) {
           handleExport("customer-transactions", customerTransactions.map(s => ({
@@ -831,9 +839,27 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
                   </Text>
                 ) : customerTransactions.map(sale => (
                   <View key={sale.id} style={[st.card, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
-                    {row("Invoice", sale.invoiceNumber)}
+                    <View style={[st.cardRow, { marginBottom: 8 }]}>
+                      <Text style={[st.cardTitle, { color: colors.foreground, fontSize: 13 }]}>{sale.invoiceNumber}</Text>
+                      {!sale.isRefund && (
+                        <TouchableOpacity
+                          onPress={() => handlePrintCustReceipt(sale)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          style={{ flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: colors.primary + "60", backgroundColor: colors.primary + "10" }}
+                        >
+                          <Feather name="printer" size={13} color={colors.primary} />
+                          <Text style={{ color: colors.primary, fontSize: 11, fontWeight: "700" }}>Receipt</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                     {row("Date", fmtDateTime(sale.createdAt))}
                     {row("Method", sale.paymentMethod)}
+                    {(sale.splitPayments?.length ?? 0) > 0 && sale.splitPayments!.map((sp, i) => (
+                      row(`  Payment ${i + 1}`, `${sp.method} — ${formatCurrency(sp.amount)}`)
+                    ))}
+                    {row("Subtotal", formatCurrency(sale.subtotal))}
+                    {row("VAT", formatCurrency(sale.vatAmount))}
+                    {(sale.discountAmount ?? 0) > 0 && row("Discount", `-${formatCurrency(sale.discountAmount ?? 0)}`, "#F39C12")}
                     {row("Total", formatCurrency(sale.total), colors.success)}
                   </View>
                 ))}
