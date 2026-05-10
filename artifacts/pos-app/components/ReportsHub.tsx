@@ -18,6 +18,7 @@ import { formatCurrency } from "@/types";
 import { buildCsv, downloadCsv } from "@/lib/csvExport";
 import { generateZReportHTML } from "@/lib/receiptTemplate";
 import { printHtml } from "@/lib/printBridge";
+import { generateReportPdfHtml, printReportPdf } from "@/lib/reportPdf";
 import { ReceiptModal } from "@/components/ReceiptModal";
 
 type ReportView = null | "zhistory" | "payment" | "staff" | "stylist" | "rider" | "customer" | "items";
@@ -317,19 +318,253 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
     return validSales.filter(s => s.customerId === selectedCustId).sort((a, b) => b.createdAt - a.createdAt);
   }, [validSales, selectedCustId]);
 
-  const renderHdr = (title: string, backFn: () => void, onExport?: () => void) => (
+  // ─── Shared PDF helper ────────────────────────────────────────────────────
+  const handlePdf = useCallback(async (opts: Parameters<typeof generateReportPdfHtml>[0]) => {
+    const html = generateReportPdfHtml(opts);
+    await printReportPdf(html, opts.title);
+  }, []);
+
+  // per-report PDF handlers
+  const handleZHistoryPdf = useCallback(() => {
+    handlePdf({
+      title: "Z-Report History",
+      filters: [],
+      summary: [
+        { label: "Total Z-Reports", value: String(zReports.length) },
+        { label: "Net Sales (all time)", value: `AED ${zReports.reduce((s: number, r: any) => s + (r.netSales ?? 0), 0).toFixed(2)}`, highlight: true },
+      ],
+      columns: [
+        { header: "Date" }, { header: "Closed At" }, { header: "Transactions", align: "center" },
+        { header: "Net Sales (AED)", align: "right" }, { header: "VAT (AED)", align: "right" },
+        { header: "Discounts (AED)", align: "right" }, { header: "Cash Variance (AED)", align: "right" },
+      ],
+      rows: zReports.map((r: any) => {
+        const cashSales = (r.paymentBreakdown ?? []).find((p: any) => p.method === "Cash")?.amount ?? 0;
+        const variance = (r.closingCash ?? 0) - cashSales;
+        return [
+          r.date || fmtDate(r.closedAt ?? 0),
+          r.closedAt ? fmtDateTime(r.closedAt) : "-",
+          r.transactionCount ?? 0,
+          `AED ${(r.netSales ?? 0).toFixed(2)}`,
+          `AED ${(r.totalVat ?? 0).toFixed(2)}`,
+          `AED ${(r.totalDiscount ?? 0).toFixed(2)}`,
+          `${variance >= 0 ? "+" : ""}AED ${variance.toFixed(2)}`,
+        ];
+      }),
+    });
+  }, [handlePdf, zReports]);
+
+  const handlePaymentPdf = useCallback(() => {
+    const total = validSales.reduce((s, x) => s + x.total, 0);
+    handlePdf({
+      title: "Payment Method Report",
+      filters: [`Period: ${rangeLabel}`],
+      summary: [
+        { label: "Period", value: rangeLabel },
+        { label: "Total Revenue", value: `AED ${total.toFixed(2)}`, highlight: true },
+        { label: "Total Transactions", value: String(validSales.length) },
+        { label: "Avg. Order Value", value: `AED ${(validSales.length > 0 ? total / validSales.length : 0).toFixed(2)}` },
+      ],
+      columns: [
+        { header: "Payment Method" }, { header: "Transactions", align: "center" },
+        { header: "Amount (AED)", align: "right" }, { header: "% of Total", align: "right" },
+      ],
+      rows: paymentStats.map(p => [
+        p.method, p.count, `AED ${p.amount.toFixed(2)}`, `${p.pct.toFixed(1)}%`,
+      ]),
+    });
+  }, [handlePdf, validSales, paymentStats, rangeLabel]);
+
+  const handleStaffPdf = useCallback(() => {
+    const total = staffStats.reduce((s, x) => s + x.amount, 0);
+    handlePdf({
+      title: "Staff Sales Report",
+      filters: [`Period: ${rangeLabel}`],
+      summary: [
+        { label: "Period", value: rangeLabel },
+        { label: "Total Revenue", value: `AED ${total.toFixed(2)}`, highlight: true },
+        { label: "Active Staff", value: String(staffStats.length) },
+        { label: "Total Transactions", value: String(validSales.length) },
+      ],
+      columns: [
+        { header: "#", align: "center" }, { header: "Staff Member" },
+        { header: "Sales", align: "center" }, { header: "Total Revenue (AED)", align: "right" },
+        { header: "Avg. Order (AED)", align: "right" },
+      ],
+      rows: staffStats.map((s, i) => [
+        `#${i + 1}`, s.name, s.count, `AED ${s.amount.toFixed(2)}`, `AED ${s.avg.toFixed(2)}`,
+      ]),
+    });
+  }, [handlePdf, staffStats, validSales, rangeLabel]);
+
+  const handleRiderPdf = useCallback(async (rows: typeof riderStats) => {
+    const totalRev = rows.reduce((s, x) => s + x.amount, 0);
+    const totalCom = rows.reduce((s, x) => s + x.commission, 0);
+    const totalDel = rows.reduce((s, x) => s + x.count, 0);
+    handlePdf({
+      title: "Rider Delivery Report",
+      filters: [`Period: ${rangeLabel}`, ...(riderFilter !== "all" ? [`Rider: ${riderFilter}`] : [])],
+      summary: [
+        { label: "Period", value: rangeLabel },
+        { label: "Total Deliveries", value: String(totalDel) },
+        { label: "Total Revenue", value: `AED ${totalRev.toFixed(2)}`, highlight: true },
+        { label: "Total Commission", value: `AED ${totalCom.toFixed(2)}` },
+      ],
+      columns: [
+        { header: "Rider" }, { header: "Deliveries", align: "center" },
+        { header: "Revenue (AED)", align: "right" }, { header: "Avg / Delivery (AED)", align: "right" },
+        { header: "Commission (AED)", align: "right" },
+      ],
+      rows: rows.map(r => [
+        r.name, r.count, `AED ${r.amount.toFixed(2)}`, `AED ${r.avg.toFixed(2)}`, `AED ${r.commission.toFixed(2)}`,
+      ]),
+    });
+  }, [handlePdf, rangeLabel, riderFilter]);
+
+  const handleStylistPdf = useCallback(async (rows: typeof stylistStats) => {
+    const totalRev = rows.reduce((s, x) => s + x.amount, 0);
+    const totalCom = rows.reduce((s, x) => s + x.commission, 0);
+    handlePdf({
+      title: "Stylist Report",
+      filters: [`Period: ${rangeLabel}`, ...(stylistFilter !== "all" ? [`Stylist: ${stylistFilter}`] : [])],
+      summary: [
+        { label: "Period", value: rangeLabel },
+        { label: "Total Revenue", value: `AED ${totalRev.toFixed(2)}`, highlight: true },
+        { label: "Total Commission", value: `AED ${totalCom.toFixed(2)}` },
+        { label: "Active Stylists", value: String(stylistFilter === "all" ? rows.filter(s => s.name !== "Unassigned").length : 1) },
+      ],
+      columns: [
+        { header: "#", align: "center" }, { header: "Stylist" },
+        { header: "Services", align: "center" }, { header: "Revenue (AED)", align: "right" },
+        { header: "Avg / Service (AED)", align: "right" }, { header: "Commission (AED)", align: "right" },
+      ],
+      rows: rows.map((s, i) => [
+        `#${i + 1}`, s.name, s.count, `AED ${s.amount.toFixed(2)}`, `AED ${s.avg.toFixed(2)}`, `AED ${s.commission.toFixed(2)}`,
+      ]),
+    });
+  }, [handlePdf, rangeLabel, stylistFilter]);
+
+  const handleCustomerListPdf = useCallback(() => {
+    handlePdf({
+      title: "Customer Transactions",
+      filters: [`Period: ${rangeLabel}`, ...(custSearch ? [`Search: ${custSearch}`] : [])],
+      summary: [
+        { label: "Period", value: rangeLabel },
+        { label: "Customers Shown", value: String(filteredCustomers.length) },
+      ],
+      columns: [
+        { header: "Customer" }, { header: "Phone" },
+        { header: "Transactions", align: "center" }, { header: "Total Spent (AED)", align: "right" },
+        { header: "Outstanding Credit (AED)", align: "right" },
+      ],
+      rows: filteredCustomers.map(c => {
+        const txs = validSales.filter(s => s.customerId === c.id);
+        return [
+          c.name, c.phone || "-", txs.length,
+          `AED ${txs.reduce((s, x) => s + x.total, 0).toFixed(2)}`,
+          c.creditBalance > 0 ? `AED ${c.creditBalance.toFixed(2)}` : "-",
+        ];
+      }),
+    });
+  }, [handlePdf, rangeLabel, custSearch, filteredCustomers, validSales]);
+
+  const handleCustomerDetailPdf = useCallback(() => {
+    const c = customers.find(cx => cx.id === selectedCustId);
+    if (!c) return;
+    type TlRow = [string, string, string, string, string];
+    const rows: TlRow[] = [];
+    for (const s of customerTransactions) {
+      rows.push([
+        s.isRefund ? "Refund" : "Sale", s.invoiceNumber ?? "-",
+        fmtDateTime(s.createdAt), s.paymentMethod, `AED ${s.total.toFixed(2)}`,
+      ]);
+    }
+    for (const p of custCreditPayments) {
+      const { method } = parseCreditNote(p.note || "");
+      rows.push(["Payment Received", "-", fmtDateTime(p.createdAt), method, `-AED ${p.amount.toFixed(2)}`]);
+    }
+    rows.sort((a, b) => new Date(b[2]).getTime() - new Date(a[2]).getTime());
+    const totalSpent = customerTransactions.reduce((s, x) => s + x.total, 0);
+    const totalPaid = custCreditPayments.reduce((s, p) => s + p.amount, 0);
+    handlePdf({
+      title: `Customer Transactions — ${c.name}`,
+      filters: [`Period: ${rangeLabel}`, ...(c.phone ? [`Phone: ${c.phone}`] : [])],
+      summary: [
+        { label: "Customer", value: c.name },
+        ...(c.phone ? [{ label: "Phone", value: c.phone }] : []),
+        { label: `Sales (${rangeLabel})`, value: String(customerTransactions.length) },
+        { label: "Total Spent", value: `AED ${totalSpent.toFixed(2)}`, highlight: true },
+        ...(c.creditBalance > 0 ? [{ label: "Outstanding Credit", value: `AED ${c.creditBalance.toFixed(2)}` }] : []),
+        ...(totalPaid > 0 ? [{ label: "Total Payments Received", value: `AED ${totalPaid.toFixed(2)}` }] : []),
+      ],
+      columns: [
+        { header: "Type" }, { header: "Invoice / Ref" }, { header: "Date & Time" },
+        { header: "Method" }, { header: "Amount (AED)", align: "right" },
+      ],
+      rows,
+    });
+  }, [handlePdf, customers, selectedCustId, customerTransactions, custCreditPayments, rangeLabel]);
+
+  const handleItemsPdf = useCallback(() => {
+    const _isToday = itemDate.toDateString() === new Date().toDateString();
+    const dayLabel = _isToday ? "Today" : itemDate.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short", year: "numeric" });
+    const daySales = rangeSales.sort((a, b) => a.createdAt - b.createdAt);
+    const dayValid = daySales.filter(s => !s.isRefund);
+    const dayTotal = dayValid.reduce((s, x) => s + x.total, 0);
+    handlePdf({
+      title: "Daily Sales Detail",
+      filters: [`Date: ${dayLabel}`],
+      summary: [
+        { label: "Date", value: dayLabel },
+        { label: "Sales", value: String(dayValid.length) },
+        { label: "Refunds", value: String(daySales.filter(s => s.isRefund).length) },
+        { label: "Total Revenue", value: `AED ${dayTotal.toFixed(2)}`, highlight: true },
+        { label: "Avg. Order", value: `AED ${(dayValid.length > 0 ? dayTotal / dayValid.length : 0).toFixed(2)}` },
+      ],
+      columns: [
+        { header: "Time" }, { header: "Invoice" }, { header: "Item / Product" },
+        { header: "Qty", align: "center" }, { header: "Unit Price (AED)", align: "right" },
+        { header: "Line Total (AED)", align: "right" }, { header: "Cashier" }, { header: "Customer" },
+      ],
+      rows: rangeItems.map(it => {
+        const sale = rangeSales.find(s => s.id === it.saleId);
+        return [
+          sale ? fmtTime(sale.createdAt) : "-",
+          sale?.invoiceNumber ?? "-",
+          it.productName,
+          it.quantity,
+          `AED ${(it.productPrice ?? 0).toFixed(2)}`,
+          `AED ${(it.lineTotal ?? 0).toFixed(2)}`,
+          sale?.staffName ?? "-",
+          sale?.customerName ?? "-",
+        ];
+      }),
+    });
+  }, [handlePdf, itemDate, rangeSales, rangeItems]);
+
+  const renderHdr = (title: string, backFn: () => void, onExport?: () => void, onPdfExport?: () => void) => (
     <View style={[st.header, { borderBottomColor: colors.border }]}>
       <TouchableOpacity onPress={backFn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
         <Feather name="arrow-left" size={22} color={colors.foreground} />
       </TouchableOpacity>
       <Text style={[st.headerTitle, { color: colors.foreground }]}>{title}</Text>
-      {onExport ? (
-        <TouchableOpacity onPress={onExport} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          style={[st.exportBtn, { borderColor: colors.border, borderRadius: colors.radius }]}>
-          <Feather name="download" size={14} color={colors.primary} />
-          <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>CSV</Text>
-        </TouchableOpacity>
-      ) : <View style={{ width: 34 }} />}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+        {onPdfExport && (
+          <TouchableOpacity onPress={onPdfExport} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={[st.exportBtn, { borderColor: "#E67E22", borderRadius: colors.radius }]}>
+            <Feather name="file-text" size={14} color="#E67E22" />
+            <Text style={{ color: "#E67E22", fontSize: 12, fontWeight: "700" }}>PDF</Text>
+          </TouchableOpacity>
+        )}
+        {onExport && (
+          <TouchableOpacity onPress={onExport} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={[st.exportBtn, { borderColor: colors.border, borderRadius: colors.radius }]}>
+            <Feather name="download" size={14} color={colors.primary} />
+            <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>CSV</Text>
+          </TouchableOpacity>
+        )}
+        {!onExport && !onPdfExport && <View style={{ width: 34 }} />}
+      </View>
     </View>
   );
 
@@ -467,7 +702,7 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
         OpeningCash: (r.openingCash ?? 0).toFixed(2),
         ClosingCash: (r.closingCash ?? 0).toFixed(2),
         CashVariance: ((r.closingCash ?? 0) - ((r.paymentBreakdown ?? []).find((p: any) => p.method === "Cash")?.amount ?? 0)).toFixed(2),
-      }))))}
+      }))), handleZHistoryPdf)}
       {loading ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: 60 }} />
       ) : zReports.length === 0 ? (
@@ -541,7 +776,7 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
       <View style={[st.root, { backgroundColor: colors.background }]}>
         {renderHdr("Payment Method Report", () => setView(null), () => handleExport("payment-methods", paymentStats.map(p => ({
           Method: p.method, Transactions: p.count, Amount: p.amount.toFixed(2), Percentage: p.pct.toFixed(2) + "%",
-        }))))}
+        }))), handlePaymentPdf)}
         <ScrollView contentContainerStyle={st.scroll}>
           {renderPresets((p) => loadRangeData(p))}
           {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} /> :
@@ -589,7 +824,7 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
       <View style={[st.root, { backgroundColor: colors.background }]}>
         {renderHdr("Staff Sales Report", () => setView(null), () => handleExport("staff-sales", staffStats.map(s => ({
           Staff: s.name, Sales: s.count, TotalRevenue: s.amount.toFixed(2), AvgOrder: s.avg.toFixed(2),
-        }))))}
+        }))), handleStaffPdf)}
         <ScrollView contentContainerStyle={st.scroll}>
           {renderPresets((p) => loadRangeData(p))}
           {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} /> :
@@ -632,59 +867,6 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
   };
 
   // ─── Rider Report ──────────────────────────────────────────────────────────
-  const handleRiderPdf = useCallback(async (rows: typeof riderStats) => {
-    const totalRev = rows.reduce((s, x) => s + x.amount, 0);
-    const totalCom = rows.reduce((s, x) => s + x.commission, 0);
-    const totalDel = rows.reduce((s, x) => s + x.count, 0);
-    const tableRows = rows.map(r => `
-      <tr>
-        <td>${r.name}</td>
-        <td style="text-align:center">${r.count}</td>
-        <td style="text-align:right">AED ${r.amount.toFixed(2)}</td>
-        <td style="text-align:right">AED ${r.avg.toFixed(2)}</td>
-        <td style="text-align:right;color:#E67E22">AED ${r.commission.toFixed(2)}</td>
-      </tr>`).join("");
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
-      <style>
-        body{font-family:Arial,sans-serif;padding:24px;color:#1a1a1a}
-        h2{margin:0 0 4px}p{margin:0 0 16px;color:#666;font-size:13px}
-        table{width:100%;border-collapse:collapse;font-size:13px}
-        th{background:#f4f4f4;padding:8px 10px;text-align:left;font-weight:600;border-bottom:2px solid #ddd}
-        td{padding:7px 10px;border-bottom:1px solid #eee}
-        tr:last-child td{border-bottom:none}
-        .foot{margin-top:16px;font-size:13px;text-align:right}
-        .foot span{font-weight:700}
-      </style></head><body>
-      <h2>Rider Delivery Report</h2>
-      <p>Period: ${rangeLabel}</p>
-      <table>
-        <thead><tr>
-          <th>Rider</th><th style="text-align:center">Deliveries</th>
-          <th style="text-align:right">Revenue</th>
-          <th style="text-align:right">Avg / Delivery</th>
-          <th style="text-align:right">Commission</th>
-        </tr></thead>
-        <tbody>${tableRows}</tbody>
-      </table>
-      <div class="foot">
-        Total Deliveries: <span>${totalDel}</span> &nbsp;|&nbsp;
-        Total Revenue: <span>AED ${totalRev.toFixed(2)}</span> &nbsp;|&nbsp;
-        Total Commission: <span style="color:#E67E22">AED ${totalCom.toFixed(2)}</span>
-      </div>
-      </body></html>`;
-    try {
-      if (Platform.OS === "web") {
-        const w = window.open("", "_blank", "width=700,height=500");
-        if (w) { w.document.write(html); w.document.close(); setTimeout(() => { try { w.print(); } catch {} }, 300); }
-      } else {
-        const Print = await import("expo-print");
-        await Print.printAsync({ html });
-      }
-    } catch (e: any) {
-      Alert.alert("PDF Failed", e?.message || String(e));
-    }
-  }, [rangeLabel]);
-
   const renderRider = () => {
     const filtered = riderFilter === "all" ? riderStats : riderStats.filter(r => r.name === riderFilter);
     const total = filtered.reduce((s, x) => s + x.amount, 0);
@@ -694,27 +876,20 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
       <View style={[st.root, { backgroundColor: colors.background }]}>
         {renderHdr("Rider Delivery Report", () => setView(null), () => handleExport("rider-deliveries", filtered.map(r => ({
           Rider: r.name, Deliveries: r.count, TotalRevenue: r.amount.toFixed(2), AvgPerDelivery: r.avg.toFixed(2), Commission: r.commission.toFixed(2),
-        }))))}
+        }))), () => handleRiderPdf(filtered))}
         <ScrollView contentContainerStyle={st.scroll}>
           {renderPresets((p) => loadRangeData(p))}
           {loaded && riderStats.length > 0 && (
-            <>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4, marginBottom: 8 }} contentContainerStyle={{ paddingHorizontal: 4, gap: 6, flexDirection: "row" }}>
-                {["all", ...riderStats.map(r => r.name)].map(name => (
-                  <TouchableOpacity key={name} onPress={() => setRiderFilter(name)}
-                    style={[st.presetBtn, { backgroundColor: riderFilter === name ? "#3498DB" : colors.secondary, borderColor: riderFilter === name ? "#3498DB" : colors.border, borderRadius: colors.radius }]}>
-                    <Text style={{ color: riderFilter === name ? "#fff" : colors.mutedForeground, fontSize: 11, fontWeight: "600" }}>
-                      {name === "all" ? "All Riders" : name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-              <TouchableOpacity onPress={() => handleRiderPdf(filtered)}
-                style={[st.exportBtn, { borderColor: "#E67E22", borderRadius: colors.radius, alignSelf: "flex-end", marginBottom: 8, paddingHorizontal: 12 }]}>
-                <Feather name="file-text" size={14} color="#E67E22" />
-                <Text style={{ color: "#E67E22", fontSize: 12, fontWeight: "700" }}>Export PDF</Text>
-              </TouchableOpacity>
-            </>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4, marginBottom: 8 }} contentContainerStyle={{ paddingHorizontal: 4, gap: 6, flexDirection: "row" }}>
+              {["all", ...riderStats.map(r => r.name)].map(name => (
+                <TouchableOpacity key={name} onPress={() => setRiderFilter(name)}
+                  style={[st.presetBtn, { backgroundColor: riderFilter === name ? "#3498DB" : colors.secondary, borderColor: riderFilter === name ? "#3498DB" : colors.border, borderRadius: colors.radius }]}>
+                  <Text style={{ color: riderFilter === name ? "#fff" : colors.mutedForeground, fontSize: 11, fontWeight: "600" }}>
+                    {name === "all" ? "All Riders" : name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           )}
           {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} /> :
             !loaded ? null :
@@ -802,7 +977,7 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
             };
           }));
         }
-      })}
+      }, selectedCustId ? handleCustomerDetailPdf : handleCustomerListPdf)}
       <ScrollView contentContainerStyle={st.scroll}>
         {renderPresets((p) => { setSelectedCustId(null); loadRangeData(p); })}
         <TextInput
@@ -992,7 +1167,7 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
             Cashier: sale?.staffName ?? "", Customer: sale?.customerName ?? "",
             Refund: sale?.isRefund ? "yes" : "no",
           };
-        })))}
+        })), handleItemsPdf)}
         <View style={[st.dateNav, { borderBottomColor: colors.border }]}>
           <TouchableOpacity onPress={() => {
             const d = new Date(itemDate); d.setDate(d.getDate() - 1); setItemDate(d); loadItemDetail(d);
@@ -1083,57 +1258,6 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
   };
 
   // ─── Stylist Report (saloon mode) ──────────────────────────────────────────
-  const handleStylistPdf = useCallback(async (rows: typeof stylistStats) => {
-    const totalRev = rows.reduce((s, x) => s + x.amount, 0);
-    const totalCom = rows.reduce((s, x) => s + x.commission, 0);
-    const tableRows = rows.map((s, i) => `
-      <tr>
-        <td>#${i + 1} ${s.name}</td>
-        <td style="text-align:center">${s.count}</td>
-        <td style="text-align:right">AED ${s.amount.toFixed(2)}</td>
-        <td style="text-align:right">AED ${s.avg.toFixed(2)}</td>
-        <td style="text-align:right;color:#E91E8C">AED ${s.commission.toFixed(2)}</td>
-      </tr>`).join("");
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
-      <style>
-        body{font-family:Arial,sans-serif;padding:24px;color:#1a1a1a}
-        h2{margin:0 0 4px}p{margin:0 0 16px;color:#666;font-size:13px}
-        table{width:100%;border-collapse:collapse;font-size:13px}
-        th{background:#f4f4f4;padding:8px 10px;text-align:left;font-weight:600;border-bottom:2px solid #ddd}
-        td{padding:7px 10px;border-bottom:1px solid #eee}
-        tr:last-child td{border-bottom:none}
-        .foot{margin-top:16px;font-size:13px;text-align:right}
-        .foot span{font-weight:700}
-      </style></head><body>
-      <h2>Stylist Report</h2>
-      <p>Period: ${rangeLabel}</p>
-      <table>
-        <thead><tr>
-          <th>Stylist</th><th style="text-align:center">Services</th>
-          <th style="text-align:right">Revenue</th>
-          <th style="text-align:right">Avg / Service</th>
-          <th style="text-align:right">Commission</th>
-        </tr></thead>
-        <tbody>${tableRows}</tbody>
-      </table>
-      <div class="foot">
-        Total Revenue: <span>AED ${totalRev.toFixed(2)}</span> &nbsp;|&nbsp;
-        Total Commission: <span style="color:#E91E8C">AED ${totalCom.toFixed(2)}</span>
-      </div>
-      </body></html>`;
-    try {
-      if (Platform.OS === "web") {
-        const w = window.open("", "_blank", "width=700,height=500");
-        if (w) { w.document.write(html); w.document.close(); setTimeout(() => { try { w.print(); } catch {} }, 300); }
-      } else {
-        const Print = await import("expo-print");
-        await Print.printAsync({ html });
-      }
-    } catch (e: any) {
-      Alert.alert("PDF Failed", e?.message || String(e));
-    }
-  }, [rangeLabel]);
-
   const renderStylist = () => {
     const filtered = stylistFilter === "all" ? stylistStats : stylistStats.filter(s => s.name === stylistFilter);
     const total = filtered.reduce((s, x) => s + x.amount, 0);
@@ -1142,27 +1266,20 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
       <View style={[st.root, { backgroundColor: colors.background }]}>
         {renderHdr("Stylist Report", () => setView(null), () => handleExport("stylist-report", filtered.map(s => ({
           Stylist: s.name, Services: s.count, TotalRevenue: s.amount.toFixed(2), AvgOrder: s.avg.toFixed(2), Commission: s.commission.toFixed(2),
-        }))))}
+        }))), () => handleStylistPdf(filtered))}
         <ScrollView contentContainerStyle={st.scroll}>
           {renderPresets((p) => loadRangeData(p))}
           {loaded && stylistStats.length > 0 && (
-            <>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4, marginBottom: 8 }} contentContainerStyle={{ paddingHorizontal: 4, gap: 6, flexDirection: "row" }}>
-                {["all", ...stylistStats.map(s => s.name)].map(name => (
-                  <TouchableOpacity key={name} onPress={() => setStylistFilter(name)}
-                    style={[st.presetBtn, { backgroundColor: stylistFilter === name ? "#E91E8C" : colors.secondary, borderColor: stylistFilter === name ? "#E91E8C" : colors.border, borderRadius: colors.radius }]}>
-                    <Text style={{ color: stylistFilter === name ? "#fff" : colors.mutedForeground, fontSize: 11, fontWeight: "600" }}>
-                      {name === "all" ? "All Stylists" : name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-              <TouchableOpacity onPress={() => handleStylistPdf(filtered)}
-                style={[st.exportBtn, { borderColor: "#E91E8C", borderRadius: colors.radius, alignSelf: "flex-end", marginBottom: 8, paddingHorizontal: 12 }]}>
-                <Feather name="file-text" size={14} color="#E91E8C" />
-                <Text style={{ color: "#E91E8C", fontSize: 12, fontWeight: "700" }}>Export PDF</Text>
-              </TouchableOpacity>
-            </>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4, marginBottom: 8 }} contentContainerStyle={{ paddingHorizontal: 4, gap: 6, flexDirection: "row" }}>
+              {["all", ...stylistStats.map(s => s.name)].map(name => (
+                <TouchableOpacity key={name} onPress={() => setStylistFilter(name)}
+                  style={[st.presetBtn, { backgroundColor: stylistFilter === name ? "#E91E8C" : colors.secondary, borderColor: stylistFilter === name ? "#E91E8C" : colors.border, borderRadius: colors.radius }]}>
+                  <Text style={{ color: stylistFilter === name ? "#fff" : colors.mutedForeground, fontSize: 11, fontWeight: "600" }}>
+                    {name === "all" ? "All Stylists" : name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           )}
           {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} /> :
             !loaded ? null :
