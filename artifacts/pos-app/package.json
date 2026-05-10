@@ -75,6 +75,6 @@
     "react-native-fs": "^2.20.0",
     "react-native-tcp-socket": "^6.4.1",
     "react-native-thermal-receipt-printer-image-qr": "^0.1.12",
-    "react-native-view-shot": "^5.1.0"
+    "react-native-view-shot": "4.0.3"
   }
 }
