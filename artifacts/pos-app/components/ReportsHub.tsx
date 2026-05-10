@@ -1108,12 +1108,30 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
                                 </View>
                               </View>
                               <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{fmtDateTime(sale.createdAt)}</Text>
-                              {(sale.splitPayments?.length ?? 0) > 0 && (
-                                <Text style={{ color: colors.mutedForeground, fontSize: 11, marginTop: 2 }}>
-                                  {sale.splitPayments!.map(sp => `${sp.method} ${formatCurrency(sp.amount)}`).join(" + ")}
-                                </Text>
+                              {/* Payment detail — split legs or single method */}
+                              {(sale.splitPayments?.length ?? 0) > 0 ? (
+                                <View style={{ marginTop: 4, gap: 1 }}>
+                                  {sale.splitPayments!.map((sp, si) => {
+                                    const spColor = CUST_METHOD_COLORS[sp.method] ?? "#6b7280";
+                                    return (
+                                      <View key={si} style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                                        <View style={{ backgroundColor: spColor + "18", borderRadius: 3, paddingHorizontal: 5, paddingVertical: 1 }}>
+                                          <Text style={{ color: spColor, fontSize: 9, fontWeight: "700" }}>{sp.method.toUpperCase()}</Text>
+                                        </View>
+                                        <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{formatCurrency(sp.amount)}</Text>
+                                      </View>
+                                    );
+                                  })}
+                                </View>
+                              ) : (
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 4 }}>
+                                  <View style={{ backgroundColor: pmColor + "18", borderRadius: 3, paddingHorizontal: 5, paddingVertical: 1 }}>
+                                    <Text style={{ color: pmColor, fontSize: 9, fontWeight: "700" }}>{sale.paymentMethod.toUpperCase()}</Text>
+                                  </View>
+                                  <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{formatCurrency(sale.total)}</Text>
+                                </View>
                               )}
-                              <View style={{ flexDirection: "row", gap: 12, marginTop: 4 }}>
+                              <View style={{ flexDirection: "row", gap: 12, marginTop: 3 }}>
                                 <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Sub {formatCurrency(sale.subtotal)}</Text>
                                 <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>VAT {formatCurrency(sale.vatAmount)}</Text>
                                 {(sale.discountAmount ?? 0) > 0 && <Text style={{ color: "#F39C12", fontSize: 11 }}>-{formatCurrency(sale.discountAmount ?? 0)}</Text>}
@@ -1123,16 +1141,14 @@ export function ReportsHub({ onBack, workMode }: { onBack: () => void; workMode?
                               <Text style={{ color: isRefund ? "#F39C12" : colors.foreground, fontWeight: "700", fontSize: 14 }}>
                                 {isRefund ? "-" : "+"}{formatCurrency(sale.total)}
                               </Text>
-                              {!isRefund && (
-                                <TouchableOpacity
-                                  onPress={() => handlePrintCustReceipt(sale)}
-                                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                  style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 5, borderWidth: 1, borderColor: colors.primary + "60", backgroundColor: colors.primary + "10" }}
-                                >
-                                  <Feather name="printer" size={11} color={colors.primary} />
-                                  <Text style={{ color: colors.primary, fontSize: 10, fontWeight: "700" }}>Receipt</Text>
-                                </TouchableOpacity>
-                              )}
+                              <TouchableOpacity
+                                onPress={() => handlePrintCustReceipt(sale)}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 5, borderWidth: 1, borderColor: (isRefund ? "#F39C12" : colors.primary) + "60", backgroundColor: (isRefund ? "#F39C12" : colors.primary) + "10" }}
+                              >
+                                <Feather name="printer" size={11} color={isRefund ? "#F39C12" : colors.primary} />
+                                <Text style={{ color: isRefund ? "#F39C12" : colors.primary, fontSize: 10, fontWeight: "700" }}>Receipt</Text>
+                              </TouchableOpacity>
                             </View>
                           </View>
                         </View>
