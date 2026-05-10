@@ -62,6 +62,7 @@ export default function LaundryOrdersScreen() {
   const [collectBusy, setCollectBusy] = useState(false);
 
   const [detailOrder, setDetailOrder] = useState<LaundryOrder | null>(null);
+  const [pendingReadyId, setPendingReadyId] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     const orders = await loadLaundryOrders();
@@ -78,20 +79,13 @@ export default function LaundryOrdersScreen() {
   const displayed = allOrders.filter((o) => o.status === activeTab);
 
   const handleMarkReady = useCallback((order: LaundryOrder) => {
-    Alert.alert(
-      "Mark as Ready",
-      `Mark ${order.ticketNumber} as ready for collection?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Mark Ready",
-          onPress: async () => {
-            await updateLaundryOrderStatus(order.id, "ready");
-            reload();
-          },
-        },
-      ]
-    );
+    setPendingReadyId(order.id);
+  }, []);
+
+  const handleConfirmReady = useCallback(async (order: LaundryOrder) => {
+    setPendingReadyId(null);
+    await updateLaundryOrderStatus(order.id, "ready");
+    reload();
   }, [updateLaundryOrderStatus, reload]);
 
   const handleCollect = useCallback(async () => {
@@ -143,10 +137,11 @@ export default function LaundryOrdersScreen() {
 
   const renderCard = useCallback(({ item }: { item: LaundryOrder }) => {
     const isOverdue = item.status !== "collected" && Date.now() > item.promisedAt;
+    const awaitingConfirm = pendingReadyId === item.id;
     return (
       <TouchableOpacity
         style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
-        onPress={() => setDetailOrder(item)}
+        onPress={() => { if (!awaitingConfirm) setDetailOrder(item); }}
         activeOpacity={0.75}
       >
         <View style={styles.cardTop}>
@@ -186,7 +181,7 @@ export default function LaundryOrdersScreen() {
           </Text>
         ) : null}
 
-        {item.status === "received" && (
+        {item.status === "received" && !awaitingConfirm && (
           <TouchableOpacity
             style={[styles.actionBtn, { backgroundColor: "#F59E0B", borderRadius: colors.radius }]}
             onPress={() => handleMarkReady(item)}
@@ -194,6 +189,27 @@ export default function LaundryOrdersScreen() {
             <Feather name="check-circle" size={15} color="#fff" />
             <Text style={styles.actionBtnTxt}>Mark Ready</Text>
           </TouchableOpacity>
+        )}
+
+        {item.status === "received" && awaitingConfirm && (
+          <View style={[styles.confirmRow, { borderRadius: colors.radius }]}>
+            <Text style={[styles.confirmTxt, { color: colors.foreground }]}>Mark {item.ticketNumber} as ready?</Text>
+            <View style={styles.confirmBtns}>
+              <TouchableOpacity
+                style={[styles.confirmNo, { borderColor: colors.border, borderRadius: colors.radius }]}
+                onPress={() => setPendingReadyId(null)}
+              >
+                <Text style={[styles.confirmNoTxt, { color: colors.mutedForeground }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmYes, { borderRadius: colors.radius }]}
+                onPress={() => handleConfirmReady(item)}
+              >
+                <Feather name="check" size={14} color="#fff" />
+                <Text style={styles.confirmYesTxt}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         )}
 
         {item.status === "ready" && (
@@ -216,7 +232,7 @@ export default function LaundryOrdersScreen() {
         )}
       </TouchableOpacity>
     );
-  }, [colors, handleMarkReady]);
+  }, [colors, pendingReadyId, handleMarkReady, handleConfirmReady]);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background, paddingTop: insets.top + (Platform.OS === "web" ? 8 : 4) }]}>
@@ -478,4 +494,11 @@ const styles = StyleSheet.create({
   itemNotes: { fontSize: 12, fontStyle: "italic" },
   itemQty: { fontSize: 13 },
   itemTotal: { fontSize: 14, fontWeight: "600", minWidth: 64, textAlign: "right" },
+  confirmRow: { backgroundColor: "#F59E0B18", padding: 10, marginTop: 6, gap: 8 },
+  confirmTxt: { fontSize: 13, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
+  confirmBtns: { flexDirection: "row", gap: 8 },
+  confirmNo: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 8, borderWidth: 1 },
+  confirmNoTxt: { fontSize: 13, fontWeight: "600" },
+  confirmYes: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 8, backgroundColor: "#F59E0B" },
+  confirmYesTxt: { color: "#fff", fontSize: 13, fontWeight: "700", fontFamily: "Inter_700Bold" },
 });
