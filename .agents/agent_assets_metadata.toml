@@ -18,6 +18,30 @@ uri = "file://artifacts/al-salik-demo-video/public/images/bg-tech-abstract.png"
 type = "image"
 title = "Abstract tech particles"
 
+[[generated]]
+id = "TkXvza9LnlRv_l0A2Us9-"
+uri = "file://attached_assets/slide_hero.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "oeOhrT2cqvXvYvQGGomw6"
+uri = "file://attached_assets/slide_modes.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "glQ6aZAhmUyRS_kU8BN7q"
+uri = "file://attached_assets/slide_salon.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "K_TUcvasYA4We_sLA7NG7"
+uri = "file://attached_assets/slide_analytics.png"
+type = "image"
+title = "generated_image"
+
 [[outputs]]
 id = "ac2cruQ1vTpPmBUTFt5gd"
 uri = "file://Al-Salik-POS-Windows-Installer.zip"

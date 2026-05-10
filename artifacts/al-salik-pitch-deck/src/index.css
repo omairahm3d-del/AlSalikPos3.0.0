@@ -11,20 +11,17 @@
 }
 
 :root {
-  /* Replace these with brand colors */
-  --slide-primary: #4f46e5;
-  --slide-accent: #06b6d4;
-  --slide-bg: #f8fafc;
-  --slide-text: #0f172a;
-  --slide-muted: #64748b;
-  --font-display-family: "Inter", system-ui, sans-serif;
+  --slide-primary: #14B8A6;
+  --slide-accent: #14B8A6;
+  --slide-bg: #0F172A;
+  --slide-text: #FFFFFF;
+  --slide-muted: #94A3B8;
+  --font-display-family: "DM Sans", system-ui, sans-serif;
   --font-body-family: "Inter", system-ui, sans-serif;
-  color-scheme: light;
+  color-scheme: dark;
 }
 
-html,
-body,
-#root {
+html, body, #root {
   width: 100%;
   height: 100%;
   margin: 0;

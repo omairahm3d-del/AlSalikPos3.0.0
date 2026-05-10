@@ -1,1 +1,146 @@
-[]
+[
+  {
+    "id": "a1b2c3d4-0001-4000-8000-000000000001",
+    "position": 1,
+    "filepath": "src/pages/slides/Slide01Hero.tsx",
+    "title": "Al Salik POS — Built for UAE Business",
+    "description": "Hero title slide with isometric-data layout and hero image",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0002-4000-8000-000000000002",
+    "position": 2,
+    "filepath": "src/pages/slides/Slide02Modes.tsx",
+    "title": "Which Mode Is Right for You?",
+    "description": "Two-column comparison: Restaurant Mode vs Saloon Mode",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0003-4000-8000-000000000003",
+    "position": 3,
+    "filepath": "src/pages/slides/Slide03RestPOS.tsx",
+    "title": "Restaurant Mode — Point of Sale",
+    "description": "Core POS: payments, VAT, barcodes, tables, modifiers, staff PIN",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0004-4000-8000-000000000004",
+    "position": 4,
+    "filepath": "src/pages/slides/Slide04RestStock.tsx",
+    "title": "Restaurant Mode — Inventory & Stock",
+    "description": "Live stock, low-stock alerts, GRN, weight selling, movement history",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0005-4000-8000-000000000005",
+    "position": 5,
+    "filepath": "src/pages/slides/Slide05RestReports.tsx",
+    "title": "Restaurant Mode — Reports & Business Insights",
+    "description": "Z-Report, revenue breakdown, bar chart trend, CSV export",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0006-4000-8000-000000000006",
+    "position": 6,
+    "filepath": "src/pages/slides/Slide06RestOps.tsx",
+    "title": "Restaurant Mode — Built for UAE Operations",
+    "description": "Offline-first, multi-device, multi-branch, staff PIN, CRM, VAT",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0007-4000-8000-000000000007",
+    "position": 7,
+    "filepath": "src/pages/slides/Slide07RestCustomers.tsx",
+    "title": "Restaurant Mode — Customer Management",
+    "description": "Loyalty points, credit accounts, purchase history, multi-branch sync",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0008-4000-8000-000000000008",
+    "position": 8,
+    "filepath": "src/pages/slides/Slide08SaloonDivider.tsx",
+    "title": "Saloon Mode — For Salons, Spas & Barbers",
+    "description": "Full-bleed salon image section divider introducing Saloon Mode",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0009-4000-8000-000000000009",
+    "position": 9,
+    "filepath": "src/pages/slides/Slide09Stylists.tsx",
+    "title": "Saloon Mode — Stylists & Services",
+    "description": "Service duration, stylist picker, receipt per stylist, performance report",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0010-4000-8000-000000000010",
+    "position": 10,
+    "filepath": "src/pages/slides/Slide10Bundles.tsx",
+    "title": "Saloon Mode — Service Bundles",
+    "description": "Group services at one price with 4 example bundle cards",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0011-4000-8000-000000000011",
+    "position": 11,
+    "filepath": "src/pages/slides/Slide11Packages.tsx",
+    "title": "Saloon Mode — Prepaid Packages",
+    "description": "Session credits, automatic tracking, recurring revenue",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0012-4000-8000-000000000012",
+    "position": 12,
+    "filepath": "src/pages/slides/Slide12Appointments.tsx",
+    "title": "Saloon Mode — Appointment Calendar",
+    "description": "Book by service/stylist/time, daily schedule view, convert to sale",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0013-4000-8000-000000000013",
+    "position": 13,
+    "filepath": "src/pages/slides/Slide13StylistReport.tsx",
+    "title": "Saloon Mode — Stylist Revenue Report",
+    "description": "Revenue and service count per stylist with bar chart and analytics image",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0014-4000-8000-000000000014",
+    "position": 14,
+    "filepath": "src/pages/slides/Slide14BackOffice.tsx",
+    "title": "Manager Tools — Back Office Portal",
+    "description": "Reports, catalog, customers, stock, purchasing, license/devices",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0015-4000-8000-000000000015",
+    "position": 15,
+    "filepath": "src/pages/slides/Slide15LicenseSync.tsx",
+    "title": "Platform — Licensing & Sync",
+    "description": "License key activation, online/offline types, bidirectional sync, idempotent sales push",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0016-4000-8000-000000000016",
+    "position": 16,
+    "filepath": "src/pages/slides/Slide16Hardware.tsx",
+    "title": "Platform — Hardware & Devices",
+    "description": "Mobile (iOS/Android), Windows desktop, plug-and-play peripherals",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0017-4000-8000-000000000017",
+    "position": 17,
+    "filepath": "src/pages/slides/Slide17WhySalik.tsx",
+    "title": "Six Reasons to Choose Al Salik POS",
+    "description": "Offline, UAE VAT, multi-branch, two modes, no per-transaction fees, same-day ready",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a1b2c3d4-0018-4000-8000-000000000018",
+    "position": 18,
+    "filepath": "src/pages/slides/Slide18Closing.tsx",
+    "title": "Ready to Go Live?",
+    "description": "Closing CTA slide — both modes available now",
+    "speakerNotes": ""
+  }
+]
