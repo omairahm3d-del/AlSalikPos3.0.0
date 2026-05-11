@@ -9,6 +9,8 @@
     "serve": "node server/serve.js",
     "build:android": "node scripts/build-android.js",
     "build:android:release": "node scripts/build-android.js --release",
+    "build:android:local": "node scripts/build-local-android.js",
+    "build:android:local:release": "node scripts/build-local-android.js --release",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "postinstall": "node scripts/fix-native-modules.js"
   },
