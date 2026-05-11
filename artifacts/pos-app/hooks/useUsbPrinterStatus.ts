@@ -28,16 +28,13 @@ export function useUsbPrinterStatus(device: UsbDevice | null): {
     }
   }, [device]);
 
+  // Only run on explicit retry — not on mount — to avoid disrupting the
+  // USB session with repeated connectPrinter calls before the user has
+  // granted permission or selected a device.
+  // Status starts as "idle" and the user taps "Retry Connection" to check.
   useEffect(() => {
-    check();
-  }, [check]);
-
-  useEffect(() => {
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") check();
-    });
-    return () => sub.remove();
-  }, [check]);
+    if (!device) setStatus("idle");
+  }, [device]);
 
   return { status, retry: check };
 }

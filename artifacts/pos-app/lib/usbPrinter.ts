@@ -103,6 +103,8 @@ export async function disconnectUsbPrinter(): Promise<void> {
 
 /**
  * Lightweight connectivity check. Returns the current printer status.
+ * Does NOT call init() — permission must already have been granted via
+ * requestUsbPermission() during the scan step.
  */
 export async function getPrinterStatus(
   device: UsbDevice,
@@ -111,7 +113,6 @@ export async function getPrinterStatus(
   const printer = getUSBPrinter();
   if (!printer) return "idle";
   try {
-    await printer.init();
     await printer.connectPrinter(
       String(device.vendorId),
       String(device.productId),
