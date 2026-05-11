@@ -20,7 +20,7 @@ import type { PrinterSettings } from "@/types";
 import { DEFAULT_PRINTER_SETTINGS } from "@/types";
 import type { UsbDevice as LibUsbDevice } from "@/lib/usbPrinter";
 
-type ScanState = "idle" | "scanning";
+type ScanState = "idle" | "requesting" | "waiting_allow" | "scanning";
 type TestState = "idle" | "testing" | "ok" | "fail";
 type DrawerState = "idle" | "opening" | "ok" | "fail";
 
@@ -120,27 +120,41 @@ export default function PrinterSettingsScreen() {
   );
 
   const handleScan = useCallback(async () => {
-    setScanState("scanning");
+    if (scanState === "waiting_allow") {
+      // Step 2 — user has tapped Allow, now actually list devices
+      setScanState("scanning");
+      try {
+        const { scanUsbDevices } = await import("@/lib/usbPrinter");
+        const devs = await scanUsbDevices();
+        setDetectedDevices(devs);
+        if (devs.length === 0) {
+          Alert.alert(
+            "No USB Printers Found",
+            "No USB devices detected after granting permission.\n\n• Make sure the printer is powered on and the USB cable is connected\n• Try unplugging and re-plugging the USB cable\n• Then tap Detect again",
+          );
+        }
+      } catch {
+        Alert.alert("Scan Error", "Could not list USB devices. Make sure the printer is connected and powered on.");
+      } finally {
+        setScanState("idle");
+      }
+      return;
+    }
+
+    // Step 1 — request permission first (triggers the Allow dialog)
+    setScanState("requesting");
     setDetectedDevices([]);
     try {
-      const { listUsbPrinters } = await import("@/lib/usbPrinter");
-      const devs = await listUsbPrinters();
-      setDetectedDevices(devs);
-      if (devs.length === 0) {
-        Alert.alert(
-          "No USB Printers Found",
-          "No USB devices detected.\n\n• Make sure the OTG cable is connected via USB-OTG adapter\n• Ensure the printer is powered on\n• Accept the USB permission dialog if it appeared\n• Try tapping Detect again after granting permission",
-        );
-      }
+      const { requestUsbPermission } = await import("@/lib/usbPrinter");
+      await requestUsbPermission();
+      // Permission dialog is now showing (or already granted).
+      // Switch to waiting_allow so the user can tap Allow, then tap Scan Again.
+      setScanState("waiting_allow");
     } catch {
-      Alert.alert(
-        "Scan Error",
-        "Could not scan for USB devices.\n\n• Make sure the OTG cable is connected\n• Accept any USB permission dialog that appears\n• This requires an EAS / development build (not Expo Go)",
-      );
-    } finally {
+      Alert.alert("USB Error", "Could not initialise USB. Make sure the printer is connected and powered on.");
       setScanState("idle");
     }
-  }, []);
+  }, [scanState]);
 
   const handleTestPrint = useCallback(async () => {
     if (!currentDevice) return;
@@ -222,9 +236,9 @@ export default function PrinterSettingsScreen() {
         <View style={s.card}>
           <View style={s.row}>
             <View style={{ flex: 1 }}>
-              <Text style={s.cardTitle}>Enable USB OTG Printer</Text>
+              <Text style={s.cardTitle}>Enable USB Printer</Text>
               <Text style={s.cardSub}>
-                Connect an ESC/POS printer via USB OTG cable
+                Connect an ESC/POS thermal printer via USB cable
               </Text>
             </View>
             <Switch
@@ -300,23 +314,53 @@ export default function PrinterSettingsScreen() {
             {/* ── Scan for printers ────────────────────────────────── */}
             <View style={s.card}>
               <Text style={s.sectionLabel}>Detect Printers</Text>
+
+              {scanState === "waiting_allow" && (
+                <View style={{
+                  backgroundColor: "#FEF3C7",
+                  borderRadius: 8,
+                  padding: 12,
+                  marginBottom: 10,
+                  borderWidth: 1,
+                  borderColor: "#F59E0B",
+                  flexDirection: "row",
+                  gap: 8,
+                  alignItems: "flex-start",
+                }}>
+                  <Feather name="alert-circle" size={16} color="#B45309" style={{ marginTop: 1 }} />
+                  <Text style={{ flex: 1, fontSize: 13, color: "#92400E", lineHeight: 19 }}>
+                    A USB permission dialog appeared.{"\n"}
+                    Tap <Text style={{ fontWeight: "700" }}>Allow</Text> in that dialog, then tap <Text style={{ fontWeight: "700" }}>Scan for Devices</Text> below.
+                  </Text>
+                </View>
+              )}
+
               <TouchableOpacity
                 style={[
                   s.primaryBtn,
-                  scanState === "scanning" && { opacity: 0.7 },
+                  (scanState === "requesting" || scanState === "scanning") && { opacity: 0.7 },
+                  scanState === "waiting_allow" && { backgroundColor: "#16A34A" },
                 ]}
-                disabled={scanState === "scanning"}
+                disabled={scanState === "requesting" || scanState === "scanning"}
                 onPress={handleScan}
               >
-                {scanState === "scanning" ? (
+                {(scanState === "requesting" || scanState === "scanning") ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Feather name="search" size={14} color="#fff" />
+                  <Feather
+                    name={scanState === "waiting_allow" ? "check-circle" : "search"}
+                    size={14}
+                    color="#fff"
+                  />
                 )}
                 <Text style={s.primaryBtnText}>
-                  {scanState === "scanning"
+                  {scanState === "requesting"
+                    ? "Requesting Permission…"
+                    : scanState === "scanning"
                     ? "Scanning…"
-                    : "Detect USB Printers"}
+                    : scanState === "waiting_allow"
+                    ? "Scan for Devices"
+                    : "Detect USB Printer"}
                 </Text>
               </TouchableOpacity>
 

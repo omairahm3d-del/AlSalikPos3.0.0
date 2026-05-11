@@ -29,11 +29,12 @@ function getUSBPrinter(): any | null {
 }
 
 /**
- * Initialise the USB subsystem. On Android this triggers the OS
- * permission dialog for the attached USB device.  Must be called
- * before getDeviceList / connectPrinter.
+ * Step 1 — Request USB permission.
+ * Calls init() which triggers the Android "Allow access to USB device?"
+ * dialog. Call this first, wait for the user to tap Allow, then call
+ * scanUsbDevices().
  */
-async function initUsb(): Promise<boolean> {
+export async function requestUsbPermission(): Promise<boolean> {
   const printer = getUSBPrinter();
   if (!printer) return false;
   try {
@@ -45,11 +46,15 @@ async function initUsb(): Promise<boolean> {
   }
 }
 
-export async function listUsbPrinters(): Promise<UsbDevice[]> {
+/**
+ * Step 2 — List connected USB devices.
+ * Call AFTER the user has tapped Allow in the permission dialog.
+ * Does NOT call init() so it won't race against the user's response.
+ */
+export async function scanUsbDevices(): Promise<UsbDevice[]> {
   const printer = getUSBPrinter();
   if (!printer) return [];
   try {
-    await printer.init();
     const devs: Array<{ vendor_id: string; product_id: string; device_name?: string }> =
       await printer.getDeviceList();
     if (!Array.isArray(devs)) return [];
@@ -62,6 +67,12 @@ export async function listUsbPrinters(): Promise<UsbDevice[]> {
     console.warn("[usbPrinter] list:", e?.message ?? e);
     return [];
   }
+}
+
+/** @deprecated Use requestUsbPermission() + scanUsbDevices() instead */
+export async function listUsbPrinters(): Promise<UsbDevice[]> {
+  await requestUsbPermission();
+  return scanUsbDevices();
 }
 
 export async function connectUsbPrinter(device: UsbDevice): Promise<boolean> {
