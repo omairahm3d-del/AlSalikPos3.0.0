@@ -29,6 +29,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ProductCard } from "@/components/ProductCard";
 import { CustomerSelectModal } from "@/components/CustomerSelectModal";
 import { ReceiptModal } from "@/components/ReceiptModal";
+import { LaundryTicketConfirmModal } from "@/components/LaundryTicketConfirmModal";
 import { useCart } from "@/context/CartContext";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useLicense } from "@/context/LicenseContext";
@@ -38,7 +39,7 @@ import { useWorkMode } from "@/context/WorkModeContext";
 import { useColors } from "@/hooks/useColors";
 import { generateKitchenTicketHTML, getUniqueStations } from "@/lib/kitchenTicketTemplate";
 import { generateBillHTML } from "@/lib/billTemplate";
-import type { BusinessSettings, Category, Customer, CustomerPackage, KOTSettings, ModifierGroup, OrderType, PosTable, PrepaidPackage, Product, Rider, Sale, SaleItem, SelectedModifier, ServiceBundle, SplitPaymentEntry, TaxGroup } from "@/types";
+import type { BusinessSettings, Category, Customer, CustomerPackage, KOTSettings, LaundryOrder, ModifierGroup, OrderType, PosTable, PrepaidPackage, Product, Rider, Sale, SaleItem, SelectedModifier, ServiceBundle, SplitPaymentEntry, TaxGroup } from "@/types";
 import { DEFAULT_KOT_SETTINGS, VAT_RATE, formatCurrency } from "@/types";
 
 type PaymentMethod = "Card" | "Cash" | "Credit" | "Split";
@@ -172,6 +173,7 @@ export default function POSScreen() {
   const [laundryNotes, setLaundryNotes] = useState("");
   const [laundryPayNow, setLaundryPayNow] = useState(false);
   const [laundryBusy, setLaundryBusy] = useState(false);
+  const [pendingLaundryOrder, setPendingLaundryOrder] = useState<LaundryOrder | null>(null);
   /** Set when a ticket has been created and the user chose pay-now; collectLaundryOrder is called after saveSale. */
   const [pendingLaundryOrderId, setPendingLaundryOrderId] = useState<string | null>(null);
 
@@ -948,14 +950,10 @@ export default function POSScreen() {
         setShowPayment(true);
       } else {
         // Pay Now is off: leave the order in "received" status so it appears
-        // in the Laundry tab. The cashier will collect & pay from there.
+        // in the Laundry tab. Show confirmation modal with print & WhatsApp options.
         clearCart();
         setSelectedCustomer(null);
-        Alert.alert(
-          "Ticket Created",
-          `Ticket ${order.ticketNumber} has been created and is now in the Laundry → Received tab.`,
-          [{ text: "OK" }]
-        );
+        setPendingLaundryOrder(order);
       }
     } catch (e: any) {
       Alert.alert("Error", e.message || "Could not create ticket.");
@@ -2139,6 +2137,12 @@ export default function POSScreen() {
       </Modal>
 
       <ReceiptModal visible={!!receiptSale} sale={receiptSale} onClose={closeReceipt} />
+      <LaundryTicketConfirmModal
+        visible={!!pendingLaundryOrder}
+        order={pendingLaundryOrder}
+        businessSettings={businessSettings}
+        onClose={() => setPendingLaundryOrder(null)}
+      />
       <CloseRegisterModal
         visible={showCloseRegister}
         onClose={() => setShowCloseRegister(false)}

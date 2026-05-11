@@ -1,4 +1,4 @@
-import type { BusinessSettings, ReceiptDesignSettings, Sale, SaleItem, ZReport } from "@/types";
+import type { BusinessSettings, LaundryOrder, ReceiptDesignSettings, Sale, SaleItem, ZReport } from "@/types";
 import { CURRENCY, DEFAULT_RECEIPT_DESIGN } from "@/types";
 
 function asciiSafe(s: string): string {
@@ -180,6 +180,49 @@ export function formatWhatsAppPhone(raw: string): string {
   if (digits.startsWith("00")) return digits.slice(2);
   if (digits.startsWith("0") && digits.length <= 10) return `971${digits.slice(1)}`;
   return digits;
+}
+
+export function generateLaundryWhatsAppText(
+  order: LaundryOrder,
+  business: BusinessSettings,
+): string {
+  const sep = "─────────────────────────────";
+  const lines: string[] = [];
+  const vatOn = business.vatEnabled !== false;
+  const promisedStr = new Date(order.promisedAt).toLocaleString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+
+  lines.push("*🧺 LAUNDRY TICKET — Pending Payment*");
+  lines.push("");
+  if (business.businessName) lines.push(`*${business.businessName}*`);
+  if (business.trn && vatOn) lines.push(`TRN: ${business.trn}`);
+  if (business.address) lines.push(business.address);
+  if (business.phone) lines.push(`Tel: ${business.phone}`);
+  lines.push("");
+  lines.push(sep);
+  lines.push(`*Ticket #: ${order.ticketNumber}*`);
+  lines.push(`Date: ${dateStr(order.createdAt)}`);
+  lines.push(`Customer: ${order.customerName}`);
+  lines.push(`Type: ${order.orderType === "express" ? "Express" : "Drop-off"}`);
+  lines.push(`Ready by: ${promisedStr}`);
+  if (order.staffName) lines.push(`Staff: ${order.staffName}`);
+  lines.push(sep);
+  lines.push("*Items:*");
+  for (const it of order.items) {
+    lines.push(`• ${it.productName} × ${it.quantity}  — ${CURRENCY} ${it.lineTotal.toFixed(2)}`);
+    if (it.notes) lines.push(`  _(${it.notes})_`);
+  }
+  lines.push(sep);
+  lines.push(`Subtotal:  ${CURRENCY} ${order.subtotal.toFixed(2)}`);
+  if (vatOn) lines.push(`VAT (5%):  ${CURRENCY} ${order.vatAmount.toFixed(2)}`);
+  lines.push(sep);
+  lines.push(`*AMOUNT DUE:  ${CURRENCY} ${order.total.toFixed(2)}*`);
+  if (order.notes) lines.push(`\nNotes: ${order.notes}`);
+  lines.push(sep);
+  lines.push("Please bring this ticket when collecting your order.");
+  lines.push("يُرجى إحضار هذه البطاقة عند استلام طلبك");
+  return lines.join("\n");
 }
 
 export function generateZReportText(report: ZReport, business: BusinessSettings, paperWidth: "58mm" | "80mm" = "80mm"): string {

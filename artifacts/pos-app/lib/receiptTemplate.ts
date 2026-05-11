@@ -1,4 +1,4 @@
-import type { BusinessSettings, ReceiptDesignSettings, Sale, SaleItem, ZReport } from "@/types";
+import type { BusinessSettings, LaundryOrder, ReceiptDesignSettings, Sale, SaleItem, ZReport } from "@/types";
 import { CURRENCY, DEFAULT_RECEIPT_DESIGN } from "@/types";
 import { generateBarcodeSVG, generateWhatsAppQRSVG } from "./barcodeSvg";
 
@@ -516,6 +516,113 @@ export function generateCreditPaymentReceiptHTML(
     }<br/>
     Thank you for your payment<br/>
     شكراً على الدفع<br/>
+    <span style="font-size:9px;color:#000;border-top:1px dashed #000;display:inline-block;margin-top:4px;padding-top:4px;">Powered by Al Salik Computers</span>
+  </div>
+</body>
+</html>`;
+}
+
+export function generateLaundryTicketHTML(
+  order: LaundryOrder,
+  business: BusinessSettings,
+): string {
+  const rd = business.receiptDesign ?? DEFAULT_RECEIPT_DESIGN;
+  const fs = getFontSize(rd.fontSize);
+  const pw = getPaperWidth(rd.paperWidth);
+  const pageSize = rd.paperWidth === "58mm" ? "58mm" : "80mm";
+  const mT = rd.marginTop ?? 4;
+  const mR = rd.marginRight ?? 2;
+  const mB = rd.marginBottom ?? 4;
+  const mL = rd.marginLeft ?? 2;
+  const vatOn = business.vatEnabled !== false;
+  const promisedStr = new Date(order.promisedAt).toLocaleString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+  const createdStr = new Date(order.createdAt).toLocaleString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+  const logoMaxW = rd.paperWidth === "58mm" ? 100 : 140;
+  const logoSection = rd.showLogo && business.logoBase64
+    ? `<div class="center" style="margin-bottom:6px;"><img src="${business.logoBase64}" alt="Logo" style="max-width:${logoMaxW}px;max-height:60px;object-fit:contain;" /></div>`
+    : "";
+  const trnLine = vatOn && rd.showTrn && business.trn ? `<div>TRN: ${business.trn}</div>` : "";
+
+  const itemRows = order.items.map((item) => `
+    <tr>
+      <td style="padding:4px 0;text-align:left;">${item.productName}${item.notes ? `<br/><small style="color:#555;">${item.notes}</small>` : ""}</td>
+      <td style="padding:4px 8px;text-align:center;">${item.quantity}</td>
+      <td style="padding:4px 0;text-align:right;">${fmt(item.lineTotal)}</td>
+    </tr>`).join("");
+
+  return `<!DOCTYPE html>
+<html dir="ltr" lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    @page { margin: ${mT}mm ${mR}mm ${mB}mm ${mL}mm; size: ${pageSize} auto; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: 'Tahoma','Arial','Segoe UI',sans-serif; font-size:${fs.body}px; color:#000; width:${pw}; margin:0 auto; padding:0; }
+    .center { text-align:center; }
+    .bold { font-weight:bold; }
+    .divider { border-top:1px dashed #000; margin:6px 0; }
+    .header-title { font-size:${fs.header}px; font-weight:bold; margin-bottom:2px; }
+    .info-line { font-size:${fs.body - 1}px; line-height:1.6; }
+    table { width:100%; border-collapse:collapse; }
+    th { font-size:${fs.body - 1}px; font-weight:bold; padding:4px 0; border-bottom:1px solid #000; }
+    .total-section td { padding:2px 0; }
+    .grand-total td { font-size:${fs.header}px; font-weight:bold; padding:4px 0; }
+    .footer { font-size:${fs.body - 2}px; text-align:center; margin-top:8px; line-height:1.5; }
+    .ticket-badge { background:#000; color:#fff; font-size:${fs.header + 2}px; font-weight:bold; text-align:center; padding:4px 0; margin-bottom:4px; letter-spacing:1px; }
+    .pending-badge { border:1.5px solid #000; font-size:${fs.body}px; font-weight:bold; text-align:center; padding:2px 0; margin:4px 0; }
+  </style>
+</head>
+<body>
+  ${logoSection}
+  <div class="center">
+    <div class="header-title">LAUNDRY TICKET</div>
+    ${business.businessName ? `<div class="bold" style="font-size:${fs.body + 1}px;margin-top:2px;">${business.businessName}</div>` : ""}
+    ${trnLine}
+    ${business.address ? `<div class="info-line">${business.address}</div>` : ""}
+    ${business.phone ? `<div class="info-line">Tel: ${business.phone}</div>` : ""}
+  </div>
+  <div class="divider"></div>
+  <div class="ticket-badge">TICKET # ${order.ticketNumber}</div>
+  <div class="pending-badge">⏳ PENDING PAYMENT / الدفع عند الاستلام</div>
+  <div class="divider"></div>
+  <table>
+    <tr><td class="info-line">Date</td><td class="info-line" style="text-align:right;">${createdStr}</td></tr>
+    <tr><td class="info-line">Customer</td><td class="info-line" style="text-align:right;">${order.customerName}</td></tr>
+    ${order.customerPhone ? `<tr><td class="info-line">Phone</td><td class="info-line" style="text-align:right;">${order.customerPhone}</td></tr>` : ""}
+    <tr><td class="info-line">Type</td><td class="info-line" style="text-align:right;text-transform:capitalize;">${order.orderType}</td></tr>
+    <tr><td class="info-line">Ready by</td><td class="info-line" style="text-align:right;">${promisedStr}</td></tr>
+    ${order.staffName ? `<tr><td class="info-line">Staff</td><td class="info-line" style="text-align:right;">${order.staffName}</td></tr>` : ""}
+  </table>
+  <div class="divider"></div>
+  <table>
+    <thead>
+      <tr>
+        <th style="text-align:left;">Item</th>
+        <th style="text-align:center;">Qty</th>
+        <th style="text-align:right;">Total</th>
+      </tr>
+    </thead>
+    <tbody>${itemRows}</tbody>
+  </table>
+  <div class="divider"></div>
+  <table class="total-section">
+    <tr><td>Subtotal</td><td style="text-align:right;">${fmt(order.subtotal)}</td></tr>
+    ${vatOn ? `<tr><td>VAT (5%)</td><td style="text-align:right;">${fmt(order.vatAmount)}</td></tr>` : ""}
+  </table>
+  <div class="divider"></div>
+  <table class="grand-total">
+    <tr><td>AMOUNT DUE</td><td style="text-align:right;">${fmt(order.total)}</td></tr>
+  </table>
+  ${order.notes ? `<div class="divider"></div><div class="info-line"><b>Notes:</b> ${order.notes}</div>` : ""}
+  <div class="divider"></div>
+  <div class="footer">
+    Please bring this ticket when collecting your order.<br/>
+    يُرجى إحضار هذه البطاقة عند استلام طلبك<br/>
     <span style="font-size:9px;color:#000;border-top:1px dashed #000;display:inline-block;margin-top:4px;padding-top:4px;">Powered by Al Salik Computers</span>
   </div>
 </body>
