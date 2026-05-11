@@ -5,11 +5,11 @@ const router: IRouter = Router();
 const SIDECAR = "http://127.0.0.1:1106";
 const BUCKET_ID = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID ?? "";
 
-const INSTALLER_GCS = "public/releases/AlSalikPOS-Setup-1.0.1.exe";
-const INSTALLER_32_GCS = "public/releases/AlSalikPOS-Setup-1.0.1-32bit.exe";
+const INSTALLER_GCS = "public/releases/AlSalikPOS-Setup-2.0.0.exe";
+const INSTALLER_32_GCS = "public/releases/AlSalikPOS-Setup-2.0.0-32bit.exe";
 const APK_GCS = "public/releases/AlSalikPOS.apk";
-const INSTALLER_NAME = "Al Salik POS Setup 1.0.1.exe";
-const INSTALLER_32_NAME = "Al Salik POS Setup 1.0.1 (32-bit).exe";
+const INSTALLER_NAME = "Al Salik POS Setup 2.0.0.exe";
+const INSTALLER_32_NAME = "Al Salik POS Setup 2.0.0 (32-bit).exe";
 const APK_NAME = "Al Salik POS.apk";
 
 async function getAccessToken(): Promise<string> {
@@ -133,24 +133,24 @@ router.get("/download/info", (_req, res) => {
     windows64: {
       available: !!BUCKET_ID,
       filename: INSTALLER_NAME,
-      sizeBytes: 121764440,
-      sizeMB: 116,
+      sizeBytes: 122379841,
+      sizeMB: 117,
       platform: "Windows 10 / 11 (64-bit)",
       downloadUrl: "/api/download/installer",
     },
     windows32: {
       available: !!BUCKET_ID,
       filename: INSTALLER_32_NAME,
-      sizeBytes: 91796816,
-      sizeMB: 88,
+      sizeBytes: 98653786,
+      sizeMB: 94,
       platform: "Windows 7 SP1+ / 10 / 11 (32-bit)",
       downloadUrl: "/api/download/installer-32",
     },
     android: {
       available: !!BUCKET_ID,
       filename: APK_NAME,
-      sizeBytes: 126302922,
-      sizeMB: 120,
+      sizeBytes: 131280471,
+      sizeMB: 125,
       downloadUrl: "/api/download/apk",
     },
   });
