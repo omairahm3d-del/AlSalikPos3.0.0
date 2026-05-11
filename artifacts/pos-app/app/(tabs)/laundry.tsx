@@ -16,8 +16,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { ReceiptModal } from "@/components/ReceiptModal";
 import { useDatabase } from "@/context/DatabaseCore";
+import { useLicense } from "@/context/LicenseContext";
 import { useStaff } from "@/context/StaffContext";
 import { useColors } from "@/hooks/useColors";
+import { pullLaundryOrders, pushLaundryStatus } from "@/lib/laundryApi";
 import { formatCurrency } from "@/types";
 import type { BusinessSettings, LaundryOrder, LaundryOrderStatus, Product, Sale } from "@/types";
 import type { CartItem } from "@/types";
@@ -51,6 +53,7 @@ export default function LaundryOrdersScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { loadLaundryOrders, updateLaundryOrderStatus, collectLaundryOrder, saveSale, loadBusinessSettings } = useDatabase();
+  const { session } = useLicense();
   const { currentStaff } = useStaff();
 
   const [activeTab, setActiveTab] = useState<StatusTab>("received");
@@ -68,6 +71,16 @@ export default function LaundryOrdersScreen() {
 
   const reload = useCallback(async () => {
     try {
+      // Try to pull from the server first so all devices see every ticket.
+      if (session?.token) {
+        const serverOrders = await pullLaundryOrders(session.token);
+        if (serverOrders !== null) {
+          setAllOrders(serverOrders);
+          setLoading(false);
+          return;
+        }
+      }
+      // Fallback: load from local DB when offline or not yet authenticated.
       const orders = await loadLaundryOrders();
       setAllOrders(orders);
     } catch {
@@ -75,7 +88,7 @@ export default function LaundryOrdersScreen() {
     } finally {
       setLoading(false);
     }
-  }, [loadLaundryOrders]);
+  }, [loadLaundryOrders, session?.token]);
 
   useFocusEffect(useCallback(() => {
     setLoading(true);
@@ -92,8 +105,12 @@ export default function LaundryOrdersScreen() {
   const handleConfirmReady = useCallback(async (order: LaundryOrder) => {
     setPendingReadyId(null);
     await updateLaundryOrderStatus(order.id, "ready");
+    // Push to server so the driver's tablet sees the status change.
+    if (session?.token) {
+      pushLaundryStatus(session.token, order.id, "ready");
+    }
     reload();
-  }, [updateLaundryOrderStatus, reload]);
+  }, [updateLaundryOrderStatus, reload, session?.token]);
 
   const handleCollect = useCallback(async () => {
     if (!collectingOrder) return;
@@ -133,6 +150,16 @@ export default function LaundryOrdersScreen() {
       });
 
       await collectLaundryOrder(collectingOrder.id, sale.id, collectMethod);
+
+      // Push collected status + sale link to server (fire-and-forget).
+      if (session?.token) {
+        pushLaundryStatus(session.token, collectingOrder.id, "collected", {
+          saleId: sale.id,
+          paidAt: Date.now(),
+          paymentMethod: collectMethod,
+        });
+      }
+
       setCollectingOrder(null);
       setReceiptSale(sale);
       reload();
@@ -141,7 +168,7 @@ export default function LaundryOrdersScreen() {
     } finally {
       setCollectBusy(false);
     }
-  }, [collectingOrder, collectMethod, saveSale, collectLaundryOrder, currentStaff, businessSettings, reload]);
+  }, [collectingOrder, collectMethod, saveSale, collectLaundryOrder, currentStaff, businessSettings, reload, session?.token]);
 
   const renderCard = useCallback(({ item }: { item: LaundryOrder }) => {
     const isOverdue = item.status !== "collected" && Date.now() > item.promisedAt;

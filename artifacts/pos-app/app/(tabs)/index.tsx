@@ -35,6 +35,7 @@ import { useDatabase } from "@/context/DatabaseCore";
 import { useLicense } from "@/context/LicenseContext";
 import { useStaff } from "@/context/StaffContext";
 import { activityResetFn } from "@/lib/activityReset";
+import { pushLaundryOrder, pushLaundryStatus } from "@/lib/laundryApi";
 import { useWorkMode } from "@/context/WorkModeContext";
 import { useColors } from "@/hooks/useColors";
 import { generateKitchenTicketHTML, getUniqueStations } from "@/lib/kitchenTicketTemplate";
@@ -774,6 +775,14 @@ export default function POSScreen() {
       if (isLaundry && pendingLaundryOrderId) {
         try {
           await collectLaundryOrder(pendingLaundryOrderId, sale.id, paymentMethod);
+          // Push collected status to server so all devices see the ticket is done.
+          if (session?.token) {
+            pushLaundryStatus(session.token, pendingLaundryOrderId, "collected", {
+              saleId: sale.id,
+              paidAt: Date.now(),
+              paymentMethod,
+            });
+          }
         } catch (collectErr: any) {
           Alert.alert(
             "Ticket Not Marked Collected",
@@ -936,6 +945,11 @@ export default function POSScreen() {
           notes: ci.notes ?? null,
         })),
       });
+
+      // Push to server immediately so all devices (driver tablet, etc.) see the new ticket.
+      if (session?.token) {
+        pushLaundryOrder(session.token, order);
+      }
 
       setShowLaundryTicket(false);
 
