@@ -233,7 +233,7 @@ const menuTemplate = [
             type: 'info',
             title: 'About Al Salik POS',
             message: 'Al Salik POS',
-            detail: 'Version 1.0.0\n\nPoint of Sale system with UAE 5% VAT, AED currency, and TRN compliance.\n\nSoftware Provider:\nAl Salik Computers\n\n© 2025 Al Salik Computers. All rights reserved.',
+            detail: `Version ${app.getVersion()}\n\nPoint of Sale system with UAE 5% VAT, AED currency, and TRN compliance.\n\nSoftware Provider:\nAl Salik Computers\n\n© 2025 Al Salik Computers. All rights reserved.`,
             icon: path.join(__dirname, 'assets', 'icon.png'),
           });
         },
