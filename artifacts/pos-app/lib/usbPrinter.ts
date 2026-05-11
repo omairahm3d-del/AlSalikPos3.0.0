@@ -29,16 +29,47 @@ function getUSBPrinter(): any | null {
 }
 
 /**
+ * Module-level init flag.
+ * init() must only be called ONCE per app session — calling it a second time
+ * resets the USB host manager's internal state and loses the already-granted
+ * permission, which causes connectPrinter() to fail.
+ */
+let _usbInitialized = false;
+
+async function ensureInit(): Promise<boolean> {
+  if (_usbInitialized) return true;
+  const printer = getUSBPrinter();
+  if (!printer) return false;
+  try {
+    await printer.init();
+    _usbInitialized = true;
+    return true;
+  } catch (e: any) {
+    console.warn("[usbPrinter] init:", e?.message ?? e);
+    return false;
+  }
+}
+
+/** Reset the init flag (e.g. after USB is physically disconnected). */
+export function resetUsbInit(): void {
+  _usbInitialized = false;
+}
+
+/**
  * Step 1 — Request USB permission.
  * Calls init() which triggers the Android "Allow access to USB device?"
- * dialog. Call this first, wait for the user to tap Allow, then call
- * scanUsbDevices().
+ * dialog. Always forces a fresh init() so the dialog appears even if the
+ * module was already initialized in a prior session.
+ * Call this first, wait for the user to tap Allow, then call scanUsbDevices().
  */
 export async function requestUsbPermission(): Promise<boolean> {
   const printer = getUSBPrinter();
   if (!printer) return false;
   try {
+    // Force fresh init to ensure the permission dialog appears.
+    _usbInitialized = false;
     await printer.init();
+    _usbInitialized = true;
     return true;
   } catch (e: any) {
     console.warn("[usbPrinter] init:", e?.message ?? e);
@@ -75,11 +106,18 @@ export async function listUsbPrinters(): Promise<UsbDevice[]> {
   return scanUsbDevices();
 }
 
+/**
+ * Connect to a USB printer.
+ * Uses ensureInit() so init() is skipped if it was already called this
+ * session (e.g. during the scan flow). This prevents the second init()
+ * from resetting USB state and breaking the connection.
+ */
 export async function connectUsbPrinter(device: UsbDevice): Promise<boolean> {
   const printer = getUSBPrinter();
   if (!printer) return false;
+  const inited = await ensureInit();
+  if (!inited) return false;
   try {
-    await printer.init();
     await printer.connectPrinter(
       String(device.vendorId),
       String(device.productId),
@@ -103,8 +141,7 @@ export async function disconnectUsbPrinter(): Promise<void> {
 
 /**
  * Lightweight connectivity check. Returns the current printer status.
- * Does NOT call init() — permission must already have been granted via
- * requestUsbPermission() during the scan step.
+ * Uses ensureInit() — never calls init() if already initialized.
  */
 export async function getPrinterStatus(
   device: UsbDevice,
@@ -113,6 +150,8 @@ export async function getPrinterStatus(
   const printer = getUSBPrinter();
   if (!printer) return "idle";
   try {
+    const inited = await ensureInit();
+    if (!inited) return "permission_denied";
     await printer.connectPrinter(
       String(device.vendorId),
       String(device.productId),
@@ -205,10 +244,10 @@ export async function testUsbPrinter(
     `VID:${device.vendorId} PID:${device.productId}`;
   return printUsbText(
     `AL SALIK POS\n` +
-      `USB OTG Printer Test\n` +
+      `USB Printer Test\n` +
       `${new Date().toLocaleString("en-GB")}\n` +
       `--------------------------------\n` +
-      `Printer connected via OTG USB!\n` +
+      `Printer connected via USB!\n` +
       `${label}\n` +
       `Vendor ID : ${device.vendorId}\n` +
       `Product ID: ${device.productId}\n` +
