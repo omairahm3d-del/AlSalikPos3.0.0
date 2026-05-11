@@ -15,56 +15,35 @@ import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useColors } from "@/hooks/useColors";
-import { useUsbPrinterStatus } from "@/hooks/useUsbPrinterStatus";
 import type { PrinterSettings } from "@/types";
 import { DEFAULT_PRINTER_SETTINGS } from "@/types";
-import type { UsbDevice as LibUsbDevice } from "@/lib/usbPrinter";
+import type { UsbDevice } from "@/lib/usbPrinter";
+import { getVendorName, isProbablyPrinter } from "@/lib/usbPrinter";
 
-type ScanState = "idle" | "requesting" | "waiting_allow" | "scanning";
+/**
+ * USB Printer setup uses a 3-step flow that matches how the underlying
+ * Android USB Host API works:
+ *
+ * Step 1 — SCAN:  init() registers the BroadcastReceiver, getDeviceList()
+ *                 returns all connected USB devices (no permission needed).
+ *
+ * Step 2 — CONNECT: connectPrinter(vid, pid) calls Android's
+ *                 UsbManager.requestPermission() which shows a modal dialog.
+ *                 The JS Promise resolves IMMEDIATELY (before the dialog
+ *                 appears). The BroadcastReceiver sets mUsbDevice only AFTER
+ *                 the user taps Allow. Because the dialog is modal the user
+ *                 cannot tap anything in our app while it is showing, so by
+ *                 the time they can interact again mUsbDevice is set.
+ *
+ * Step 3 — TEST:  printBill() is called as a separate user action AFTER the
+ *                 dialog was dismissed. Do NOT call connectPrinter + printBill
+ *                 back-to-back — the race will always lose on first use.
+ */
+
+type ScanState = "idle" | "scanning" | "done" | "error";
+type ConnectState = "idle" | "connecting" | "awaiting_allow" | "failed";
 type TestState = "idle" | "testing" | "ok" | "fail";
 type DrawerState = "idle" | "opening" | "ok" | "fail";
-
-function StatusBadge({ status }: { status: string }) {
-  const colors = useColors();
-  const map: Record<string, { label: string; color: string }> = {
-    connected: { label: "Connected", color: "#22C55E" },
-    connecting: { label: "Connecting…", color: colors.primary },
-    disconnected: { label: "Disconnected", color: "#EF4444" },
-    permission_denied: { label: "Permission Denied", color: "#F97316" },
-    idle: { label: "Not selected", color: colors.mutedForeground },
-  };
-  const badge = map[status] ?? map.idle;
-  return (
-    <View
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 5,
-        paddingHorizontal: 8,
-        paddingVertical: 3,
-        borderRadius: 99,
-        backgroundColor: badge.color + "18",
-        borderWidth: 1,
-        borderColor: badge.color + "50",
-        alignSelf: "flex-start",
-      }}
-    >
-      <View
-        style={{
-          width: 7,
-          height: 7,
-          borderRadius: 4,
-          backgroundColor: badge.color,
-        }}
-      />
-      <Text
-        style={{ color: badge.color, fontSize: 11, fontWeight: "600" }}
-      >
-        {badge.label}
-      </Text>
-    </View>
-  );
-}
 
 export default function PrinterSettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -73,12 +52,15 @@ export default function PrinterSettingsScreen() {
 
   const [ps, setPs] = useState<PrinterSettings>({ ...DEFAULT_PRINTER_SETTINGS });
   const [saving, setSaving] = useState(false);
+
   const [scanState, setScanState] = useState<ScanState>("idle");
+  const [scannedDevices, setScannedDevices] = useState<UsbDevice[]>([]);
+
+  const [connectState, setConnectState] = useState<ConnectState>("idle");
   const [testState, setTestState] = useState<TestState>("idle");
   const [drawerState, setDrawerState] = useState<DrawerState>("idle");
-  const [detectedDevices, setDetectedDevices] = useState<LibUsbDevice[]>([]);
 
-  const currentDevice: LibUsbDevice | null =
+  const currentDevice: UsbDevice | null =
     ps.usbPrinterVendorId != null
       ? {
           vendorId: ps.usbPrinterVendorId,
@@ -86,8 +68,6 @@ export default function PrinterSettingsScreen() {
           productName: ps.usbPrinterName,
         }
       : null;
-
-  const { status, retry } = useUsbPrinterStatus(currentDevice);
 
   const load = useCallback(async () => {
     try {
@@ -109,7 +89,7 @@ export default function PrinterSettingsScreen() {
         const biz = await db.loadBusinessSettings();
         await db.saveBusinessSettings({ ...biz, printerSettings: updated });
         setPs(updated);
-        Alert.alert("Saved", "USB printer settings saved.");
+        Alert.alert("Saved", "Printer settings saved.");
       } catch {
         Alert.alert("Error", "Failed to save settings.");
       } finally {
@@ -119,56 +99,73 @@ export default function PrinterSettingsScreen() {
     [db],
   );
 
+  // ── Step 1: Scan ─────────────────────────────────────────────────────────
   const handleScan = useCallback(async () => {
-    if (scanState === "waiting_allow") {
-      // Step 2 — user has tapped Allow, now actually list devices
-      setScanState("scanning");
-      try {
-        const { scanUsbDevices } = await import("@/lib/usbPrinter");
-        const devs = await scanUsbDevices();
-        setDetectedDevices(devs);
-        if (devs.length === 0) {
-          Alert.alert(
-            "No USB Printers Found",
-            "No USB devices detected after granting permission.\n\n• Make sure the printer is powered on and the USB cable is connected\n• Try unplugging and re-plugging the USB cable\n• Then tap Detect again",
-          );
-        }
-      } catch {
-        Alert.alert("Scan Error", "Could not list USB devices. Make sure the printer is connected and powered on.");
-      } finally {
-        setScanState("idle");
-      }
-      return;
-    }
-
-    // Step 1 — request permission first (triggers the Allow dialog)
-    setScanState("requesting");
-    setDetectedDevices([]);
+    if (Platform.OS !== "android") return;
+    setScanState("scanning");
+    setScannedDevices([]);
+    setConnectState("idle");
     try {
-      const { requestUsbPermission } = await import("@/lib/usbPrinter");
-      await requestUsbPermission();
-      // Permission dialog is now showing (or already granted).
-      // Switch to waiting_allow so the user can tap Allow, then tap Scan Again.
-      setScanState("waiting_allow");
+      const { initAndScanUsbDevices } = await import("@/lib/usbPrinter");
+      const devs = await initAndScanUsbDevices();
+      setScannedDevices(devs);
+      setScanState("done");
+      if (devs.length === 0) {
+        Alert.alert(
+          "No USB Devices Found",
+          "Make sure the printer is powered on and the USB cable is firmly connected, then scan again.",
+        );
+      }
     } catch {
-      Alert.alert("USB Error", "Could not initialise USB. Make sure the printer is connected and powered on.");
-      setScanState("idle");
+      setScanState("error");
+      Alert.alert("Scan Error", "Could not scan USB devices. Make sure the printer is connected and powered on.");
     }
-  }, [scanState]);
+  }, []);
 
+  // ── Step 2: Connect ───────────────────────────────────────────────────────
+  const handleConnect = useCallback(async (device: UsbDevice) => {
+    if (Platform.OS !== "android") return;
+    setConnectState("connecting");
+    try {
+      const { connectUsbPrinter } = await import("@/lib/usbPrinter");
+      await connectUsbPrinter(device);
+      // The Promise resolves immediately — the Android dialog will appear
+      // as a modal after this. The user MUST respond before interacting
+      // with anything else in the app.
+      const label =
+        device.productName ||
+        getVendorName(device.vendorId) ||
+        `VID:${device.vendorId}`;
+      setPs((prev) => ({
+        ...prev,
+        usbPrinterVendorId: device.vendorId,
+        usbPrinterProductId: device.productId,
+        usbPrinterName: label,
+        usbPrinterEnabled: true,
+      }));
+      setConnectState("awaiting_allow");
+    } catch {
+      setConnectState("failed");
+    }
+  }, []);
+
+  // ── Step 3: Test Print ────────────────────────────────────────────────────
   const handleTestPrint = useCallback(async () => {
     if (!currentDevice) return;
     setTestState("testing");
     try {
-      const { connectUsbPrinter, testUsbPrinter } = await import(
-        "@/lib/usbPrinter"
-      );
+      const { testUsbPrinter } = await import("@/lib/usbPrinter");
       const ok = await testUsbPrinter(currentDevice, ps.autoCutPaper !== false);
       setTestState(ok ? "ok" : "fail");
-      if (!ok) {
+      if (ok) {
+        setConnectState("idle"); // reset so the banner goes away
+      } else {
         Alert.alert(
           "Test Print Failed",
-          "Check that the printer is powered on, connected, and USB permission was granted.",
+          "The printer did not respond.\n\n" +
+            "• Did you tap Allow in the USB permission dialog?\n" +
+            "• Is the printer powered on and the cable firmly plugged in?\n" +
+            "• Try tapping Connect again on the device.",
         );
       }
     } catch {
@@ -178,6 +175,7 @@ export default function PrinterSettingsScreen() {
     }
   }, [currentDevice, ps.autoCutPaper]);
 
+  // ── Cash Drawer ───────────────────────────────────────────────────────────
   const handleCashDrawer = useCallback(async () => {
     if (!currentDevice) return;
     setDrawerState("opening");
@@ -193,33 +191,14 @@ export default function PrinterSettingsScreen() {
     }
   }, [currentDevice]);
 
-  const selectDevice = useCallback(
-    (d: LibUsbDevice) => {
-      const label = d.productName || d.manufacturerName || `VID:${d.vendorId}`;
-      setPs((prev) => ({
-        ...prev,
-        usbPrinterVendorId: d.vendorId,
-        usbPrinterProductId: d.productId,
-        usbPrinterName: label,
-        usbPrinterEnabled: true,
-      }));
-      setDetectedDevices([]);
-      retry();
-    },
-    [retry],
-  );
-
   const s = styles(colors);
+
+  const isAndroid = Platform.OS === "android";
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* Header */}
-      <View
-        style={[
-          s.header,
-          { paddingTop: insets.top + 12 },
-        ]}
-      >
+      <View style={[s.header, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
           <Feather name="arrow-left" size={20} color={colors.foreground} />
         </TouchableOpacity>
@@ -232,470 +211,442 @@ export default function PrinterSettingsScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
         keyboardShouldPersistTaps="handled"
       >
-        {/* ── Enable toggle ─────────────────────────────────────── */}
-        <View style={s.card}>
-          <View style={s.row}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.cardTitle}>Enable USB Printer</Text>
-              <Text style={s.cardSub}>
-                Connect an ESC/POS thermal printer via USB cable
-              </Text>
-            </View>
-            <Switch
-              value={!!ps.usbPrinterEnabled}
-              onValueChange={(v) =>
-                setPs((prev) => ({ ...prev, usbPrinterEnabled: v }))
-              }
-              trackColor={{ true: colors.primary }}
-              thumbColor="#fff"
-            />
+        {/* ── Platform note ──────────────────────────────────────────── */}
+        {!isAndroid && (
+          <View style={[s.card, { borderColor: colors.border }]}>
+            <Text style={[s.cardSub, { textAlign: "center" }]}>
+              USB printing is only available on Android devices.
+            </Text>
           </View>
-        </View>
+        )}
 
-        {/* ── Current printer card ───────────────────────────────── */}
-        {ps.usbPrinterEnabled && (
+        {isAndroid && (
           <>
+            {/* ── Enable toggle ─────────────────────────────────────── */}
             <View style={s.card}>
               <View style={s.row}>
-                <Feather
-                  name="printer"
-                  size={18}
-                  color={colors.primary}
-                  style={{ marginTop: 2 }}
-                />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={s.cardTitle}>
-                    {currentDevice
-                      ? ps.usbPrinterName ||
-                        `VID:${ps.usbPrinterVendorId} PID:${ps.usbPrinterProductId ?? 0}`
-                      : "No printer selected"}
+                <View style={{ flex: 1 }}>
+                  <Text style={s.cardTitle}>Enable USB Printer</Text>
+                  <Text style={s.cardSub}>
+                    Connect an ESC/POS thermal printer via USB cable
                   </Text>
-                  {currentDevice && (
-                    <Text style={s.cardSub}>
-                      Vendor ID: {ps.usbPrinterVendorId} · Product ID:{" "}
-                      {ps.usbPrinterProductId ?? 0}
-                    </Text>
-                  )}
-                  <View style={{ marginTop: 6 }}>
-                    <StatusBadge status={status} />
-                  </View>
                 </View>
-                {currentDevice && (
-                  <TouchableOpacity
-                    onPress={() =>
-                      setPs((prev) => ({
-                        ...prev,
-                        usbPrinterVendorId: undefined,
-                        usbPrinterProductId: undefined,
-                        usbPrinterName: undefined,
-                      }))
-                    }
-                    style={{ padding: 6 }}
-                  >
-                    <Feather name="x" size={16} color={colors.mutedForeground} />
-                  </TouchableOpacity>
-                )}
+                <Switch
+                  value={!!ps.usbPrinterEnabled}
+                  onValueChange={(v) =>
+                    setPs((prev) => ({ ...prev, usbPrinterEnabled: v }))
+                  }
+                  trackColor={{ true: colors.primary }}
+                  thumbColor="#fff"
+                />
               </View>
-
-              {/* Retry / refresh status */}
-              {currentDevice && status === "disconnected" && (
-                <TouchableOpacity
-                  onPress={retry}
-                  style={[s.outlineBtn, { marginTop: 10 }]}
-                >
-                  <Feather name="refresh-cw" size={13} color={colors.primary} />
-                  <Text style={[s.outlineBtnText, { color: colors.primary }]}>
-                    Retry Connection
-                  </Text>
-                </TouchableOpacity>
-              )}
             </View>
 
-            {/* ── Scan for printers ────────────────────────────────── */}
-            <View style={s.card}>
-              <Text style={s.sectionLabel}>Detect Printers</Text>
-
-              {scanState === "waiting_allow" && (
-                <View style={{
-                  backgroundColor: "#FEF3C7",
-                  borderRadius: 8,
-                  padding: 12,
-                  marginBottom: 10,
-                  borderWidth: 1,
-                  borderColor: "#F59E0B",
-                  flexDirection: "row",
-                  gap: 8,
-                  alignItems: "flex-start",
-                }}>
-                  <Feather name="alert-circle" size={16} color="#B45309" style={{ marginTop: 1 }} />
-                  <Text style={{ flex: 1, fontSize: 13, color: "#92400E", lineHeight: 19 }}>
-                    A USB permission dialog appeared.{"\n"}
-                    Tap <Text style={{ fontWeight: "700" }}>Allow</Text> in that dialog, then tap <Text style={{ fontWeight: "700" }}>Scan for Devices</Text> below.
+            {ps.usbPrinterEnabled && (
+              <>
+                {/* ── Step 1: Scan ──────────────────────────────────── */}
+                <View style={s.card}>
+                  <View style={s.stepHeader}>
+                    <View style={s.stepBadge}>
+                      <Text style={s.stepNum}>1</Text>
+                    </View>
+                    <Text style={s.sectionLabel}>Scan for USB Devices</Text>
+                  </View>
+                  <Text style={s.hint}>
+                    Make sure the printer is powered on and the USB cable is connected before scanning.
                   </Text>
+
+                  <TouchableOpacity
+                    style={[s.primaryBtn, scanState === "scanning" && { opacity: 0.7 }]}
+                    disabled={scanState === "scanning"}
+                    onPress={handleScan}
+                  >
+                    {scanState === "scanning" ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Feather name="search" size={14} color="#fff" />
+                    )}
+                    <Text style={s.primaryBtnText}>
+                      {scanState === "scanning" ? "Scanning…" : "Scan for Devices"}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {scanState === "done" && scannedDevices.length > 0 && (
+                    <View style={{ marginTop: 12, gap: 6 }}>
+                      <Text style={[s.hint, { marginBottom: 4 }]}>
+                        {scannedDevices.length} device{scannedDevices.length !== 1 ? "s" : ""} found — tap Connect on your printer:
+                      </Text>
+                      {scannedDevices.map((d, idx) => {
+                        const brand = getVendorName(d.vendorId);
+                        const likelyPrinter = isProbablyPrinter(d);
+                        const isSelected =
+                          ps.usbPrinterVendorId === d.vendorId &&
+                          ps.usbPrinterProductId === d.productId;
+                        return (
+                          <View
+                            key={`${d.vendorId}-${d.productId}-${idx}`}
+                            style={[
+                              s.deviceRow,
+                              isSelected && {
+                                backgroundColor: colors.primary + "12",
+                                borderColor: colors.primary,
+                              },
+                            ]}
+                          >
+                            <View style={s.deviceIcon}>
+                              <Feather
+                                name={likelyPrinter ? "printer" : "cpu"}
+                                size={15}
+                                color={isSelected ? colors.primary : colors.mutedForeground}
+                              />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={s.deviceName}>{brand}</Text>
+                              <Text style={s.deviceSub}>
+                                VID: {`0x${d.vendorId.toString(16).toUpperCase().padStart(4, "0")}`}
+                                {"  "}PID: {`0x${d.productId.toString(16).toUpperCase().padStart(4, "0")}`}
+                              </Text>
+                              {!likelyPrinter && (
+                                <Text style={[s.deviceSub, { color: colors.mutedForeground }]}>
+                                  Not a known printer — connect only if sure
+                                </Text>
+                              )}
+                            </View>
+                            {isSelected ? (
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                                <Feather name="check-circle" size={14} color={colors.primary} />
+                                <Text style={{ fontSize: 12, color: colors.primary, fontWeight: "600" }}>
+                                  Selected
+                                </Text>
+                              </View>
+                            ) : (
+                              <TouchableOpacity
+                                style={[s.connectBtn, connectState === "connecting" && { opacity: 0.6 }]}
+                                disabled={connectState === "connecting"}
+                                onPress={() => handleConnect(d)}
+                              >
+                                {connectState === "connecting" ? (
+                                  <ActivityIndicator size="small" color={colors.primary} />
+                                ) : (
+                                  <Text style={[s.connectBtnText, { color: colors.primary }]}>Connect</Text>
+                                )}
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+
+                  {scanState === "done" && scannedDevices.length === 0 && (
+                    <Text style={[s.hint, { marginTop: 8, color: "#EF4444" }]}>
+                      No USB devices detected. Check the cable and try again.
+                    </Text>
+                  )}
                 </View>
-              )}
 
-              <TouchableOpacity
-                style={[
-                  s.primaryBtn,
-                  (scanState === "requesting" || scanState === "scanning") && { opacity: 0.7 },
-                  scanState === "waiting_allow" && { backgroundColor: "#16A34A" },
-                ]}
-                disabled={scanState === "requesting" || scanState === "scanning"}
-                onPress={handleScan}
-              >
-                {(scanState === "requesting" || scanState === "scanning") ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Feather
-                    name={scanState === "waiting_allow" ? "check-circle" : "search"}
-                    size={14}
-                    color="#fff"
-                  />
+                {/* ── Step 2: Allow permission ──────────────────────── */}
+                {connectState === "awaiting_allow" && (
+                  <View style={s.card}>
+                    <View style={s.stepHeader}>
+                      <View style={s.stepBadge}>
+                        <Text style={s.stepNum}>2</Text>
+                      </View>
+                      <Text style={s.sectionLabel}>Grant USB Permission</Text>
+                    </View>
+                    <View style={s.allowBanner}>
+                      <Feather name="alert-circle" size={16} color="#B45309" style={{ marginTop: 1 }} />
+                      <Text style={s.allowText}>
+                        An Android <Text style={{ fontWeight: "700" }}>Allow USB access?</Text> dialog should appear.{"\n"}
+                        Tap <Text style={{ fontWeight: "700" }}>Allow</Text>, then come back here and tap <Text style={{ fontWeight: "700" }}>Test Print</Text>.
+                      </Text>
+                    </View>
+                  </View>
                 )}
-                <Text style={s.primaryBtnText}>
-                  {scanState === "requesting"
-                    ? "Requesting Permission…"
-                    : scanState === "scanning"
-                    ? "Scanning…"
-                    : scanState === "waiting_allow"
-                    ? "Scan for Devices"
-                    : "Detect USB Printer"}
-                </Text>
-              </TouchableOpacity>
 
-              {detectedDevices.length > 0 && (
-                <View style={{ marginTop: 10, gap: 6 }}>
-                  {detectedDevices.map((d, idx) => {
-                    const label =
-                      d.productName ||
-                      d.manufacturerName ||
-                      `Device ${idx + 1}`;
-                    const isSelected =
-                      ps.usbPrinterVendorId === d.vendorId &&
-                      ps.usbPrinterProductId === d.productId;
-                    return (
+                {connectState === "failed" && (
+                  <View style={s.card}>
+                    <Text style={[s.hint, { color: "#EF4444" }]}>
+                      Connection failed. Make sure the printer is connected and powered on, then scan again.
+                    </Text>
+                  </View>
+                )}
+
+                {/* ── Step 3: Test Print ────────────────────────────── */}
+                {currentDevice && (
+                  <View style={s.card}>
+                    <View style={s.stepHeader}>
+                      <View style={[s.stepBadge, connectState !== "awaiting_allow" && { backgroundColor: colors.mutedForeground + "30" }]}>
+                        <Text style={[s.stepNum, connectState !== "awaiting_allow" && { color: colors.mutedForeground }]}>3</Text>
+                      </View>
+                      <Text style={s.sectionLabel}>Test & Confirm</Text>
+                    </View>
+
+                    <View style={s.row}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.cardTitle}>
+                          {ps.usbPrinterName || getVendorName(currentDevice.vendorId)}
+                        </Text>
+                        <Text style={s.cardSub}>
+                          VID: {`0x${currentDevice.vendorId.toString(16).toUpperCase().padStart(4, "0")}`}
+                          {"  "}PID: {`0x${currentDevice.productId.toString(16).toUpperCase().padStart(4, "0")}`}
+                        </Text>
+                      </View>
                       <TouchableOpacity
-                        key={`${d.vendorId}-${d.productId}-${idx}`}
-                        onPress={() => selectDevice(d)}
+                        onPress={() =>
+                          setPs((prev) => ({
+                            ...prev,
+                            usbPrinterVendorId: undefined,
+                            usbPrinterProductId: undefined,
+                            usbPrinterName: undefined,
+                          }))
+                        }
+                        style={{ padding: 6 }}
+                      >
+                        <Feather name="x" size={16} color={colors.mutedForeground} />
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={[s.row, { marginTop: 12, gap: 10 }]}>
+                      {/* Test Print */}
+                      <TouchableOpacity
                         style={[
-                          s.deviceRow,
-                          isSelected && {
-                            backgroundColor: colors.primary + "15",
+                          s.testBtn,
+                          {
+                            flex: 1,
+                            borderColor:
+                              testState === "ok"
+                                ? "#22C55E"
+                                : testState === "fail"
+                                  ? "#EF4444"
+                                  : colors.primary,
+                          },
+                        ]}
+                        disabled={testState === "testing"}
+                        onPress={handleTestPrint}
+                      >
+                        {testState === "testing" ? (
+                          <ActivityIndicator size="small" color={colors.primary} />
+                        ) : (
+                          <Feather
+                            name={
+                              testState === "ok"
+                                ? "check-circle"
+                                : testState === "fail"
+                                  ? "x-circle"
+                                  : "printer"
+                            }
+                            size={14}
+                            color={
+                              testState === "ok"
+                                ? "#22C55E"
+                                : testState === "fail"
+                                  ? "#EF4444"
+                                  : colors.primary
+                            }
+                          />
+                        )}
+                        <Text
+                          style={[
+                            s.testBtnText,
+                            {
+                              color:
+                                testState === "ok"
+                                  ? "#22C55E"
+                                  : testState === "fail"
+                                    ? "#EF4444"
+                                    : colors.primary,
+                            },
+                          ]}
+                        >
+                          {testState === "testing"
+                            ? "Printing…"
+                            : testState === "ok"
+                              ? "Printed!"
+                              : testState === "fail"
+                                ? "Failed"
+                                : "Test Print"}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {/* Cash Drawer */}
+                      <TouchableOpacity
+                        style={[
+                          s.testBtn,
+                          {
+                            flex: 1,
+                            borderColor:
+                              drawerState === "ok"
+                                ? "#22C55E"
+                                : drawerState === "fail"
+                                  ? "#EF4444"
+                                  : colors.primary,
+                          },
+                        ]}
+                        disabled={drawerState === "opening"}
+                        onPress={handleCashDrawer}
+                      >
+                        {drawerState === "opening" ? (
+                          <ActivityIndicator size="small" color={colors.primary} />
+                        ) : (
+                          <Feather
+                            name={
+                              drawerState === "ok"
+                                ? "check-circle"
+                                : drawerState === "fail"
+                                  ? "x-circle"
+                                  : "box"
+                            }
+                            size={14}
+                            color={
+                              drawerState === "ok"
+                                ? "#22C55E"
+                                : drawerState === "fail"
+                                  ? "#EF4444"
+                                  : colors.primary
+                            }
+                          />
+                        )}
+                        <Text
+                          style={[
+                            s.testBtnText,
+                            {
+                              color:
+                                drawerState === "ok"
+                                  ? "#22C55E"
+                                  : drawerState === "fail"
+                                    ? "#EF4444"
+                                    : colors.primary,
+                            },
+                          ]}
+                        >
+                          {drawerState === "opening"
+                            ? "Opening…"
+                            : drawerState === "ok"
+                              ? "Opened!"
+                              : drawerState === "fail"
+                                ? "Failed"
+                                : "Cash Drawer"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
+                {/* ── Paper Width ───────────────────────────────────── */}
+                <View style={s.card}>
+                  <Text style={s.sectionLabel}>Paper Width</Text>
+                  <View style={s.chipRow}>
+                    {(["58mm", "80mm"] as const).map((w) => (
+                      <TouchableOpacity
+                        key={w}
+                        onPress={() => setPs((prev) => ({ ...prev, paperWidth: w }))}
+                        style={[
+                          s.chip,
+                          ps.paperWidth === w && {
+                            backgroundColor: colors.primary,
                             borderColor: colors.primary,
                           },
                         ]}
                       >
-                        <View
-                          style={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: 16,
-                            backgroundColor: isSelected
-                              ? colors.primary + "20"
-                              : colors.secondary,
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
-                          <Feather
-                            name="printer"
-                            size={15}
-                            color={isSelected ? colors.primary : colors.mutedForeground}
-                          />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={s.deviceName}>{label}</Text>
-                          <Text style={s.deviceSub}>
-                            VID: {d.vendorId} · PID: {d.productId}
-                            {d.serialNumber ? `  S/N: ${d.serialNumber}` : ""}
-                          </Text>
-                        </View>
-                        {isSelected ? (
-                          <Feather
-                            name="check-circle"
-                            size={16}
-                            color={colors.primary}
-                          />
-                        ) : (
-                          <Text style={s.selectText}>Select</Text>
-                        )}
+                        <Text style={[s.chipText, ps.paperWidth === w && { color: "#fff" }]}>
+                          {w}
+                        </Text>
                       </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
+                    ))}
+                  </View>
 
-            {/* ── Paper width ──────────────────────────────────────── */}
-            <View style={s.card}>
-              <Text style={s.sectionLabel}>Paper Width</Text>
-              <View style={s.chipRow}>
-                {(["58mm", "80mm"] as const).map((w) => (
-                  <TouchableOpacity
-                    key={w}
-                    onPress={() => setPs((prev) => ({ ...prev, paperWidth: w }))}
-                    style={[
-                      s.chip,
-                      ps.paperWidth === w && {
-                        backgroundColor: colors.primary,
-                        borderColor: colors.primary,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        s.chipText,
-                        ps.paperWidth === w && { color: "#fff" },
-                      ]}
-                    >
-                      {w}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={[s.sectionLabel, { marginTop: 14 }]}>Print Mode</Text>
-              <View style={s.chipRow}>
-                {(
-                  [
-                    { value: "text", label: "ESC/POS Text" },
-                    { value: "bitmap", label: "Bitmap (HTML)" },
-                  ] as const
-                ).map(({ value, label }) => (
-                  <TouchableOpacity
-                    key={value}
-                    onPress={() =>
-                      setPs((prev) => ({ ...prev, usbPrintMode: value }))
-                    }
-                    style={[
-                      s.chip,
-                      (ps.usbPrintMode ?? "text") === value && {
-                        backgroundColor: colors.primary,
-                        borderColor: colors.primary,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        s.chipText,
-                        (ps.usbPrintMode ?? "text") === value && {
-                          color: "#fff",
-                        },
-                      ]}
-                    >
-                      {label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <Text style={s.hint}>
-                {(ps.usbPrintMode ?? "text") === "text"
-                  ? "Fast ESC/POS commands — wide compatibility. Use for English text."
-                  : "Renders the HTML receipt as an image. Slower but preserves Arabic text and logos."}
-              </Text>
-            </View>
-
-            {/* ── Options ──────────────────────────────────────────── */}
-            <View style={s.card}>
-              <Text style={s.sectionLabel}>Options</Text>
-
-              <View style={s.row}>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.optLabel}>Auto-cut paper</Text>
-                  <Text style={s.optSub}>
-                    Send paper-cut command after printing
+                  <Text style={[s.sectionLabel, { marginTop: 14 }]}>Print Mode</Text>
+                  <View style={s.chipRow}>
+                    {(
+                      [
+                        { value: "text", label: "ESC/POS Text" },
+                        { value: "bitmap", label: "Bitmap (HTML)" },
+                      ] as const
+                    ).map(({ value, label }) => (
+                      <TouchableOpacity
+                        key={value}
+                        onPress={() => setPs((prev) => ({ ...prev, usbPrintMode: value }))}
+                        style={[
+                          s.chip,
+                          (ps.usbPrintMode ?? "text") === value && {
+                            backgroundColor: colors.primary,
+                            borderColor: colors.primary,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            s.chipText,
+                            (ps.usbPrintMode ?? "text") === value && { color: "#fff" },
+                          ]}
+                        >
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <Text style={s.hint}>
+                    {(ps.usbPrintMode ?? "text") === "text"
+                      ? "Fast ESC/POS text — best compatibility. Use for English text receipts."
+                      : "Renders the receipt as an image. Slower but supports Arabic and logos."}
                   </Text>
                 </View>
-                <Switch
-                  value={ps.autoCutPaper !== false}
-                  onValueChange={(v) =>
-                    setPs((prev) => ({ ...prev, autoCutPaper: v }))
-                  }
-                  trackColor={{ true: colors.primary }}
-                  thumbColor="#fff"
-                />
-              </View>
 
-              <View style={[s.row, { marginTop: 12 }]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.optLabel}>Open cash drawer after payment</Text>
-                  <Text style={s.optSub}>
-                    Sends drawer-open command on cash transactions
+                {/* ── Options ──────────────────────────────────────── */}
+                <View style={s.card}>
+                  <Text style={s.sectionLabel}>Options</Text>
+
+                  <View style={s.row}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.optLabel}>Auto-cut paper</Text>
+                      <Text style={s.optSub}>Send paper-cut command after printing</Text>
+                    </View>
+                    <Switch
+                      value={ps.autoCutPaper !== false}
+                      onValueChange={(v) =>
+                        setPs((prev) => ({ ...prev, autoCutPaper: v }))
+                      }
+                      trackColor={{ true: colors.primary }}
+                      thumbColor="#fff"
+                    />
+                  </View>
+
+                  <View style={[s.row, { marginTop: 12 }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.optLabel}>Open cash drawer after payment</Text>
+                      <Text style={s.optSub}>Sends drawer-open command on cash transactions</Text>
+                    </View>
+                    <Switch
+                      value={!!ps.usbCashDrawerEnabled}
+                      onValueChange={(v) =>
+                        setPs((prev) => ({ ...prev, usbCashDrawerEnabled: v }))
+                      }
+                      trackColor={{ true: colors.primary }}
+                      thumbColor="#fff"
+                    />
+                  </View>
+                </View>
+
+                {/* ── Save ─────────────────────────────────────────── */}
+                <TouchableOpacity
+                  style={[s.primaryBtn, saving && { opacity: 0.7 }]}
+                  disabled={saving}
+                  onPress={() => save(ps)}
+                >
+                  {saving ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Feather name="save" size={14} color="#fff" />
+                  )}
+                  <Text style={s.primaryBtnText}>
+                    {saving ? "Saving…" : "Save Settings"}
                   </Text>
-                </View>
-                <Switch
-                  value={!!ps.usbCashDrawerEnabled}
-                  onValueChange={(v) =>
-                    setPs((prev) => ({ ...prev, usbCashDrawerEnabled: v }))
-                  }
-                  trackColor={{ true: colors.primary }}
-                  thumbColor="#fff"
-                />
-              </View>
-            </View>
-
-            {/* ── Test buttons ─────────────────────────────────────── */}
-            {currentDevice && (
-              <View style={s.card}>
-                <Text style={s.sectionLabel}>Test</Text>
-                <View style={s.row}>
-                  {/* Test Print */}
-                  <TouchableOpacity
-                    style={[
-                      s.testBtn,
-                      {
-                        borderColor:
-                          testState === "ok"
-                            ? "#22C55E"
-                            : testState === "fail"
-                              ? "#EF4444"
-                              : colors.primary,
-                        flex: 1,
-                      },
-                    ]}
-                    disabled={testState === "testing"}
-                    onPress={handleTestPrint}
-                  >
-                    {testState === "testing" ? (
-                      <ActivityIndicator size="small" color={colors.primary} />
-                    ) : (
-                      <Feather
-                        name={
-                          testState === "ok"
-                            ? "check-circle"
-                            : testState === "fail"
-                              ? "x-circle"
-                              : "printer"
-                        }
-                        size={14}
-                        color={
-                          testState === "ok"
-                            ? "#22C55E"
-                            : testState === "fail"
-                              ? "#EF4444"
-                              : colors.primary
-                        }
-                      />
-                    )}
-                    <Text
-                      style={[
-                        s.testBtnText,
-                        {
-                          color:
-                            testState === "ok"
-                              ? "#22C55E"
-                              : testState === "fail"
-                                ? "#EF4444"
-                                : colors.primary,
-                        },
-                      ]}
-                    >
-                      {testState === "testing"
-                        ? "Printing…"
-                        : testState === "ok"
-                          ? "Printed!"
-                          : testState === "fail"
-                            ? "Failed"
-                            : "Test Print"}
-                    </Text>
-                  </TouchableOpacity>
-
-                  {/* Cash Drawer */}
-                  <TouchableOpacity
-                    style={[
-                      s.testBtn,
-                      {
-                        borderColor:
-                          drawerState === "ok"
-                            ? "#22C55E"
-                            : drawerState === "fail"
-                              ? "#EF4444"
-                              : "#F59E0B",
-                        flex: 1,
-                      },
-                    ]}
-                    disabled={drawerState === "opening"}
-                    onPress={handleCashDrawer}
-                  >
-                    {drawerState === "opening" ? (
-                      <ActivityIndicator size="small" color="#F59E0B" />
-                    ) : (
-                      <Feather
-                        name={
-                          drawerState === "ok"
-                            ? "check-circle"
-                            : drawerState === "fail"
-                              ? "x-circle"
-                              : "inbox"
-                        }
-                        size={14}
-                        color={
-                          drawerState === "ok"
-                            ? "#22C55E"
-                            : drawerState === "fail"
-                              ? "#EF4444"
-                              : "#F59E0B"
-                        }
-                      />
-                    )}
-                    <Text
-                      style={[
-                        s.testBtnText,
-                        {
-                          color:
-                            drawerState === "ok"
-                              ? "#22C55E"
-                              : drawerState === "fail"
-                                ? "#EF4444"
-                                : "#F59E0B",
-                        },
-                      ]}
-                    >
-                      {drawerState === "opening"
-                        ? "Opening…"
-                        : drawerState === "ok"
-                          ? "Opened!"
-                          : drawerState === "fail"
-                            ? "Failed"
-                            : "Cash Drawer"}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+                </TouchableOpacity>
+              </>
             )}
-
-            {/* ── Info ─────────────────────────────────────────────── */}
-            <View
-              style={[
-                s.card,
-                { backgroundColor: colors.primary + "10", borderColor: colors.primary + "30" },
-              ]}
-            >
-              <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-start" }}>
-                <Feather name="info" size={14} color={colors.primary} style={{ marginTop: 1 }} />
-                <Text style={[s.hint, { color: colors.primary, flex: 1 }]}>
-                  USB printing requires a <Text style={{ fontWeight: "700" }}>development or EAS build</Text> — it does not work in Expo Go.
-                  {"\n\n"}Connect the OTG cable and power on the printer first. When you tap <Text style={{ fontWeight: "700" }}>Detect USB Printers</Text>, an Android permission dialog will appear — tap <Text style={{ fontWeight: "700" }}>Allow</Text> to grant USB access. If nothing appears, tap Detect again.
-                </Text>
-              </View>
-            </View>
           </>
         )}
-
-        {/* ── Save ─────────────────────────────────────────────────── */}
-        <TouchableOpacity
-          style={[s.saveBtn, saving && { opacity: 0.7 }]}
-          disabled={saving}
-          onPress={() => save(ps)}
-        >
-          {saving ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Feather name="save" size={15} color="#fff" />
-          )}
-          <Text style={s.saveBtnText}>Save Settings</Text>
-        </TouchableOpacity>
       </ScrollView>
     </View>
   );
@@ -706,90 +657,109 @@ function styles(colors: ReturnType<typeof useColors>) {
     header: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
       paddingHorizontal: 16,
       paddingBottom: 12,
-      backgroundColor: colors.card,
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
     },
     backBtn: {
       width: 36,
       height: 36,
-      borderRadius: 18,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.secondary,
     },
     headerTitle: {
-      color: colors.foreground,
+      flex: 1,
+      textAlign: "center",
       fontSize: 17,
-      fontWeight: "700",
+      fontWeight: "600",
+      color: colors.foreground,
     },
     card: {
       backgroundColor: colors.card,
       borderRadius: 12,
       padding: 14,
-      marginBottom: 10,
+      marginBottom: 12,
       borderWidth: 1,
       borderColor: colors.border,
-    },
-    cardTitle: {
-      color: colors.foreground,
-      fontWeight: "700",
-      fontSize: 14,
-    },
-    cardSub: {
-      color: colors.mutedForeground,
-      fontSize: 12,
-      marginTop: 2,
     },
     row: {
       flexDirection: "row",
       alignItems: "center",
       gap: 10,
     },
+    cardTitle: {
+      fontSize: 15,
+      fontWeight: "600",
+      color: colors.foreground,
+    },
+    cardSub: {
+      fontSize: 12,
+      color: colors.mutedForeground,
+      marginTop: 2,
+    },
     sectionLabel: {
+      fontSize: 12,
+      fontWeight: "700",
       color: colors.mutedForeground,
-      fontSize: 11,
-      fontWeight: "600",
-      letterSpacing: 0.5,
       textTransform: "uppercase",
-      marginBottom: 8,
+      letterSpacing: 0.5,
     },
-    chipRow: {
+    stepHeader: {
       flexDirection: "row",
+      alignItems: "center",
       gap: 8,
-      flexWrap: "wrap",
+      marginBottom: 10,
     },
-    chip: {
-      paddingHorizontal: 14,
-      paddingVertical: 7,
-      borderRadius: 8,
-      borderWidth: 1.5,
-      borderColor: colors.border,
-      backgroundColor: colors.secondary,
+    stepBadge: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: colors.primary,
+      alignItems: "center",
+      justifyContent: "center",
     },
-    chipText: {
-      color: colors.mutedForeground,
-      fontWeight: "600",
-      fontSize: 13,
+    stepNum: {
+      fontSize: 12,
+      fontWeight: "700",
+      color: "#fff",
     },
     hint: {
+      fontSize: 12,
       color: colors.mutedForeground,
-      fontSize: 11,
-      marginTop: 6,
-      lineHeight: 16,
+      marginBottom: 10,
+      lineHeight: 17,
     },
-    optLabel: {
-      color: colors.foreground,
+    primaryBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      backgroundColor: colors.primary,
+      borderRadius: 8,
+      paddingVertical: 11,
+      paddingHorizontal: 16,
+    },
+    primaryBtnText: {
+      color: "#fff",
+      fontSize: 14,
       fontWeight: "600",
-      fontSize: 13,
     },
-    optSub: {
-      color: colors.mutedForeground,
-      fontSize: 11,
-      marginTop: 1,
+    allowBanner: {
+      backgroundColor: "#FEF3C7",
+      borderRadius: 8,
+      padding: 12,
+      borderWidth: 1,
+      borderColor: "#F59E0B",
+      flexDirection: "row",
+      gap: 8,
+      alignItems: "flex-start",
+    },
+    allowText: {
+      flex: 1,
+      fontSize: 13,
+      color: "#92400E",
+      lineHeight: 20,
     },
     deviceRow: {
       flexDirection: "row",
@@ -801,76 +771,76 @@ function styles(colors: ReturnType<typeof useColors>) {
       borderColor: colors.border,
       backgroundColor: colors.background,
     },
+    deviceIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: colors.secondary,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     deviceName: {
-      color: colors.foreground,
+      fontSize: 14,
       fontWeight: "600",
-      fontSize: 13,
+      color: colors.foreground,
     },
     deviceSub: {
-      color: colors.mutedForeground,
       fontSize: 11,
+      color: colors.mutedForeground,
       marginTop: 1,
+      fontFamily: "monospace",
     },
-    selectText: {
-      color: colors.primary,
-      fontWeight: "600",
-      fontSize: 12,
-    },
-    primaryBtn: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 7,
-      backgroundColor: colors.primary,
-      borderRadius: 10,
-      paddingVertical: 11,
-    },
-    primaryBtnText: {
-      color: "#fff",
-      fontWeight: "700",
-      fontSize: 13,
-    },
-    outlineBtn: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 6,
-      borderWidth: 1.5,
+    connectBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 6,
+      borderWidth: 1,
       borderColor: colors.primary,
-      borderRadius: 10,
-      paddingVertical: 9,
     },
-    outlineBtnText: {
+    connectBtnText: {
+      fontSize: 13,
       fontWeight: "600",
+    },
+    chipRow: {
+      flexDirection: "row",
+      gap: 8,
+      flexWrap: "wrap",
+      marginTop: 8,
+    },
+    chip: {
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    chipText: {
+      fontSize: 13,
+      fontWeight: "500",
+      color: colors.foreground,
+    },
+    optLabel: {
+      fontSize: 14,
+      fontWeight: "500",
+      color: colors.foreground,
+    },
+    optSub: {
       fontSize: 12,
+      color: colors.mutedForeground,
+      marginTop: 1,
     },
     testBtn: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
       gap: 6,
+      paddingVertical: 10,
+      borderRadius: 8,
       borderWidth: 1.5,
-      borderRadius: 10,
-      paddingVertical: 9,
     },
     testBtnText: {
+      fontSize: 13,
       fontWeight: "600",
-      fontSize: 12,
-    },
-    saveBtn: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-      backgroundColor: colors.primary,
-      borderRadius: 12,
-      paddingVertical: 14,
-      marginTop: 6,
-    },
-    saveBtnText: {
-      color: "#fff",
-      fontWeight: "700",
-      fontSize: 15,
     },
   });
 }
