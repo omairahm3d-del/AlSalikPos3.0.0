@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { useDatabase } from "@/context/DatabaseCore";
@@ -401,13 +402,14 @@ export default function AppointmentsScreen() {
     setServiceQuery("");
   }, []);
 
+  const insets = useSafeAreaInsets();
   const pendingCount = appointments.filter(
     (a) => a.status === "scheduled" || a.status === "in-progress"
   ).length;
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View style={styles.headerLeft}>
           <Feather name="calendar" size={18} color="#4F8EF7" />
           <Text style={styles.headerTitle}>Appointments</Text>
@@ -496,7 +498,7 @@ export default function AppointmentsScreen() {
       >
         <KeyboardAvoidingView
           style={styles.modalWrapper}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <View style={styles.modalHeader}>
             <Pressable onPress={() => setShowModal(false)} style={styles.modalCancelBtn}>
@@ -816,7 +818,7 @@ const styles = StyleSheet.create({
 
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 16, paddingTop: 56, paddingBottom: 12,
+    paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12,
     backgroundColor: "#1A1D25", borderBottomWidth: 1, borderBottomColor: "#252830",
   },
   headerLeft: { flexDirection: "row", alignItems: "center", gap: 8 },

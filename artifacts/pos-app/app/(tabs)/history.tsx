@@ -78,7 +78,7 @@ export default function HistoryScreen() {
     return { count: todaySales.filter((s) => !s.isRefund).length, revenue, refunds, vatCollected };
   }, [sales]);
 
-  const topPadding = Platform.OS === "web" ? insets.top + 8 : 0;
+  const topPadding = insets.top + (Platform.OS === "web" ? 8 : 0);
 
   if (loading) {
     return (

@@ -48,7 +48,7 @@ export default function TablesScreen() {
   const [tableName, setTableName] = useState("");
   const [capacity, setCapacity] = useState("4");
 
-  const topPadding = Platform.OS === "web" ? insets.top + 8 : 0;
+  const topPadding = insets.top + (Platform.OS === "web" ? 8 : 0);
   const numColumns = width >= 1200 ? 6 : width >= 900 ? 5 : width >= 600 ? 4 : 3;
 
   const fetchTables = useCallback(async () => {

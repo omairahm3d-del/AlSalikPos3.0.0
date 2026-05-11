@@ -229,7 +229,7 @@ export default function BackOfficeScreen() {
 
   const { width } = useWindowDimensions();
   const isTablet = width >= 768;
-  const topPadding = Platform.OS === "web" ? insets.top + 8 : 0;
+  const topPadding = insets.top + (Platform.OS === "web" ? 8 : 0);
 
   const permissions = useMemo<StaffPermissions>(() => {
     if (!currentStaff || currentStaff.role === "admin") return ADMIN_PERMISSIONS;

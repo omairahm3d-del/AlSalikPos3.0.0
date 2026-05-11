@@ -217,7 +217,7 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
   const [loyaltyRate, setLoyaltyRate] = useState(0.01);
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
 
-  const topPadding = embedded ? 0 : (Platform.OS === "web" ? insets.top + 8 : 0);
+  const topPadding = embedded ? 0 : insets.top + (Platform.OS === "web" ? 8 : 0);
 
   const fetchCustomers = useCallback(async () => {
     const [data, biz] = await Promise.all([loadCustomers(), loadBusinessSettings()]);
@@ -457,7 +457,7 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
       </TouchableOpacity>
 
       <Modal visible={showEditor} animationType="slide" presentationStyle="pageSheet">
-        <KeyboardAvoidingView style={[styles.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={[styles.modalRoot, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={[styles.modalHeader, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={() => setShowEditor(false)}><Feather name="x" size={22} color={colors.foreground} /></TouchableOpacity>
             <Text style={[styles.modalTitle, { color: colors.foreground }]}>{editingCustomer ? "Edit Customer" : "New Customer"}</Text>
@@ -633,7 +633,7 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
 
       <Modal visible={showPaymentModal} animationType="fade" transparent>
         <View style={styles.payOverlay}>
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.paySheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2 }]}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={[styles.paySheet, { backgroundColor: colors.card, borderRadius: colors.radius * 2 }]}>
             <Text style={[styles.payTitle, { color: colors.foreground }]}>Collect Payment</Text>
             <Text style={[styles.paySubtitle, { color: colors.mutedForeground }]}>Outstanding: {formatCurrency(selectedCustomer?.creditBalance ?? 0)}</Text>
             <Text style={[styles.fieldLabel, { color: colors.mutedForeground, marginTop: 16 }]}>Amount</Text>

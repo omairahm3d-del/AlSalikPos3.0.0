@@ -11,6 +11,7 @@ import * as SplashScreen from "expo-splash-screen";
 import * as Updates from "expo-updates";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, View } from "react-native";
+import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -205,6 +206,7 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
+      <StatusBar style="auto" />
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>

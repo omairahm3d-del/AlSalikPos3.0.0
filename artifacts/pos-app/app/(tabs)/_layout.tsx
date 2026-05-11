@@ -75,7 +75,10 @@ function ClassicTabLayout() {
           borderTopColor: colors.border,
           elevation: 0,
           shadowOpacity: 0,
+          height: Platform.OS === "android" ? 60 : undefined,
         },
+        tabBarItemStyle: Platform.OS === "android" ? { paddingBottom: 4 } : undefined,
+        tabBarLabelStyle: { fontSize: 11 },
       }}
     >
       <Tabs.Screen

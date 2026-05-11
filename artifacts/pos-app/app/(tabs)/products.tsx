@@ -437,7 +437,7 @@ export function ProductsScreen({ embedded = false }: { embedded?: boolean }) {
   };
 
   const numColumns = width >= 1200 ? 5 : width >= 900 ? 4 : width >= 600 ? 3 : 2;
-  const topPadding = embedded ? 0 : (Platform.OS === "web" ? insets.top + 8 : 0);
+  const topPadding = embedded ? 0 : insets.top + (Platform.OS === "web" ? 8 : 0);
 
   const getPrinterName = (id?: string) => {
     if (!id) return undefined;

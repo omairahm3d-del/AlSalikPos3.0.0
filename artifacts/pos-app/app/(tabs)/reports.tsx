@@ -47,7 +47,7 @@ export function ReportsScreen({ embedded = false }: { embedded?: boolean }) {
   const [closingCash, setClosingCash] = useState("");
   const [isClosingRegister, setIsClosingRegister] = useState(false);
 
-  const topPadding = embedded ? 0 : (Platform.OS === "web" ? insets.top + 8 : 0);
+  const topPadding = embedded ? 0 : insets.top + (Platform.OS === "web" ? 8 : 0);
   const isToday = selectedDate.toDateString() === new Date().toDateString();
 
   const fetchReport = useCallback(async () => {

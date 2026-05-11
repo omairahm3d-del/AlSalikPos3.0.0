@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useFocusEffect } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useLicense } from "@/context/LicenseContext";
@@ -141,6 +142,7 @@ export default function KdsScreen() {
   const { isSaloon } = useWorkMode();
   const { session } = useLicense();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [orders, setOrders] = useState<HeldOrder[]>([]);
   const [filter, setFilter] = useState<FilterType>("all");
   const [tick, setTick] = useState(0);
@@ -232,7 +234,7 @@ export default function KdsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View style={styles.headerLeft}>
           <Feather name="monitor" size={18} color="#4F8EF7" />
           <Text style={styles.headerTitle}>Kitchen Display</Text>
@@ -322,7 +324,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingTop: 56,
+    paddingTop: 12,
     paddingBottom: 12,
     backgroundColor: "#1A1D25",
     borderBottomWidth: 1,
