@@ -250,7 +250,10 @@ export function CustomersScreen({ embedded = false }: { embedded?: boolean }) {
     setName(customer.name); setPhone(customer.phone);
     setEmail(customer.email); setCompany(customer.company);
     setIsActive(customer.isActive !== false);
-    setShowEditor(true);
+    // Close the detail modal first — stacking two pageSheet modals silently fails
+    // on web and iOS. Re-open the editor after the dismiss animation completes.
+    setSelectedCustomer(null);
+    setTimeout(() => setShowEditor(true), 350);
   };
 
   const handleSave = async () => {
