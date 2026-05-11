@@ -112,8 +112,107 @@ function withUsbManifest(config) {
   });
 }
 
+/**
+ * Patches two bugs in USBPrinterAdapter.java from the
+ * react-native-thermal-receipt-printer-image-qr library:
+ *
+ * BUG 1 — selectDevice() passes null mUsbDevice to successCallback:
+ *   When a device is found for the first time, requestPermission() is called
+ *   (async — dialog appears later) but successCallback is immediately invoked
+ *   with `new USBPrinterDevice(mUsbDevice)` where mUsbDevice is still null.
+ *   This causes a NullPointerException in the native layer, the JS promise
+ *   never resolves, and the "Allow USB access?" dialog may not appear.
+ *
+ *   Fix: pass `usbDevice` (the loop variable, never null) to successCallback,
+ *   and check hasPermission() first — if already granted, set mUsbDevice
+ *   directly (no dialog needed); otherwise call requestPermission() as before.
+ *
+ * BUG 2 — registerReceiver() without RECEIVER_NOT_EXPORTED on Android 13+:
+ *   Android 13 (API 33) requires callers of registerReceiver() to specify
+ *   RECEIVER_EXPORTED or RECEIVER_NOT_EXPORTED for non-system broadcasts.
+ *   Omitting this throws SecurityException, init() fails, and nothing works.
+ *
+ *   Fix: use RECEIVER_NOT_EXPORTED on API 33+ (the permission broadcast is
+ *   internal to this app), fall back to the original call on older versions.
+ */
+function withUsbPrinterJavaPatch(config) {
+  return withDangerousMod(config, [
+    "android",
+    async (config) => {
+      const javaPath = path.join(
+        config.modRequest.projectRoot,
+        "node_modules/react-native-thermal-receipt-printer-image-qr/android/src/main/java/com/pinmi/react/printer/adapter/USBPrinterAdapter.java",
+      );
+
+      if (!fs.existsSync(javaPath)) {
+        console.warn(
+          "[withUsbPrinter] USBPrinterAdapter.java not found at expected path — skipping Java patch",
+        );
+        return config;
+      }
+
+      let src = fs.readFileSync(javaPath, "utf8");
+
+      // ── Patch 1: fix selectDevice() ──────────────────────────────────────
+      // The library always calls requestPermission() without first checking
+      // hasPermission(). On Sunmi devices (and when the app was launched via
+      // USB_DEVICE_ATTACHED intent), Android may have already granted permission
+      // automatically. In that case requestPermission() fires the intent
+      // immediately with no dialog, but mUsbDevice is only set by the
+      // BroadcastReceiver — which may not fire reliably on all devices.
+      // Fix: check hasPermission() first; if already granted, set mUsbDevice
+      // synchronously so openConnection() works immediately.
+      const SELECT_OLD = `                closeConnectionIfExists();
+                mUSBManager.requestPermission(usbDevice, mPermissionIndent);
+                successCallback.invoke(new USBPrinterDevice(usbDevice).toRNWritableMap());
+                return;`;
+
+      const SELECT_NEW = `                closeConnectionIfExists();
+                if (mUSBManager.hasPermission(usbDevice)) {
+                    // Permission already granted (e.g. via USB_DEVICE_ATTACHED or previous session)
+                    // Set mUsbDevice synchronously so printRawData/openConnection works immediately
+                    mUsbDevice = usbDevice;
+                    Log.i(LOG_TAG, "USB permission already granted for device " + usbDevice.getVendorId() + ":" + usbDevice.getProductId() + ", mUsbDevice set directly");
+                } else {
+                    // No permission yet — request it; dialog appears asynchronously
+                    mUSBManager.requestPermission(usbDevice, mPermissionIndent);
+                    Log.i(LOG_TAG, "USB permission requested for device " + usbDevice.getVendorId() + ":" + usbDevice.getProductId() + ", dialog should appear");
+                }
+                successCallback.invoke(new USBPrinterDevice(usbDevice).toRNWritableMap());
+                return;`;
+
+      if (src.includes(SELECT_OLD)) {
+        src = src.replace(SELECT_OLD, SELECT_NEW);
+        console.log("[withUsbPrinter] Patched selectDevice() — added hasPermission() pre-check");
+      } else {
+        console.warn("[withUsbPrinter] selectDevice() patch target not found — already patched or library changed");
+      }
+
+      // ── Patch 2: fix registerReceiver() for Android 13+ ─────────────────
+      const REGISTER_OLD = `        mContext.registerReceiver(mUsbDeviceReceiver, filter);`;
+      const REGISTER_NEW = `        // Android 13 (API 33) requires RECEIVER_EXPORTED or RECEIVER_NOT_EXPORTED
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            mContext.registerReceiver(mUsbDeviceReceiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            mContext.registerReceiver(mUsbDeviceReceiver, filter);
+        }`;
+
+      if (src.includes(REGISTER_OLD)) {
+        src = src.replace(REGISTER_OLD, REGISTER_NEW);
+        console.log("[withUsbPrinter] Patched registerReceiver() — added RECEIVER_NOT_EXPORTED for Android 13+");
+      } else {
+        console.warn("[withUsbPrinter] registerReceiver() patch target not found — already patched or library changed");
+      }
+
+      fs.writeFileSync(javaPath, src, "utf8");
+      return config;
+    },
+  ]);
+}
+
 module.exports = function withUsbPrinter(config) {
   config = withUsbDeviceFilterXml(config);
   config = withUsbManifest(config);
+  config = withUsbPrinterJavaPatch(config);
   return config;
 };

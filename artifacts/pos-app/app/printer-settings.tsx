@@ -357,8 +357,8 @@ export default function PrinterSettingsScreen() {
                     <View style={s.allowBanner}>
                       <Feather name="alert-circle" size={16} color="#B45309" style={{ marginTop: 1 }} />
                       <Text style={s.allowText}>
-                        An Android <Text style={{ fontWeight: "700" }}>Allow USB access?</Text> dialog should appear.{"\n"}
-                        Tap <Text style={{ fontWeight: "700" }}>Allow</Text>, then come back here and tap <Text style={{ fontWeight: "700" }}>Test Print</Text>.
+                        An Android <Text style={{ fontWeight: "700" }}>Allow USB access?</Text> dialog may appear — tap <Text style={{ fontWeight: "700" }}>Allow</Text> if it does.{"\n\n"}
+                        <Text style={{ fontWeight: "700" }}>No dialog?</Text> The printer may already have access. Go ahead and tap <Text style={{ fontWeight: "700" }}>Test Print</Text> below.
                       </Text>
                     </View>
                   </View>
