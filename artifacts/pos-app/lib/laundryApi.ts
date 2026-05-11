@@ -28,6 +28,8 @@ function orderToPayload(order: LaundryOrder) {
     paymentMethod: order.paymentMethod ?? null,
     staffId: order.staffId ?? null,
     staffName: order.staffName ?? null,
+    riderId: order.riderId ?? null,
+    riderName: order.riderName ?? null,
     items: order.items,
     clientCreatedAt: order.createdAt,
   };

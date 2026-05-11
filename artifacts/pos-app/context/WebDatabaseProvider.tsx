@@ -809,6 +809,24 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     await setJson(K.riders, existing.filter((r) => r.id !== id));
   }, []);
 
+  const mergeStaffFromServer = useCallback(async (staff: Staff[]): Promise<void> => {
+    const local = await getJson<Staff[]>(K.staff, []);
+    const localMap = new Map(local.map((s) => [s.id, s]));
+    for (const s of staff) {
+      localMap.set(s.id, s);
+    }
+    await setJson(K.staff, Array.from(localMap.values()).sort((a, b) => a.name.localeCompare(b.name)));
+  }, []);
+
+  const mergeRidersFromServer = useCallback(async (riders: Rider[]): Promise<void> => {
+    const local = await getJson<Rider[]>(K.riders, []);
+    const localMap = new Map(local.map((r) => [r.id, r]));
+    for (const r of riders) {
+      localMap.set(r.id, r);
+    }
+    await setJson(K.riders, Array.from(localMap.values()).sort((a, b) => a.name.localeCompare(b.name)));
+  }, []);
+
   const loadAppointments = useCallback(async (dateMs?: number): Promise<Appointment[]> => {
     const all = await getJson<Appointment[]>(K.appointments, []);
     if (dateMs === undefined) return [...all].sort((a, b) => a.appointmentDate - b.appointmentDate);
@@ -1634,6 +1652,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
     customerId: string; customerName: string; customerPhone: string; promisedAt: number;
     orderType: "drop-off" | "express"; notes?: string | null; subtotal: number;
     vatAmount: number; total: number; staffId?: string | null; staffName?: string | null;
+    riderId?: string | null; riderName?: string | null;
     items: Array<{ productId: string; productName: string; productPrice: number; quantity: number; lineTotal: number; notes?: string | null; }>;
   }): Promise<LaundryOrder> {
     const id = generateId();
@@ -1651,6 +1670,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       orderType: data.orderType, notes: data.notes ?? null, subtotal: data.subtotal,
       vatAmount: data.vatAmount, total: data.total, paidAt: null, paymentMethod: null,
       saleId: null, staffId: data.staffId ?? null, staffName: data.staffName ?? null,
+      riderId: data.riderId ?? null, riderName: data.riderName ?? null,
       createdAt: now, updatedAt: now, items,
     };
     const allOrders = await getJson<LaundryOrder[]>(K.laundryOrders, []);
@@ -1717,6 +1737,7 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       loadPackages, createPackage, updatePackage, deletePackage,
       loadCustomerPackages, purchaseCustomerPackage, redeemPackageSession,
       createLaundryOrder, loadLaundryOrders, updateLaundryOrderStatus, collectLaundryOrder, getLaundryOrder,
+      mergeStaffFromServer, mergeRidersFromServer,
     }}>
       {children}
     </DatabaseContext.Provider>

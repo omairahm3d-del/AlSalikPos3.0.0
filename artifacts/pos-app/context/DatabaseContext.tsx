@@ -778,6 +778,26 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     }));
   }, [db]);
 
+  const mergeStaffFromServer = useCallback(async (staff: Staff[]): Promise<void> => {
+    for (const s of staff) {
+      await db.runAsync(
+        `INSERT INTO staff (id, name, role, pin, active, created_at) VALUES (?,?,?,?,?,?)
+         ON CONFLICT(id) DO UPDATE SET name=excluded.name, role=excluded.role, pin=excluded.pin, active=excluded.active`,
+        [s.id, s.name, s.role, s.pin, s.active ? 1 : 0, s.createdAt]
+      );
+    }
+  }, [db]);
+
+  const mergeRidersFromServer = useCallback(async (riders: Rider[]): Promise<void> => {
+    for (const r of riders) {
+      await db.runAsync(
+        `INSERT INTO riders (id, name, phone, vehicle_info, active, commission_pct, created_at) VALUES (?,?,?,?,?,?,?)
+         ON CONFLICT(id) DO UPDATE SET name=excluded.name, phone=excluded.phone, vehicle_info=excluded.vehicle_info, active=excluded.active, commission_pct=excluded.commission_pct`,
+        [r.id, r.name, r.phone, r.vehicleInfo, r.active ? 1 : 0, r.commissionPct ?? 0, r.createdAt]
+      );
+    }
+  }, [db]);
+
   const createRider = useCallback(async (rider: Omit<Rider, "id" | "active" | "createdAt">): Promise<Rider> => {
     const id = generateId();
     const createdAt = Date.now();
@@ -1876,12 +1896,13 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         `INSERT INTO laundry_orders
           (id, ticket_number, customer_id, customer_name, customer_phone, status,
            promised_at, order_type, notes, subtotal, vat_amount, total,
-           paid_at, payment_method, sale_id, staff_id, staff_name, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL,?,?,?,?)`,
+           paid_at, payment_method, sale_id, staff_id, staff_name, rider_id, rider_name, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL,?,?,?,?,?,?)`,
         [id, ticketNumber, data.customerId, data.customerName, data.customerPhone,
          "received", data.promisedAt, data.orderType, data.notes ?? null,
          data.subtotal, data.vatAmount, data.total,
-         data.staffId ?? null, data.staffName ?? null, now, now]
+         data.staffId ?? null, data.staffName ?? null,
+         (data as any).riderId ?? null, (data as any).riderName ?? null, now, now]
       );
       for (const item of data.items) {
         const itemId = generateId();
@@ -1898,6 +1919,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       notes: data.notes ?? null, subtotal: data.subtotal, vatAmount: data.vatAmount, total: data.total,
       paidAt: null, paymentMethod: null, saleId: null,
       staffId: data.staffId ?? null, staffName: data.staffName ?? null,
+      riderId: (data as any).riderId ?? null, riderName: (data as any).riderName ?? null,
       createdAt: now, updatedAt: now,
       items: data.items.map((it, i) => ({
         id: `${id}_${i}`, orderId: id, productId: it.productId, productName: it.productName,
@@ -1935,6 +1957,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       subtotal: r.subtotal, vatAmount: r.vat_amount, total: r.total,
       paidAt: r.paid_at ?? null, paymentMethod: r.payment_method ?? null, saleId: r.sale_id ?? null,
       staffId: r.staff_id ?? null, staffName: r.staff_name ?? null,
+      riderId: r.rider_id ?? null, riderName: r.rider_name ?? null,
       createdAt: r.created_at, updatedAt: r.updated_at,
       items: itemsByOrder[r.id] ?? [],
     }));
@@ -2006,6 +2029,7 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
       loadPackages, createPackage, updatePackage, deletePackage,
       loadCustomerPackages, purchaseCustomerPackage, redeemPackageSession,
       createLaundryOrder, loadLaundryOrders, updateLaundryOrderStatus, collectLaundryOrder, getLaundryOrder,
+      mergeStaffFromServer, mergeRidersFromServer,
     }}>
       {children}
     </DatabaseContext.Provider>

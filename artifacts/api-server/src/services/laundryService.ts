@@ -31,6 +31,8 @@ export const upsertLaundryOrderInput = z.object({
   paymentMethod: z.string().nullish(),
   staffId: z.string().nullish(),
   staffName: z.string().nullish(),
+  riderId: z.string().nullish(),
+  riderName: z.string().nullish(),
   items: z.array(laundryItemSchema),
   clientCreatedAt: z.number(),
 });
@@ -72,6 +74,8 @@ export const laundryService = {
       paymentMethod: input.paymentMethod ?? null,
       staffId: input.staffId ?? null,
       staffName: input.staffName ?? null,
+      riderId: input.riderId ?? null,
+      riderName: input.riderName ?? null,
       items: input.items as unknown as object,
       clientCreatedAt: input.clientCreatedAt,
     };
@@ -98,6 +102,8 @@ export const laundryService = {
           paymentMethod: values.paymentMethod,
           staffId: values.staffId,
           staffName: values.staffName,
+          riderId: values.riderId,
+          riderName: values.riderName,
           items: values.items,
           updatedAt: new Date(),
         },

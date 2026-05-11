@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { posPurchasingController } from "../controllers/posPurchasingController";
 import { posKdsController } from "../controllers/posKdsController";
 import { posLaundryController } from "../controllers/posLaundryController";
+import { posStaffRiderController } from "../controllers/posStaffRiderController";
 import { requireDevice } from "../middlewares/requireDevice";
 import { asyncHandler } from "../utils/asyncHandler";
 
@@ -34,5 +35,11 @@ router.patch("/pos/held-orders/:clientId/kds-status", asyncHandler(posKdsControl
 router.get("/pos/laundry/orders", asyncHandler(posLaundryController.listOrders));
 router.post("/pos/laundry/orders", asyncHandler(posLaundryController.upsertOrder));
 router.patch("/pos/laundry/orders/:clientId/status", asyncHandler(posLaundryController.updateStatus));
+
+router.get("/pos/staff", asyncHandler(posStaffRiderController.listStaff));
+router.post("/pos/staff", asyncHandler(posStaffRiderController.upsertStaff));
+
+router.get("/pos/riders", asyncHandler(posStaffRiderController.listRiders));
+router.post("/pos/riders", asyncHandler(posStaffRiderController.upsertRider));
 
 export default router;

@@ -11,6 +11,7 @@ import { useDatabase } from "@/context/DatabaseCore";
 import { useLicense } from "@/context/LicenseContext";
 import { syncOnce, syncPurchasesOnce } from "@/lib/syncEngine";
 import { catalogSyncOnce } from "@/lib/catalogSyncEngine";
+import { pullStaff, pullRiders } from "@/lib/staffRiderApi";
 import {
   getOwningCompanyId,
   setOwningCompanyId,
@@ -164,6 +165,17 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           succeeded: catalogResult.succeeded,
           failed: 0,
           error: null,
+        }).catch(() => {});
+      }
+
+      // Pull staff and riders so all devices share the same lists.
+      // Fire-and-forget: failures here must not block the rest of the sync.
+      if (!catalogResult.unauthorized) {
+        pullStaff(token).then((staff) => {
+          if (staff) db.mergeStaffFromServer(staff).catch(() => {});
+        }).catch(() => {});
+        pullRiders(token).then((riders) => {
+          if (riders) db.mergeRidersFromServer(riders).catch(() => {});
         }).catch(() => {});
       }
 

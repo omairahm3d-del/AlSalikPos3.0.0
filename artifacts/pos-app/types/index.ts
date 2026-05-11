@@ -280,6 +280,8 @@ export interface LaundryOrder {
   saleId: string | null;
   staffId: string | null;
   staffName: string | null;
+  riderId?: string | null;
+  riderName?: string | null;
   createdAt: number;
   updatedAt: number;
   items: LaundryOrderItem[];

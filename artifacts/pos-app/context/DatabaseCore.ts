@@ -402,6 +402,8 @@ export interface DatabaseContextValue {
     total: number;
     staffId?: string | null;
     staffName?: string | null;
+    riderId?: string | null;
+    riderName?: string | null;
     items: Array<{
       productId: string;
       productName: string;
@@ -459,6 +461,12 @@ export interface DatabaseContextValue {
   updateServiceBundle: (bundle: import("@/types").ServiceBundle) => Promise<void>;
   /** Soft-delete a service bundle (sets isActive=false). */
   deleteServiceBundle: (id: string) => Promise<void>;
+
+  // ---- Server-sync pull helpers ----
+  /** Upsert a list of staff members received from the server into local storage. */
+  mergeStaffFromServer(staff: import("@/types").Staff[]): Promise<void>;
+  /** Upsert a list of riders received from the server into local storage. */
+  mergeRidersFromServer(riders: import("@/types").Rider[]): Promise<void>;
 }
 
 export const DatabaseContext = createContext<DatabaseContextValue | null>(null);

@@ -28,6 +28,7 @@ import { ReportsHub } from "@/components/ReportsHub";
 import { SyncQueueScreen } from "@/components/SyncQueueScreen";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useLicense } from "@/context/LicenseContext";
+import { pushStaff, pushRider } from "@/lib/staffRiderApi";
 import { useStaff } from "@/context/StaffContext";
 import { useWorkMode } from "@/context/WorkModeContext";
 import { useColors } from "@/hooks/useColors";
@@ -404,8 +405,16 @@ export default function BackOfficeScreen() {
       Alert.alert("Not Allowed", "Managers cannot create or assign admin-level staff. Contact an administrator.");
       return;
     }
-    if (editingStaff) { await db.updateStaff({ ...editingStaff, name: staffName.trim(), pin: staffPin, role: staffRole }); }
-    else { await db.createStaff({ name: staffName.trim(), pin: staffPin, role: staffRole }); }
+    let savedStaff: import("@/types").Staff;
+    if (editingStaff) {
+      savedStaff = { ...editingStaff, name: staffName.trim(), pin: staffPin, role: staffRole };
+      await db.updateStaff(savedStaff);
+    } else {
+      savedStaff = await db.createStaff({ name: staffName.trim(), pin: staffPin, role: staffRole });
+    }
+    if (!isOffline && licenseSession?.token) {
+      pushStaff(licenseSession.token, savedStaff).catch(() => {});
+    }
     await loadStaffList();
     setEditingStaff(null);
     setStaffName("");
@@ -460,10 +469,15 @@ export default function BackOfficeScreen() {
     if (!riderName.trim()) { Alert.alert("Invalid", "Rider name is required."); return; }
     try {
       const commissionPct = parseFloat(riderCommission) || 0;
+      let savedRider: import("@/types").Rider;
       if (editingRider) {
-        await db.updateRider({ ...editingRider, name: riderName.trim(), phone: riderPhone.trim(), active: riderActive, commissionPct });
+        savedRider = { ...editingRider, name: riderName.trim(), phone: riderPhone.trim(), active: riderActive, commissionPct };
+        await db.updateRider(savedRider);
       } else {
-        await db.createRider({ name: riderName.trim(), phone: riderPhone.trim(), vehicleInfo: "", commissionPct });
+        savedRider = await db.createRider({ name: riderName.trim(), phone: riderPhone.trim(), vehicleInfo: "", commissionPct });
+      }
+      if (!isOffline && licenseSession?.token) {
+        pushRider(licenseSession.token, savedRider).catch(() => {});
       }
       await loadRiderList();
       setEditingRider(null); setRiderName(""); setRiderPhone(""); setRiderActive(true); setRiderCommission("0"); setShowRiderModal(false);

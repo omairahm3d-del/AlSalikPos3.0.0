@@ -177,6 +177,10 @@ export default function POSScreen() {
   const [pendingLaundryOrder, setPendingLaundryOrder] = useState<LaundryOrder | null>(null);
   /** Set when a ticket has been created and the user chose pay-now; collectLaundryOrder is called after saveSale. */
   const [pendingLaundryOrderId, setPendingLaundryOrderId] = useState<string | null>(null);
+  const [laundryRiderId, setLaundryRiderId] = useState<string | null>(null);
+  const [laundryRiderName, setLaundryRiderName] = useState<string | null>(null);
+  const [laundryStaffId, setLaundryStaffId] = useState<string | null>(null);
+  const [laundryStaffName, setLaundryStaffName] = useState<string | null>(null);
 
   const router = useRouter();
   const params = useLocalSearchParams<{
@@ -916,6 +920,17 @@ export default function POSScreen() {
     setLaundryOrderType("drop-off");
     setLaundryNotes("");
     setLaundryPayNow(false);
+    // Default staff to the logged-in user.
+    setLaundryStaffId(currentStaff?.id ?? null);
+    setLaundryStaffName(currentStaff?.name ?? null);
+    // If the logged-in user is a driver, auto-assign them as the delivery rider.
+    if (currentStaff?.role === "driver") {
+      setLaundryRiderId(currentStaff.id);
+      setLaundryRiderName(currentStaff.name);
+    } else {
+      setLaundryRiderId(null);
+      setLaundryRiderName(null);
+    }
     setShowLaundryTicket(true);
   }, [cartItems.length, selectedCustomer]);
 
@@ -934,8 +949,10 @@ export default function POSScreen() {
         subtotal,
         vatAmount: vatEnabled ? vatAmount : 0,
         total,
-        staffId: currentStaff?.id ?? null,
-        staffName: currentStaff?.name ?? null,
+        staffId: laundryStaffId,
+        staffName: laundryStaffName,
+        riderId: laundryRiderId,
+        riderName: laundryRiderName,
         items: cartItems.map((ci) => ({
           productId: ci.product.id,
           productName: ci.product.name,
@@ -947,7 +964,8 @@ export default function POSScreen() {
       });
 
       // Push to server immediately so all devices (driver tablet, etc.) see the new ticket.
-      if (session?.token) {
+      // Only for online licenses — offline devices stay local-only.
+      if (session?.token && session.license.licenseType !== "offline") {
         pushLaundryOrder(session.token, order);
       }
 
@@ -976,7 +994,8 @@ export default function POSScreen() {
     }
   }, [selectedCustomer, businessSettings, createLaundryOrder,
     laundryPromisedAt, laundryOrderType, laundryNotes,
-    subtotal, vatAmount, total, currentStaff, cartItems, laundryPayNow, clearCart]);
+    subtotal, vatAmount, total, laundryStaffId, laundryStaffName,
+    laundryRiderId, laundryRiderName, cartItems, laundryPayNow, clearCart, session]);
 
   const openScanner = useCallback(() => setShowScanner(true), []);
   const closeCart = useCallback(() => setShowCart(false), []);
@@ -2454,6 +2473,71 @@ export default function POSScreen() {
                     </TouchableOpacity>
                   ))}
                 </View>
+
+                {/* Staff picker */}
+                <Text style={[styles.paymentLabel, { color: colors.mutedForeground }]}>ASSIGNED STAFF</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+                  <TouchableOpacity
+                    style={[
+                      styles.tableChip,
+                      { borderRadius: colors.radius, borderColor: !laundryStaffId ? colors.primary : colors.border,
+                        backgroundColor: !laundryStaffId ? colors.primary + "18" : "transparent" },
+                    ]}
+                    onPress={() => { setLaundryStaffId(null); setLaundryStaffName(null); }}
+                  >
+                    <Text style={{ color: !laundryStaffId ? colors.primary : colors.mutedForeground, fontSize: 12, fontWeight: "600" }}>None</Text>
+                  </TouchableOpacity>
+                  {allStaff.filter((s) => s.active !== false).map((s) => (
+                    <TouchableOpacity
+                      key={s.id}
+                      style={[
+                        styles.tableChip,
+                        { borderRadius: colors.radius, borderColor: laundryStaffId === s.id ? colors.primary : colors.border,
+                          backgroundColor: laundryStaffId === s.id ? colors.primary + "18" : "transparent" },
+                      ]}
+                      onPress={() => { setLaundryStaffId(s.id); setLaundryStaffName(s.name); }}
+                    >
+                      <Text style={{ color: laundryStaffId === s.id ? colors.primary : colors.foreground, fontSize: 12, fontWeight: "600" }}>
+                        {s.name}{s.role === "driver" ? " 🚗" : ""}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Rider picker */}
+                {riders.filter((r) => r.active !== false).length > 0 && (
+                  <>
+                    <Text style={[styles.paymentLabel, { color: colors.mutedForeground }]}>DELIVERY RIDER</Text>
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+                      <TouchableOpacity
+                        style={[
+                          styles.tableChip,
+                          { borderRadius: colors.radius,
+                            borderColor: !laundryRiderId ? colors.primary : colors.border,
+                            backgroundColor: !laundryRiderId ? colors.primary + "18" : "transparent" },
+                        ]}
+                        onPress={() => { setLaundryRiderId(null); setLaundryRiderName(null); }}
+                      >
+                        <Text style={{ color: !laundryRiderId ? colors.primary : colors.mutedForeground, fontSize: 12, fontWeight: "600" }}>None</Text>
+                      </TouchableOpacity>
+                      {riders.filter((r) => r.active !== false).map((r) => (
+                        <TouchableOpacity
+                          key={r.id}
+                          style={[
+                            styles.tableChip,
+                            { borderRadius: colors.radius, borderColor: laundryRiderId === r.id ? colors.primary : colors.border,
+                              backgroundColor: laundryRiderId === r.id ? colors.primary + "18" : "transparent" },
+                          ]}
+                          onPress={() => { setLaundryRiderId(r.id); setLaundryRiderName(r.name); }}
+                        >
+                          <Text style={{ color: laundryRiderId === r.id ? colors.primary : colors.foreground, fontSize: 12, fontWeight: "600" }}>
+                            🚗 {r.name}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                )}
 
                 {/* Promised date */}
                 <Text style={[styles.paymentLabel, { color: colors.mutedForeground }]}>PROMISED DATE</Text>

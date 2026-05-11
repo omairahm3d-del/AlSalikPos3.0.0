@@ -72,7 +72,8 @@ export default function LaundryOrdersScreen() {
   const reload = useCallback(async () => {
     try {
       // Try to pull from the server first so all devices see every ticket.
-      if (session?.token) {
+      // Only for online licenses — offline devices stay local-only.
+      if (session?.token && session.license.licenseType !== "offline") {
         const serverOrders = await pullLaundryOrders(session.token);
         if (serverOrders !== null) {
           setAllOrders(serverOrders);
@@ -106,7 +107,7 @@ export default function LaundryOrdersScreen() {
     setPendingReadyId(null);
     await updateLaundryOrderStatus(order.id, "ready");
     // Push to server so the driver's tablet sees the status change.
-    if (session?.token) {
+    if (session?.token && session.license.licenseType !== "offline") {
       pushLaundryStatus(session.token, order.id, "ready");
     }
     reload();
@@ -214,6 +215,24 @@ export default function LaundryOrdersScreen() {
             {item.items.length} item{item.items.length !== 1 ? "s" : ""} · {elapsedLabel(item.createdAt)}
           </Text>
         </View>
+
+        {item.riderName ? (
+          <View style={styles.metaRow}>
+            <Feather name="truck" size={12} color={colors.mutedForeground} />
+            <Text style={[styles.metaTxt, { color: colors.mutedForeground }]}>
+              Rider: {item.riderName}
+            </Text>
+          </View>
+        ) : null}
+
+        {item.staffName ? (
+          <View style={styles.metaRow}>
+            <Feather name="user" size={12} color={colors.mutedForeground} />
+            <Text style={[styles.metaTxt, { color: colors.mutedForeground }]}>
+              Staff: {item.staffName}
+            </Text>
+          </View>
+        ) : null}
 
         {item.notes ? (
           <Text style={[styles.notes, { color: colors.mutedForeground }]} numberOfLines={1}>

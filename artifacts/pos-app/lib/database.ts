@@ -346,6 +346,9 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     // Saloon mode: service bundle breakdown stored per sale line as JSON.
     // NULL for regular service/product lines.
     "ALTER TABLE sale_items ADD COLUMN bundle_services_json TEXT DEFAULT NULL",
+    // Laundry: rider assigned to this ticket for pickup/delivery.
+    "ALTER TABLE laundry_orders ADD COLUMN rider_id TEXT DEFAULT NULL",
+    "ALTER TABLE laundry_orders ADD COLUMN rider_name TEXT DEFAULT NULL",
   ];
 
   // Sync event log. Append-only ring buffer (capped to 200 rows by the

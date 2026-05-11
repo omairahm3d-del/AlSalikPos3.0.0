@@ -53,6 +53,8 @@ export const laundryOrdersTable = pgTable(
     paymentMethod: text("payment_method"),
     staffId: text("staff_id"),
     staffName: text("staff_name"),
+    riderId: text("rider_id"),
+    riderName: text("rider_name"),
     items: jsonb("items").notNull().default([]),
     clientCreatedAt: bigint("client_created_at", { mode: "number" }).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
