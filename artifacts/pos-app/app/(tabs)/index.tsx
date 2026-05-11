@@ -1266,6 +1266,7 @@ export default function POSScreen() {
                       const voidingApptId = activeApptId;
                       const voidingChairId = activeApptChairId;
                       clearCart();
+                      setSelectedCustomer(null);
                       setVoidConfirm(false);
                       setSelectedTable(null);
                       setSelectedRider(null);
