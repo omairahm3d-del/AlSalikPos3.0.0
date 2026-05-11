@@ -65,6 +65,16 @@ function getUSBPrinter(): any | null {
 }
 
 /**
+ * Convert raw bytes to a base64 string suitable for printRaw().
+ * printRaw() calls printRawData() directly — no EPToolkit re-encoding.
+ */
+function bytesToBase64(bytes: number[]): string {
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b & 0xff);
+  return btoa(binary);
+}
+
+/**
  * Module-level init flag.
  *
  * The native init() registers a BroadcastReceiver for USB events.
@@ -132,12 +142,11 @@ export async function initAndScanUsbDevices(): Promise<UsbDevice[]> {
  *   user sees or taps the dialog. The BroadcastReceiver sets mUsbDevice only
  *   AFTER the user taps Allow.
  *
- *   Therefore: do NOT call printBill() immediately after this function.
- *   Call it only on a SEPARATE user action (e.g. a button tap) so that the
- *   modal dialog has been dismissed and mUsbDevice has been set.
- *
  *   On subsequent calls for the same device (permission already granted),
- *   no dialog is shown and it is safe to print immediately after.
+ *   no dialog is shown and the native mUsbDevice is confirmed immediately.
+ *
+ *   Therefore: do NOT call printBill() immediately after this function ON
+ *   FIRST USE. On subsequent uses (permission already granted) it is safe.
  */
 export async function connectUsbPrinter(device: UsbDevice): Promise<boolean> {
   const printer = getUSBPrinter();
@@ -166,20 +175,17 @@ export async function disconnectUsbPrinter(): Promise<void> {
   }
 }
 
-const ESC = "\x1b";
-const GS = "\x1d";
-
-function buildEscPos(text: string, autoCut: boolean): string {
-  const initCmd = ESC + "@";
-  const leftAlign = ESC + "a\x00";
-  const feeds = "\n\n\n";
-  const cut = autoCut ? GS + "V\x00" : "\n\n\n";
-  return initCmd + leftAlign + text + feeds + cut;
-}
-
 /**
- * Send plain text to the printer using ESC/POS commands.
- * Caller must have already called connectUsbPrinter() in a prior user action.
+ * Send plain text to the USB printer.
+ *
+ * CRITICAL: Pass PLAIN TEXT only — do NOT pre-encode ESC/POS control bytes.
+ * The library's printBill() runs text through EPToolkit.exchange_text() which
+ * adds its own ESC/POS framing (init, cut, line feeds). If you pass raw binary
+ * control characters they get double-encoded and the printer receives garbage.
+ *
+ * Caller must have already called connectUsbPrinter() so that mUsbDevice is
+ * set in the native layer. openConnection() needs mUsbDevice != null to open
+ * the bulk USB endpoint.
  */
 export async function printUsbText(
   text: string,
@@ -188,8 +194,21 @@ export async function printUsbText(
   const printer = getUSBPrinter();
   if (!printer) return false;
   try {
-    const escpos = buildEscPos(text, opts.autoCut !== false);
-    await printer.printBill(escpos);
+    // printBill() internally calls:
+    //   billTo64Buffer(text, opts) → EPToolkit.exchange_text() → base64
+    //   RNUSBPrinter.printRawData(base64, errorCallback)
+    //
+    // printRawData is fire-and-forget (not a real Promise); errors go to
+    // errorCallback which just console.warns. We can't await the actual USB
+    // transfer result. Give the print thread enough time to finish.
+    printer.printBill(text, {
+      beep: false,
+      cut: opts.autoCut !== false,
+      encoding: "UTF8",
+      tailingLine: true,
+    });
+    // Wait for the background thread in printRawData to complete the bulkTransfer
+    await new Promise<void>((r) => setTimeout(r, 600));
     return true;
   } catch (e: any) {
     console.warn("[usbPrinter] printBill:", e?.message ?? e);
@@ -208,8 +227,15 @@ export async function printUsbBitmap(
     const imageWidth = paperWidth === "58mm" ? 384 : 576;
     await printer.printImageBase64(base64Png, { imageWidth });
     if (opts.autoCut !== false) {
-      const cutCmd = ESC + "@" + "\n\n\n" + GS + "V\x00";
-      await printer.printBill(cutCmd);
+      // Use printBill with empty text + cut=true so EPToolkit emits the cut
+      // command properly — never send raw ESC/POS bytes through printBill.
+      printer.printBill("\n", {
+        beep: false,
+        cut: true,
+        encoding: "UTF8",
+        tailingLine: false,
+      });
+      await new Promise<void>((r) => setTimeout(r, 400));
     }
     return true;
   } catch (e: any) {
@@ -219,19 +245,26 @@ export async function printUsbBitmap(
 }
 
 /**
- * Send cash drawer open ESC/POS command.
- * Connects first (silent if already permitted).
+ * Send cash drawer open ESC/POS command via printRaw().
+ *
+ * printRaw() calls printRawData() directly with base64 data — it does NOT
+ * go through EPToolkit, so binary ESC/POS bytes are safe to use here.
+ *
+ * ESC p m t1 t2:  0x1B 0x70 0x00 0x19 0xFA
+ *   pin=0 (pin 2), on-pulse=25×2ms=50ms, off-pulse=250×2ms=500ms
  */
 export async function openUsbCashDrawer(device: UsbDevice): Promise<boolean> {
   if (Platform.OS !== "android") return false;
-  const connected = await connectUsbPrinter(device);
-  if (!connected) return false;
   const printer = getUSBPrinter();
   if (!printer) return false;
+  const connected = await connectUsbPrinter(device);
+  if (!connected) return false;
   try {
-    // ESC p m t1 t2 — pin 2, pulse width 25ms/250ms
-    const drawerCmd = ESC + "\x70\x00\x19\xfa";
-    await printer.printBill(drawerCmd);
+    // Build raw drawer-kick bytes and base64-encode for printRaw()
+    const drawerBytes = [0x1b, 0x70, 0x00, 0x19, 0xfa];
+    const base64 = bytesToBase64(drawerBytes);
+    printer.printRaw(base64);
+    await new Promise<void>((r) => setTimeout(r, 300));
     return true;
   } catch (e: any) {
     console.warn("[usbPrinter] cashDrawer:", e?.message ?? e);
@@ -242,19 +275,33 @@ export async function openUsbCashDrawer(device: UsbDevice): Promise<boolean> {
 /**
  * Print a test page.
  *
- * Does NOT call connectUsbPrinter() — caller must have already called it
- * as a SEPARATE user action (so the Android permission dialog was shown and
- * dismissed before this runs). Calling connectPrinter + printBill back-to-back
- * fails because connectPrinter resolves before the dialog is even shown.
+ * Calls connectUsbPrinter() first — on second call (permission already granted
+ * from the Connect step) the native layer resolves immediately and confirms
+ * mUsbDevice, so printRawData's openConnection() will succeed.
  */
 export async function testUsbPrinter(
   device: UsbDevice,
   autoCut = true,
 ): Promise<boolean> {
+  if (Platform.OS !== "android") return false;
+
+  // Re-connect: permission was already granted in Step 2, so selectDevice()
+  // resolves synchronously this time and confirms mUsbDevice in the native layer.
+  const connected = await connectUsbPrinter(device);
+  if (!connected) {
+    console.warn("[usbPrinter] testUsbPrinter: connectUsbPrinter failed");
+    return false;
+  }
+
+  // Brief pause so the native openConnection() call in printRawData finds
+  // mUsbDevice already set before trying bulkTransfer.
+  await new Promise<void>((r) => setTimeout(r, 400));
+
   const label =
     device.productName ||
     getVendorName(device.vendorId) ||
     `VID:${device.vendorId} PID:${device.productId}`;
+
   return printUsbText(
     `AL SALIK POS\n` +
       `USB Printer Test\n` +
