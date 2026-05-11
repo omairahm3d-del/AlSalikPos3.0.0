@@ -17,22 +17,47 @@ export type UsbPrinterStatus =
   | "disconnected"
   | "permission_denied";
 
-function getModule(): any | null {
+function getUSBPrinter(): any | null {
   if (Platform.OS !== "android") return null;
   try {
     const m = require("react-native-thermal-receipt-printer-image-qr");
-    return m?.default ?? m;
+    const mod = m?.default ?? m;
+    return mod?.USBPrinter ?? null;
   } catch {
     return null;
   }
 }
 
-export async function listUsbPrinters(): Promise<UsbDevice[]> {
-  const mod = getModule();
-  if (!mod) return [];
+/**
+ * Initialise the USB subsystem. On Android this triggers the OS
+ * permission dialog for the attached USB device.  Must be called
+ * before getDeviceList / connectPrinter.
+ */
+async function initUsb(): Promise<boolean> {
+  const printer = getUSBPrinter();
+  if (!printer) return false;
   try {
-    const devs = await mod.getUSBDeviceList();
-    return Array.isArray(devs) ? devs : [];
+    await printer.init();
+    return true;
+  } catch (e: any) {
+    console.warn("[usbPrinter] init:", e?.message ?? e);
+    return false;
+  }
+}
+
+export async function listUsbPrinters(): Promise<UsbDevice[]> {
+  const printer = getUSBPrinter();
+  if (!printer) return [];
+  try {
+    await printer.init();
+    const devs: Array<{ vendor_id: string; product_id: string; device_name?: string }> =
+      await printer.getDeviceList();
+    if (!Array.isArray(devs)) return [];
+    return devs.map((d) => ({
+      vendorId: parseInt(d.vendor_id, 10),
+      productId: parseInt(d.product_id, 10),
+      productName: d.device_name,
+    }));
   } catch (e: any) {
     console.warn("[usbPrinter] list:", e?.message ?? e);
     return [];
@@ -40,14 +65,14 @@ export async function listUsbPrinters(): Promise<UsbDevice[]> {
 }
 
 export async function connectUsbPrinter(device: UsbDevice): Promise<boolean> {
-  const mod = getModule();
-  if (!mod) return false;
+  const printer = getUSBPrinter();
+  if (!printer) return false;
   try {
-    await mod.connectPrinter("USB", {
-      vendorId: device.vendorId,
-      productId: device.productId,
-      ...(device.deviceId != null ? { deviceId: device.deviceId } : {}),
-    });
+    await printer.init();
+    await printer.connectPrinter(
+      String(device.vendorId),
+      String(device.productId),
+    );
     return true;
   } catch (e: any) {
     console.warn("[usbPrinter] connect:", e?.message ?? e);
@@ -56,31 +81,30 @@ export async function connectUsbPrinter(device: UsbDevice): Promise<boolean> {
 }
 
 export async function disconnectUsbPrinter(): Promise<void> {
-  const mod = getModule();
-  if (!mod) return;
+  const printer = getUSBPrinter();
+  if (!printer) return;
   try {
-    if (typeof mod.closeConn === "function") await mod.closeConn();
+    if (typeof printer.closeConn === "function") await printer.closeConn();
   } catch {
     // ignore
   }
 }
 
 /**
- * Lightweight connectivity check — tries to connect and disconnects if
- * we were not already connected. Returns true if the device is reachable.
+ * Lightweight connectivity check. Returns the current printer status.
  */
 export async function getPrinterStatus(
   device: UsbDevice,
 ): Promise<UsbPrinterStatus> {
   if (Platform.OS !== "android") return "idle";
-  const mod = getModule();
-  if (!mod) return "idle";
+  const printer = getUSBPrinter();
+  if (!printer) return "idle";
   try {
-    await mod.connectPrinter("USB", {
-      vendorId: device.vendorId,
-      productId: device.productId,
-      ...(device.deviceId != null ? { deviceId: device.deviceId } : {}),
-    });
+    await printer.init();
+    await printer.connectPrinter(
+      String(device.vendorId),
+      String(device.productId),
+    );
     return "connected";
   } catch (e: any) {
     const msg: string = e?.message ?? "";
@@ -104,10 +128,11 @@ export async function printUsbText(
   text: string,
   opts: { autoCut?: boolean } = {},
 ): Promise<boolean> {
-  const mod = getModule();
-  if (!mod) return false;
+  const printer = getUSBPrinter();
+  if (!printer) return false;
   try {
-    await mod.printBill(buildEscPos(text, opts.autoCut !== false));
+    const escpos = buildEscPos(text, opts.autoCut !== false);
+    await printer.printBill(escpos);
     return true;
   } catch (e: any) {
     console.warn("[usbPrinter] text print:", e?.message ?? e);
@@ -120,13 +145,14 @@ export async function printUsbBitmap(
   paperWidth: "58mm" | "80mm",
   opts: { autoCut?: boolean } = {},
 ): Promise<boolean> {
-  const mod = getModule();
-  if (!mod) return false;
+  const printer = getUSBPrinter();
+  if (!printer) return false;
   try {
     const imageWidth = paperWidth === "58mm" ? 384 : 576;
-    await mod.printBill(base64Png, { imageWidth, customWidth: true });
+    await printer.printImageBase64(base64Png, { imageWidth });
     if (opts.autoCut !== false) {
-      await mod.printBill(ESC + "@" + "\n\n\n" + GS + "V\x00");
+      const cutCmd = ESC + "@" + "\n\n\n" + GS + "V\x00";
+      await printer.printBill(cutCmd);
     }
     return true;
   } catch (e: any) {
@@ -137,18 +163,17 @@ export async function printUsbBitmap(
 
 /**
  * Sends the ESC/POS cash drawer open command.
- * Works on pin 2 (most common). Falls back to pin 5 if needed.
  */
 export async function openUsbCashDrawer(device: UsbDevice): Promise<boolean> {
   if (Platform.OS !== "android") return false;
-  const mod = getModule();
-  if (!mod) return false;
+  const connected = await connectUsbPrinter(device);
+  if (!connected) return false;
+  const printer = getUSBPrinter();
+  if (!printer) return false;
   try {
-    const connected = await connectUsbPrinter(device);
-    if (!connected) return false;
     // ESC p m t1 t2 — pin 2, pulse width 25ms/250ms
     const drawerCmd = ESC + "\x70\x00\x19\xfa";
-    await mod.printBill(drawerCmd);
+    await printer.printBill(drawerCmd);
     return true;
   } catch (e: any) {
     console.warn("[usbPrinter] cash drawer:", e?.message ?? e);

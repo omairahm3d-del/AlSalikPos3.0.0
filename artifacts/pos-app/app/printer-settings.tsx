@@ -129,13 +129,13 @@ export default function PrinterSettingsScreen() {
       if (devs.length === 0) {
         Alert.alert(
           "No USB Printers Found",
-          "No USB devices detected.\n\n• Make sure the OTG cable is connected\n• Ensure the printer is powered on\n• This requires a development or EAS build",
+          "No USB devices detected.\n\n• Make sure the OTG cable is connected via USB-OTG adapter\n• Ensure the printer is powered on\n• Accept the USB permission dialog if it appeared\n• Try tapping Detect again after granting permission",
         );
       }
     } catch {
       Alert.alert(
         "Scan Error",
-        "Could not scan for USB devices. This feature requires a development build.",
+        "Could not scan for USB devices.\n\n• Make sure the OTG cable is connected\n• Accept any USB permission dialog that appears\n• This requires an EAS / development build (not Expo Go)",
       );
     } finally {
       setScanState("idle");
@@ -632,7 +632,7 @@ export default function PrinterSettingsScreen() {
                 <Feather name="info" size={14} color={colors.primary} style={{ marginTop: 1 }} />
                 <Text style={[s.hint, { color: colors.primary, flex: 1 }]}>
                   USB printing requires a <Text style={{ fontWeight: "700" }}>development or EAS build</Text> — it does not work in Expo Go.
-                  {"\n\n"}Make sure the OTG cable is connected and the printer is powered on before scanning.
+                  {"\n\n"}Connect the OTG cable and power on the printer first. When you tap <Text style={{ fontWeight: "700" }}>Detect USB Printers</Text>, an Android permission dialog will appear — tap <Text style={{ fontWeight: "700" }}>Allow</Text> to grant USB access. If nothing appears, tap Detect again.
                 </Text>
               </View>
             </View>
