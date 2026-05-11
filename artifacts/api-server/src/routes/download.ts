@@ -149,7 +149,7 @@ router.get("/download/info", (_req, res) => {
     android: {
       available: !!BUCKET_ID,
       filename: APK_NAME,
-      sizeBytes: 131280471,
+      sizeBytes: 131323347,
       sizeMB: 125,
       downloadUrl: "/api/download/apk",
     },
