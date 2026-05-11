@@ -149,6 +149,12 @@ export default function KdsScreen() {
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /**
+   * Pending KDS status updates that haven't confirmed to the server yet.
+   * Key = clientId, value = KdsStatus. Retried on every poll cycle until
+   * the server acknowledges them (or the order disappears).
+   */
+  const pendingKdsUpdates = useRef<Record<string, KdsStatus>>({});
 
   const isOnline = session?.license?.licenseType === "online";
 
@@ -156,14 +162,82 @@ export default function KdsScreen() {
     if (isOnline && session?.token) {
       try {
         const { authedFetch } = await import("@/lib/saasApi");
+
+        // --- Fix #3: catch-up push ---
+        // Push any local held orders that the server doesn't know about yet.
+        // This recovers from the "fire-and-forget POST failed on hold" scenario.
+        const localOrders = await loadHeldOrders();
+        const localActive = localOrders.filter(
+          (o) => (o.kdsStatus ?? "new") !== "bumped",
+        );
+
+        // Fetch from server
         const resp = await authedFetch("/api/pos/held-orders", session.token);
         if (resp.ok) {
-          const data = await resp.json() as { heldOrders: Record<string, unknown>[] };
-          const pending = data.heldOrders
+          const data = (await resp.json()) as {
+            heldOrders: Record<string, unknown>[];
+          };
+          const serverIds = new Set(
+            data.heldOrders.map((r) => r.clientId as string),
+          );
+
+          // Push local orders missing from the server (best-effort, parallel)
+          const missing = localActive.filter((o) => !serverIds.has(o.id));
+          if (missing.length > 0) {
+            await Promise.allSettled(
+              missing.map((o) =>
+                authedFetch("/api/pos/held-orders", session.token!, {
+                  method: "POST",
+                  body: JSON.stringify({
+                    clientId: o.id,
+                    tableName: o.tableName,
+                    orderType: o.orderType,
+                    staffName: o.staffName ?? null,
+                    customerName: o.customerName ?? null,
+                    kdsStatus: o.kdsStatus ?? "new",
+                    items: o.items,
+                    clientCreatedAt: o.createdAt,
+                  }),
+                }),
+              ),
+            );
+          }
+
+          // --- Fix #4: retry pending KDS status updates ---
+          const pending = { ...pendingKdsUpdates.current };
+          const retryEntries = Object.entries(pending);
+          if (retryEntries.length > 0) {
+            const results = await Promise.allSettled(
+              retryEntries.map(([clientId, status]) =>
+                authedFetch(
+                  `/api/pos/held-orders/${encodeURIComponent(clientId)}/kds-status`,
+                  session.token!,
+                  { method: "PATCH", body: JSON.stringify({ kdsStatus: status }) },
+                ),
+              ),
+            );
+            // Clear only those that succeeded
+            results.forEach((result, i) => {
+              const entry = retryEntries[i];
+              if (!entry) return;
+              const [clientId] = entry;
+              if (result.status === "fulfilled" && result.value.ok) {
+                delete pendingKdsUpdates.current[clientId];
+              }
+            });
+          }
+
+          // Re-fetch to get server-authoritative list (includes just-pushed orders)
+          const resp2 = await authedFetch("/api/pos/held-orders", session.token);
+          const data2 = resp2.ok
+            ? ((await resp2.json()) as { heldOrders: Record<string, unknown>[] })
+            : data;
+
+          const serverOrders = data2.heldOrders
             .map(serverRowToHeldOrder)
             .filter((o) => (o.kdsStatus ?? "new") !== "bumped")
             .sort((a, b) => a.createdAt - b.createdAt);
-          setOrders(pending);
+          setOrders(serverOrders);
           setLastRefreshed(new Date());
           return;
         }
@@ -193,16 +267,26 @@ export default function KdsScreen() {
 
   const handleAction = useCallback(
     async (id: string, next: KdsStatus) => {
+      // Update locally first for instant UI feedback
       await updateKdsStatus(id, next);
       if (isOnline && session?.token) {
         try {
           const { authedFetch } = await import("@/lib/saasApi");
-          await authedFetch(`/api/pos/held-orders/${encodeURIComponent(id)}/kds-status`, session.token, {
-            method: "PATCH",
-            body: JSON.stringify({ kdsStatus: next }),
-          });
+          const res = await authedFetch(
+            `/api/pos/held-orders/${encodeURIComponent(id)}/kds-status`,
+            session.token,
+            { method: "PATCH", body: JSON.stringify({ kdsStatus: next }) },
+          );
+          if (!res.ok) {
+            // Server rejected — queue for retry on next poll
+            pendingKdsUpdates.current[id] = next;
+          } else {
+            // Confirmed — remove from pending retry queue if present
+            delete pendingKdsUpdates.current[id];
+          }
         } catch {
-          // Non-fatal
+          // Network error — queue for retry on next poll
+          pendingKdsUpdates.current[id] = next;
         }
       }
       await refresh();

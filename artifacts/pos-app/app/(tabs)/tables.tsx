@@ -22,7 +22,8 @@ import { useCart } from "@/context/CartContext";
 import { useColors } from "@/hooks/useColors";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useWorkMode } from "@/context/WorkModeContext";
-import type { HeldOrder, PosTable, Product } from "@/types";
+import { useLicense } from "@/context/LicenseContext";
+import type { HeldOrder, HeldOrderItem, OrderType, PosTable, Product } from "@/types";
 import { VAT_RATE } from "@/types";
 
 const STATUS_COLORS: Record<string, { bg: string; fg: string; label: string }> = {
@@ -36,10 +37,12 @@ export default function TablesScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const router = useRouter();
-  const { loadTables, createTable, updateTable, deleteTable, setTableStatus, loadHeldOrderByTable, loadProducts, loadTaxGroups } = useDatabase();
+  const { loadTables, createTable, updateTable, deleteTable, setTableStatus, loadHeldOrderByTable, saveHeldOrder, loadProducts, loadTaxGroups } = useDatabase();
   const { restoreCart } = useCart();
+  const { session } = useLicense();
   const permissions = usePermissions();
   const { tableLabelSingular, tableLabel } = useWorkMode();
+  const isOnline = session?.license?.licenseType === "online";
 
   const [tables, setTables] = useState<PosTable[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,7 +116,72 @@ export default function TablesScreen() {
   const handleTableTap = async (table: PosTable) => {
     if (table.status === "occupied") {
       try {
-        const heldOrder = await loadHeldOrderByTable(table.id);
+        // When online, fetch the held order from the server so any device can
+        // resume a ticket that was created on a different device. Fall back to
+        // local DB if the network fetch fails or we're offline.
+        let heldOrder: HeldOrder | null = null;
+
+        if (isOnline && session?.token) {
+          try {
+            const { authedFetch } = await import("@/lib/saasApi");
+            const resp = await authedFetch("/api/pos/held-orders", session.token);
+            if (resp.ok) {
+              const data = await resp.json() as { heldOrders: Record<string, unknown>[] };
+              const serverRow = data.heldOrders.find(
+                (r) => (r.tableName as string) === table.name && (r.kdsStatus as string) !== "bumped",
+              );
+              if (serverRow) {
+                const rawItems = (serverRow.items ?? []) as Record<string, unknown>[];
+                heldOrder = {
+                  id: serverRow.clientId as string,
+                  tableId: table.id,
+                  tableName: serverRow.tableName as string,
+                  orderType: serverRow.orderType as OrderType,
+                  staffName: serverRow.staffName as string | undefined,
+                  customerName: serverRow.customerName as string | undefined,
+                  kdsStatus: (serverRow.kdsStatus as HeldOrder["kdsStatus"]) ?? "new",
+                  createdAt: new Date(serverRow.clientCreatedAt as string).getTime(),
+                  updatedAt: new Date(serverRow.updatedAt as string).getTime(),
+                  items: rawItems.map((i) => ({
+                    id: i.id as string,
+                    heldOrderId: serverRow.clientId as string,
+                    productId: i.productId as string,
+                    productName: i.productName as string,
+                    productPrice: i.productPrice as number,
+                    quantity: i.quantity as number,
+                    colorHex: (i.colorHex as string) ?? "",
+                    category: (i.category as string) ?? "",
+                    taxRate: i.taxRate as number | undefined,
+                    discountType: i.discountType as HeldOrderItem["discountType"],
+                    discountValue: i.discountValue as number | undefined,
+                    discountAmount: i.discountAmount as number | undefined,
+                    imageUri: i.imageUri as string | undefined,
+                  })),
+                };
+                // Persist to local DB so local operations (charge, cancel) work offline
+                await saveHeldOrder({
+                  id: heldOrder.id,
+                  tableId: heldOrder.tableId,
+                  tableName: heldOrder.tableName,
+                  orderType: heldOrder.orderType,
+                  staffId: undefined,
+                  staffName: heldOrder.staffName,
+                  customerId: undefined,
+                  customerName: heldOrder.customerName,
+                  items: heldOrder.items,
+                }).catch(() => {});
+              }
+            }
+          } catch {
+            // Network failed — fall through to local below
+          }
+        }
+
+        // Fallback: load from local DB
+        if (!heldOrder) {
+          heldOrder = await loadHeldOrderByTable(table.id);
+        }
+
         if (heldOrder && heldOrder.items.length > 0) {
           const [allProducts, taxGroups] = await Promise.all([loadProducts(), loadTaxGroups()]);
           const productMap: Record<string, Product> = {};
@@ -141,7 +209,7 @@ export default function TablesScreen() {
           router.navigate("/");
           return;
         }
-      } catch (e: any) {
+      } catch {
         Alert.alert("Error", "Could not load held order");
         return;
       }
