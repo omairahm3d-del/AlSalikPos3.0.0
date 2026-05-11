@@ -9,6 +9,7 @@ import { Dashboard } from "@/pages/Dashboard";
 import { NewCompany } from "@/pages/NewCompany";
 import { CompanyDetail } from "@/pages/CompanyDetail";
 import { Settings } from "@/pages/Settings";
+import { Downloads } from "@/pages/Downloads";
 import NotFound from "@/pages/not-found";
 import { AdminApiError } from "@/lib/adminApi";
 import { clearAdminKey } from "@/lib/adminAuth";
@@ -59,6 +60,7 @@ function Router() {
         <Route path="/" component={Dashboard} />
         <Route path="/companies/new" component={NewCompany} />
         <Route path="/companies/:companyId" component={CompanyDetail} />
+        <Route path="/downloads" component={Downloads} />
         <Route path="/settings" component={Settings} />
         <Route component={NotFound} />
       </Switch>

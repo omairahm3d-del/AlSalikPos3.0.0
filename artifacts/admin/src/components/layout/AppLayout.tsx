@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Building2, Settings, LogOut, Menu, X } from "lucide-react";
+import { Building2, Settings, LogOut, Menu, X, Download } from "lucide-react";
 import { hasAdminKey, clearAdminKey } from "@/lib/adminAuth";
 import { useAdminPing } from "@/hooks/useAdminApi";
 import { Button } from "@/components/ui/button";
@@ -80,6 +80,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
         <nav className="flex-1 py-4 flex flex-col gap-1 px-2 overflow-y-auto">
           {navLink("/", "Companies", <Building2 className="h-4 w-4 flex-shrink-0" />)}
+          {navLink("/downloads", "Downloads", <Download className="h-4 w-4 flex-shrink-0" />, true)}
           {navLink("/settings", "Settings", <Settings className="h-4 w-4 flex-shrink-0" />, true)}
         </nav>
 
