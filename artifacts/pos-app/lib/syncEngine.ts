@@ -198,3 +198,125 @@ export async function syncOnce(
     unauthorized: false,
   };
 }
+
+export interface PurchaseSyncResult {
+  attempted: number;
+  succeeded: number;
+  failed: number;
+  hasMore: boolean;
+  hadReadyItems: boolean;
+  unauthorized: boolean;
+  error?: string;
+}
+
+/**
+ * Run one drain pass for local purchases (Receive Stock entries).
+ *
+ * Each pending purchase is POSTed to `/api/pos/purchases` individually using
+ * the local purchase ID as idempotencyKey — the server returns the existing
+ * record when the key is already known, so retries are always safe.
+ *
+ * Skipped entirely when the device is not bound to a branch (`branchId` null)
+ * because the server endpoint rejects unbound devices.
+ */
+export async function syncPurchasesOnce(
+  db: DatabaseContextValue,
+  token: string,
+  branchId: string | null,
+): Promise<PurchaseSyncResult> {
+  if (!branchId) {
+    return {
+      attempted: 0, succeeded: 0, failed: 0,
+      hasMore: false, hadReadyItems: false, unauthorized: false,
+    };
+  }
+
+  const batch = await db.loadSyncBatch("purchase", BATCH_SIZE);
+  const now = Date.now();
+  const ready = batch.filter((item) => {
+    if (item.lastAttemptAt === null) return true;
+    return now - item.lastAttemptAt >= backoffMs(item.attemptCount);
+  });
+
+  if (ready.length === 0) {
+    const remaining = await db.countPendingSync("purchase");
+    return {
+      attempted: 0, succeeded: 0, failed: 0,
+      hasMore: remaining > 0, hadReadyItems: false, unauthorized: false,
+    };
+  }
+
+  const updates: SyncResultUpdate[] = [];
+  let succeeded = 0;
+  let unauthorized = false;
+  let lastError: string | undefined;
+
+  for (const item of ready) {
+    const local = await db.getLocalPurchase(item.entityId);
+    if (!local) {
+      updates.push({ queueId: item.queueId, ok: true });
+      succeeded++;
+      continue;
+    }
+    const { purchase, items } = local;
+    const body = {
+      branchId,
+      supplierName: purchase.supplierName,
+      referenceNumber: purchase.referenceNumber ?? null,
+      receivedAt: new Date(purchase.receivedAt).toISOString(),
+      notes: purchase.notes ?? null,
+      items: items.map((l) => ({
+        productClientId: l.productClientId,
+        productName: l.productName,
+        sku: l.sku ?? null,
+        quantity: l.quantity,
+        unitCost: l.unitCost,
+        vatAmount: l.vatAmount,
+      })),
+      idempotencyKey: purchase.id,
+    };
+
+    let res: Response;
+    try {
+      res = await authedFetch("/api/pos/purchases", token, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "network unreachable";
+      updates.push({ queueId: item.queueId, ok: false, error: msg });
+      lastError = msg;
+      continue;
+    }
+
+    if (res.status === 401 || res.status === 403) {
+      unauthorized = true;
+      break;
+    }
+
+    if (res.ok) {
+      updates.push({ queueId: item.queueId, ok: true });
+      succeeded++;
+    } else {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const errBody = await res.json();
+        msg = errBody?.error?.message ?? msg;
+      } catch { /* ignore */ }
+      updates.push({ queueId: item.queueId, ok: false, error: msg });
+      lastError = msg;
+    }
+  }
+
+  if (updates.length > 0) await db.markSyncResults(updates);
+  const remaining = await db.countPendingSync("purchase");
+  return {
+    attempted: ready.length,
+    succeeded,
+    failed: ready.length - succeeded - (unauthorized ? 1 : 0),
+    hasMore: remaining > 0,
+    hadReadyItems: true,
+    unauthorized,
+    error: lastError,
+  };
+}

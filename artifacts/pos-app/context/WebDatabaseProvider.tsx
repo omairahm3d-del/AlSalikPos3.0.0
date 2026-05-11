@@ -1137,18 +1137,38 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
 
   const reconcilePendingSync = useCallback(async (): Promise<number> => {
     const queue = await getJson<WebSyncQueueRow[]>(K.syncQueue, []);
-    const tracked = new Set(
+    const trackedSales = new Set(
       queue.filter((q) => q.entityType === "sale").map((q) => q.entityId)
     );
-    const sales = await getJson<Sale[]>(K.sales, []);
+    const trackedPurchases = new Set(
+      queue.filter((q) => q.entityType === "purchase").map((q) => q.entityId)
+    );
+    const [sales, purchases] = await Promise.all([
+      getJson<Sale[]>(K.sales, []),
+      getJson<LocalPurchase[]>(K.localPurchases, []),
+    ]);
     const additions: WebSyncQueueRow[] = [];
     const now = Date.now();
     for (const s of sales) {
-      if (!tracked.has(s.id)) {
+      if (!trackedSales.has(s.id)) {
         additions.push({
           id: generateId(),
           entityType: "sale",
           entityId: s.id,
+          enqueuedAt: now,
+          attemptCount: 0,
+          lastAttemptAt: null,
+          lastError: null,
+          status: "pending",
+        });
+      }
+    }
+    for (const p of purchases) {
+      if (!trackedPurchases.has(p.id)) {
+        additions.push({
+          id: generateId(),
+          entityType: "purchase",
+          entityId: p.id,
           enqueuedAt: now,
           attemptCount: 0,
           lastAttemptAt: null,
@@ -1509,6 +1529,9 @@ export function WebDatabaseProvider({ children }: { children: React.ReactNode })
       [K.localPurchaseItems, JSON.stringify([...savedItems, ...items])],
       [K.localStockMovements, JSON.stringify([...movements, ...movs])],
     ]);
+    // Enqueue this purchase for cloud sync so the server's stock_movements
+    // table stays in sync with local Receive Stock entries.
+    await enqueueSyncWeb("purchase", id);
     return { purchase, items: savedItems };
   }
 

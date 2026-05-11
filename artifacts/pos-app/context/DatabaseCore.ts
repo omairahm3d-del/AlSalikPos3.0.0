@@ -8,7 +8,7 @@ import type {
 } from "@/types";
 
 /** Phase 3b: outbound sync queue entry visible to the sync engine. */
-export type SyncEntityType = "sale";
+export type SyncEntityType = "sale" | "purchase";
 
 export interface SyncQueueItem {
   queueId: string;

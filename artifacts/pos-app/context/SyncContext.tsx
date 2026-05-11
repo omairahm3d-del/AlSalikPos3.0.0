@@ -9,7 +9,7 @@ import React, {
 import { AppState } from "react-native";
 import { useDatabase } from "@/context/DatabaseCore";
 import { useLicense } from "@/context/LicenseContext";
-import { syncOnce } from "@/lib/syncEngine";
+import { syncOnce, syncPurchasesOnce } from "@/lib/syncEngine";
 import { catalogSyncOnce } from "@/lib/catalogSyncEngine";
 import {
   getOwningCompanyId,
@@ -63,6 +63,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   sessionTokenRef.current = session?.token ?? null;
   const sessionCompanyIdRef = useRef<string | null>(null);
   sessionCompanyIdRef.current = session?.company?.id ?? null;
+  const sessionBranchIdRef = useRef<string | null>(null);
+  sessionBranchIdRef.current = session?.branch?.id ?? null;
   /**
    * The company id we have *verified* the local data belongs to. Drains only
    * proceed when this matches the current session's company. Storing the id
@@ -165,7 +167,19 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         }).catch(() => {});
       }
 
-      const error = salesResult.error ?? catalogResult.error ?? null;
+      // Sync local purchases (Receive Stock) to the server.
+      const purchaseResult = await syncPurchasesOnce(db, token, sessionBranchIdRef.current);
+      if (verifiedCompanyIdRef.current !== sessionCompanyIdRef.current) {
+        return null;
+      }
+      if (purchaseResult.unauthorized) {
+        setLastError("authorization expired");
+        refresh().catch(() => {});
+        await refreshCount();
+        return ACTIVE_INTERVAL_MS;
+      }
+
+      const error = salesResult.error ?? catalogResult.error ?? purchaseResult.error ?? null;
       if (error) {
         setLastError(error);
       } else if (salesResult.attempted > 0 || catalogResult.attempted > 0 || catalogResult.succeeded > 0) {
@@ -176,9 +190,9 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       }
       await refreshCount();
 
-      // Active cadence if either stream has more work past its backoff window.
-      const hasMore = salesResult.hasMore || catalogResult.hasMore;
-      const hadReadyItems = salesResult.hadReadyItems || catalogResult.hadReadyItems;
+      // Active cadence if any stream has more work past its backoff window.
+      const hasMore = salesResult.hasMore || catalogResult.hasMore || purchaseResult.hasMore;
+      const hadReadyItems = salesResult.hadReadyItems || catalogResult.hadReadyItems || purchaseResult.hadReadyItems;
       if (!hasMore) return IDLE_INTERVAL_MS;
       return hadReadyItems ? ACTIVE_INTERVAL_MS : IDLE_INTERVAL_MS;
     } catch (e) {
@@ -247,6 +261,10 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           await db.reconcilePendingSync();
           if (cancelled) return;
           verifiedCompanyIdRef.current = currentCompanyId;
+          // Remove any leftover seed catalog items (demo restaurant products
+          // with stockQuantity:999) immediately on session start so they don't
+          // linger until the first successful catalog pull completes.
+          db.clearSeedCatalog().catch(() => {});
         } else if (owner && owner !== currentCompanyId) {
           setLastError(
             "Local data belongs to a different company. Sync paused to avoid pushing it to the wrong tenant.",
@@ -262,6 +280,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
             await db.reconcilePendingSync();
             if (cancelled) return;
             verifiedCompanyIdRef.current = currentCompanyId;
+            db.clearSeedCatalog().catch(() => {});
           } else {
             setLastError(
               "Existing local sales have no tenant stamp. Sync paused — clear local data or contact support before pushing.",

@@ -1269,8 +1269,9 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
     // legacy sales (made before this feature) and any sale that was somehow
     // committed without an enqueue.
     const before = await db.getFirstAsync<{ count: number }>(
-      "SELECT COUNT(*) as count FROM sync_queue WHERE entity_type='sale'"
+      "SELECT COUNT(*) as count FROM sync_queue WHERE entity_type='sale' OR entity_type='purchase'"
     );
+    const now = Date.now();
     await db.runAsync(
       `INSERT OR IGNORE INTO sync_queue (id, entity_type, entity_id, enqueued_at, status)
        SELECT lower(hex(randomblob(16))), 'sale', s.id, ?, 'pending'
@@ -1278,10 +1279,21 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
        WHERE NOT EXISTS (
          SELECT 1 FROM sync_queue q WHERE q.entity_type='sale' AND q.entity_id=s.id
        )`,
-      [Date.now()]
+      [now]
+    );
+    // Also reconcile local purchases so any that were created before the
+    // purchase-sync feature (or while offline) get queued on next startup.
+    await db.runAsync(
+      `INSERT OR IGNORE INTO sync_queue (id, entity_type, entity_id, enqueued_at, status)
+       SELECT lower(hex(randomblob(16))), 'purchase', p.id, ?, 'pending'
+       FROM local_purchases p
+       WHERE NOT EXISTS (
+         SELECT 1 FROM sync_queue q WHERE q.entity_type='purchase' AND q.entity_id=p.id
+       )`,
+      [now]
     );
     const after = await db.getFirstAsync<{ count: number }>(
-      "SELECT COUNT(*) as count FROM sync_queue WHERE entity_type='sale'"
+      "SELECT COUNT(*) as count FROM sync_queue WHERE entity_type='sale' OR entity_type='purchase'"
     );
     return (after?.count ?? 0) - (before?.count ?? 0);
   }, [db]);
@@ -1703,6 +1715,13 @@ export function NativeDatabaseProvider({ children }: { children: React.ReactNode
         savedItems.push({ id: itemId, purchaseId: id, productClientId: l.productClientId, productName: l.productName, sku: l.sku ?? null, quantity: l.quantity, unitCost: l.unitCost, vatAmount: l.vatAmount, lineTotal });
       }
     });
+    // Enqueue this purchase for cloud sync so the server's stock_movements
+    // table stays in sync with local Receive Stock entries.
+    await db.runAsync(
+      "INSERT OR IGNORE INTO sync_queue (id, entity_type, entity_id, enqueued_at, status) VALUES (?, ?, ?, ?, 'pending')",
+      [generateId(), "purchase", id, Date.now()]
+    );
+    notifySyncQueueChanged();
     return {
       purchase: { id, supplierName: data.supplierName, referenceNumber: data.referenceNumber ?? null, receivedAt: createdAt, notes: data.notes ?? null, subtotal, vatAmount, total, itemCount: savedItems.length, createdAt },
       items: savedItems,
