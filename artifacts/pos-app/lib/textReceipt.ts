@@ -225,6 +225,46 @@ export function generateLaundryWhatsAppText(
   return lines.join("\n");
 }
 
+/**
+ * WhatsApp notification sent when a laundry order is marked "Ready for collection".
+ * Uses bilingual (English + Arabic) phrasing matching UAE laundry POS conventions.
+ */
+export function generateLaundryReadyWhatsAppText(
+  order: LaundryOrder,
+  business: BusinessSettings,
+): string {
+  const sep = "─────────────────────────────";
+  const lines: string[] = [];
+  const vatOn = business.vatEnabled !== false;
+
+  lines.push("*✅ Your laundry is READY for collection!*");
+  lines.push("*ملابسك جاهزة للاستلام! ✅*");
+  lines.push("");
+  if (business.businessName) lines.push(`*${business.businessName}*`);
+  if (business.address) lines.push(business.address);
+  if (business.phone) lines.push(`Tel: ${business.phone}`);
+  lines.push("");
+  lines.push(sep);
+  lines.push(`*Ticket #: ${order.ticketNumber}*`);
+  lines.push(`Customer: ${order.customerName}`);
+  if (order.orderType === "express") lines.push(`Type: Express ⚡`);
+  lines.push(sep);
+  lines.push("*Items:*");
+  for (const it of order.items) {
+    lines.push(`• ${it.productName} × ${it.quantity}  — ${CURRENCY} ${it.lineTotal.toFixed(2)}`);
+    if (it.notes) lines.push(`  _(${it.notes})_`);
+  }
+  lines.push(sep);
+  lines.push(`Subtotal:  ${CURRENCY} ${order.subtotal.toFixed(2)}`);
+  if (vatOn) lines.push(`VAT (5%):  ${CURRENCY} ${order.vatAmount.toFixed(2)}`);
+  lines.push(sep);
+  lines.push(`*AMOUNT DUE:  ${CURRENCY} ${order.total.toFixed(2)}*`);
+  lines.push("");
+  lines.push("Please collect at your earliest convenience.");
+  lines.push("يُرجى الحضور لاستلام طلبك في أقرب وقت ممكن.");
+  return lines.join("\n");
+}
+
 export function generateZReportText(report: ZReport, business: BusinessSettings, paperWidth: "58mm" | "80mm" = "80mm"): string {
   const width = paperWidth === "58mm" ? 32 : 48;
   const sep = "-".repeat(width);

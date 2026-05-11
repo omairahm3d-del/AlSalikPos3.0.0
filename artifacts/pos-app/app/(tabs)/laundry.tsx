@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -20,6 +21,10 @@ import { useLicense } from "@/context/LicenseContext";
 import { useStaff } from "@/context/StaffContext";
 import { useColors } from "@/hooks/useColors";
 import { pullLaundryOrders, pushLaundryStatus } from "@/lib/laundryApi";
+import {
+  formatWhatsAppPhone,
+  generateLaundryReadyWhatsAppText,
+} from "@/lib/textReceipt";
 import { formatCurrency } from "@/types";
 import type { BusinessSettings, LaundryOrder, LaundryOrderStatus, Product, Sale } from "@/types";
 import type { CartItem } from "@/types";
@@ -99,6 +104,29 @@ export default function LaundryOrdersScreen() {
 
   const displayed = allOrders.filter((o) => o.status === activeTab);
 
+  const sendReadyWhatsApp = useCallback(
+    (order: LaundryOrder) => {
+      if (!order.customerPhone) return;
+      const biz = businessSettings;
+      const text = generateLaundryReadyWhatsAppText(order, biz ?? {
+        businessName: "",
+        trn: "",
+        address: "",
+        phone: "",
+        email: "",
+        loyaltyPointsPerAed: 1,
+        loyaltyRedemptionRate: 0.01,
+        vatEnabled: true,
+      } as BusinessSettings);
+      const phone = formatWhatsAppPhone(order.customerPhone);
+      const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+      Linking.openURL(url).catch(() => {
+        Alert.alert("WhatsApp", "Could not open WhatsApp. Make sure it is installed.");
+      });
+    },
+    [businessSettings],
+  );
+
   const handleMarkReady = useCallback((order: LaundryOrder) => {
     setPendingReadyId(order.id);
   }, []);
@@ -111,7 +139,21 @@ export default function LaundryOrdersScreen() {
       pushLaundryStatus(session.token, order.id, "ready");
     }
     reload();
-  }, [updateLaundryOrderStatus, reload, session?.token]);
+    // Offer WhatsApp notification if the customer has a phone number.
+    if (order.customerPhone) {
+      Alert.alert(
+        "Order Ready",
+        `Notify ${order.customerName} via WhatsApp?`,
+        [
+          { text: "Skip", style: "cancel" },
+          {
+            text: "Send WhatsApp",
+            onPress: () => sendReadyWhatsApp(order),
+          },
+        ],
+      );
+    }
+  }, [updateLaundryOrderStatus, reload, session?.token, sendReadyWhatsApp]);
 
   const handleCollect = useCallback(async () => {
     if (!collectingOrder) return;
@@ -272,13 +314,24 @@ export default function LaundryOrdersScreen() {
         )}
 
         {item.status === "ready" && (
-          <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: colors.success, borderRadius: colors.radius }]}
-            onPress={() => { setCollectMethod("Card"); setCollectingOrder(item); }}
-          >
-            <Feather name="shopping-bag" size={15} color="#fff" />
-            <Text style={styles.actionBtnTxt}>Collect &amp; Pay</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+            {item.customerPhone ? (
+              <TouchableOpacity
+                style={[styles.whatsappBtn, { borderRadius: colors.radius }]}
+                onPress={() => sendReadyWhatsApp(item)}
+              >
+                <Feather name="message-circle" size={15} color="#25D366" />
+                <Text style={styles.whatsappBtnTxt}>WhatsApp</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: colors.success, borderRadius: colors.radius, flex: 1, marginTop: 0 }]}
+              onPress={() => { setCollectMethod("Card"); setCollectingOrder(item); }}
+            >
+              <Feather name="shopping-bag" size={15} color="#fff" />
+              <Text style={styles.actionBtnTxt}>Collect &amp; Pay</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         {item.status === "collected" && (
@@ -530,6 +583,8 @@ const styles = StyleSheet.create({
   notes: { fontSize: 12, fontStyle: "italic" },
   actionBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 10, marginTop: 4 },
   actionBtnTxt: { color: "#fff", fontWeight: "700", fontSize: 14, fontFamily: "Inter_700Bold" },
+  whatsappBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, paddingHorizontal: 14, borderWidth: 1.5, borderColor: "#25D366" },
+  whatsappBtnTxt: { color: "#25D366", fontWeight: "700", fontSize: 13 },
   collectedBadge: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: "#10B98118", marginTop: 4 },
   collectedTxt: { color: "#10B981", fontSize: 12, fontWeight: "600" },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: "center", alignItems: "center", padding: 16 },
