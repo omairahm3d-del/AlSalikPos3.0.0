@@ -125,3 +125,15 @@ id = "rK3mDwP5nBqXsY6uHjF1c"
 uri = "file://desktop-installer/dist/build-record-2.0.0.json"
 type = "unspecified"
 title = "Al Salik POS v2.0.0 — Build Record (EAS build URL + GCS paths)"
+
+[[outputs]]
+id = "1izHhTrrfd4MrhIq08nwp"
+uri = "file://downloads/AlSalik-POS-2.0.0-Windows64.tar.gz"
+type = "unspecified"
+title = "Al Salik POS 2.0.0 — Windows 64-bit Installer (.exe inside)"
+
+[[outputs]]
+id = "nRc3gTsc5xyZov7EgZm3p"
+uri = "file://downloads/AlSalik-POS-2.0.0-Android.tar.gz"
+type = "unspecified"
+title = "Al Salik POS 2.0.0 — Android APK (.apk inside)"

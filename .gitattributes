@@ -8,3 +8,5 @@ artifacts/pos-app/build-output/al-salik-pos.apk filter=lfs diff=lfs merge=lfs -t
 artifacts/pos-app/build-output/al-salik-pos.apk.tar.gz filter=lfs diff=lfs merge=lfs -text
 desktop-installer/AlSalikPOS-Installer-32.tar.gz filter=lfs diff=lfs merge=lfs -text
 desktop-installer/AlSalikPOS-Installer.tar.gz filter=lfs diff=lfs merge=lfs -text
+downloads/AlSalik-POS-2.0.0-Android.tar.gz filter=lfs diff=lfs merge=lfs -text
+downloads/AlSalik-POS-2.0.0-Windows64.tar.gz filter=lfs diff=lfs merge=lfs -text
