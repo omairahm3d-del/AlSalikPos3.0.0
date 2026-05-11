@@ -133,15 +133,15 @@ router.get("/download/info", (_req, res) => {
     windows64: {
       available: !!BUCKET_ID,
       filename: INSTALLER_NAME,
-      sizeBytes: 122379841,
-      sizeMB: 117,
+      sizeBytes: 121769492,
+      sizeMB: 116,
       platform: "Windows 10 / 11 (64-bit)",
       downloadUrl: "/api/download/installer",
     },
     windows32: {
       available: !!BUCKET_ID,
       filename: INSTALLER_32_NAME,
-      sizeBytes: 98653786,
+      sizeBytes: 98988690,
       sizeMB: 94,
       platform: "Windows 7 SP1+ / 10 / 11 (32-bit)",
       downloadUrl: "/api/download/installer-32",
