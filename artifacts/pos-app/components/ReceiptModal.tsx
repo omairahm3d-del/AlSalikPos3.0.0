@@ -65,7 +65,7 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
 
   const isTrnValid = business?.trn ? /^\d{15}$/.test(business.trn) : false;
 
-  const { captureAndPrintBitmap } = useUsbPrint();
+  const { captureAndPrintBitmap, openCashDrawer } = useUsbPrint();
 
   const handlePrint = async () => {
     if (!sale || !business) return;
@@ -112,6 +112,9 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
         try {
           const ok = await captureAndPrintBitmap(html, ps);
           if (!ok) Alert.alert("USB Print Failed", "Could not print via USB OTG.\n\nCheck that:\n• The printer is plugged in via OTG cable\n• The printer is powered on\n• You granted USB permission when prompted");
+          else if (ps.usbCashDrawerEnabled && sale.paymentMethod === "cash") {
+            await openCashDrawer(ps).catch(() => {});
+          }
         } catch (e: any) {
           Alert.alert("USB Print Error", e?.message ?? "Unknown error");
         }
@@ -130,7 +133,7 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
         const { generateReceiptText } = await import("@/lib/textReceipt");
         rawText = generateReceiptText(sale, items, business);
       }
-      await printHtml(html, {
+      const printed = await printHtml(html, {
         deviceName: ps?.windowsReceiptPrinterName || "",
         paperWidth: ps?.paperWidth || "80mm",
         rawMode: !!ps?.rawTextMode,
@@ -145,6 +148,9 @@ export function ReceiptModal({ visible, sale, onClose }: Props) {
         usbVendorId: ps?.usbPrinterEnabled && ps?.usbPrintMode !== "bitmap" && ps.usbPrinterVendorId != null ? ps.usbPrinterVendorId : undefined,
         usbProductId: ps?.usbPrinterEnabled && ps?.usbPrintMode !== "bitmap" ? (ps.usbPrinterProductId ?? 0) : undefined,
       });
+      if (printed && ps?.usbCashDrawerEnabled && ps?.usbPrinterEnabled && sale.paymentMethod === "cash") {
+        await openCashDrawer(ps).catch(() => {});
+      }
     } catch {
     }
   };

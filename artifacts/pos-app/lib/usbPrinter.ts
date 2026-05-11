@@ -10,6 +10,13 @@ export type UsbDevice = {
   serialNumber?: string;
 };
 
+export type UsbPrinterStatus =
+  | "idle"
+  | "connecting"
+  | "connected"
+  | "disconnected"
+  | "permission_denied";
+
 function getModule(): any | null {
   if (Platform.OS !== "android") return null;
   try {
@@ -55,6 +62,30 @@ export async function disconnectUsbPrinter(): Promise<void> {
     if (typeof mod.closeConn === "function") await mod.closeConn();
   } catch {
     // ignore
+  }
+}
+
+/**
+ * Lightweight connectivity check — tries to connect and disconnects if
+ * we were not already connected. Returns true if the device is reachable.
+ */
+export async function getPrinterStatus(
+  device: UsbDevice,
+): Promise<UsbPrinterStatus> {
+  if (Platform.OS !== "android") return "idle";
+  const mod = getModule();
+  if (!mod) return "idle";
+  try {
+    await mod.connectPrinter("USB", {
+      vendorId: device.vendorId,
+      productId: device.productId,
+      ...(device.deviceId != null ? { deviceId: device.deviceId } : {}),
+    });
+    return "connected";
+  } catch (e: any) {
+    const msg: string = e?.message ?? "";
+    if (msg.toLowerCase().includes("permission")) return "permission_denied";
+    return "disconnected";
   }
 }
 
@@ -104,12 +135,47 @@ export async function printUsbBitmap(
   }
 }
 
-export async function testUsbPrinter(device: UsbDevice, autoCut = true): Promise<boolean> {
+/**
+ * Sends the ESC/POS cash drawer open command.
+ * Works on pin 2 (most common). Falls back to pin 5 if needed.
+ */
+export async function openUsbCashDrawer(device: UsbDevice): Promise<boolean> {
+  if (Platform.OS !== "android") return false;
+  const mod = getModule();
+  if (!mod) return false;
+  try {
+    const connected = await connectUsbPrinter(device);
+    if (!connected) return false;
+    // ESC p m t1 t2 — pin 2, pulse width 25ms/250ms
+    const drawerCmd = ESC + "\x70\x00\x19\xfa";
+    await mod.printBill(drawerCmd);
+    return true;
+  } catch (e: any) {
+    console.warn("[usbPrinter] cash drawer:", e?.message ?? e);
+    return false;
+  }
+}
+
+export async function testUsbPrinter(
+  device: UsbDevice,
+  autoCut = true,
+): Promise<boolean> {
   const connected = await connectUsbPrinter(device);
   if (!connected) return false;
-  const label = device.productName || device.manufacturerName || `VID:${device.vendorId} PID:${device.productId}`;
+  const label =
+    device.productName ||
+    device.manufacturerName ||
+    `VID:${device.vendorId} PID:${device.productId}`;
   return printUsbText(
-    `AL SALIK POS\nUSB OTG Printer Test\n${new Date().toLocaleString("en-GB")}\n--------------------------------\nPrinter connected via OTG USB!\n${label}\nVendor ID : ${device.vendorId}\nProduct ID: ${device.productId}\n--------------------------------\n`,
+    `AL SALIK POS\n` +
+      `USB OTG Printer Test\n` +
+      `${new Date().toLocaleString("en-GB")}\n` +
+      `--------------------------------\n` +
+      `Printer connected via OTG USB!\n` +
+      `${label}\n` +
+      `Vendor ID : ${device.vendorId}\n` +
+      `Product ID: ${device.productId}\n` +
+      `--------------------------------\n`,
     { autoCut },
   );
 }

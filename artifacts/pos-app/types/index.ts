@@ -541,6 +541,7 @@ export interface PrinterSettings {
   usbPrinterProductId?: number;
   usbPrinterName?: string;
   usbPrintMode?: "text" | "bitmap";
+  usbCashDrawerEnabled?: boolean;
 }
 
 export interface KOTSettings {

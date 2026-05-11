@@ -15,6 +15,11 @@ interface UsbPrintContextValue {
     html: string,
     ps: PrinterSettings,
   ) => Promise<boolean>;
+  printUsbTextDirect: (
+    text: string,
+    ps: PrinterSettings,
+  ) => Promise<boolean>;
+  openCashDrawer: (ps: PrinterSettings) => Promise<boolean>;
 }
 
 const UsbPrintContext = createContext<UsbPrintContextValue | null>(null);
@@ -52,8 +57,50 @@ export function UsbPrintProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const printUsbTextDirect = useCallback(
+    async (text: string, ps: PrinterSettings): Promise<boolean> => {
+      if (Platform.OS !== "android") return false;
+      if (!ps.usbPrinterEnabled || ps.usbPrinterVendorId == null) return false;
+      try {
+        const { connectUsbPrinter, printUsbText } = await import(
+          "@/lib/usbPrinter"
+        );
+        const connected = await connectUsbPrinter({
+          vendorId: ps.usbPrinterVendorId,
+          productId: ps.usbPrinterProductId ?? 0,
+        });
+        if (!connected) return false;
+        return printUsbText(text, { autoCut: ps.autoCutPaper !== false });
+      } catch (e: any) {
+        console.warn("[UsbPrint] printUsbTextDirect:", e?.message ?? e);
+        return false;
+      }
+    },
+    [],
+  );
+
+  const openCashDrawer = useCallback(
+    async (ps: PrinterSettings): Promise<boolean> => {
+      if (Platform.OS !== "android") return false;
+      if (!ps.usbPrinterEnabled || ps.usbPrinterVendorId == null) return false;
+      try {
+        const { openUsbCashDrawer } = await import("@/lib/usbPrinter");
+        return openUsbCashDrawer({
+          vendorId: ps.usbPrinterVendorId,
+          productId: ps.usbPrinterProductId ?? 0,
+        });
+      } catch (e: any) {
+        console.warn("[UsbPrint] openCashDrawer:", e?.message ?? e);
+        return false;
+      }
+    },
+    [],
+  );
+
   return (
-    <UsbPrintContext.Provider value={{ captureAndPrintBitmap }}>
+    <UsbPrintContext.Provider
+      value={{ captureAndPrintBitmap, printUsbTextDirect, openCashDrawer }}
+    >
       {children}
       <UsbReceiptCapture ref={captureRef} />
     </UsbPrintContext.Provider>
