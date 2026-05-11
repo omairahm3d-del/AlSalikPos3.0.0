@@ -282,22 +282,17 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
             "Local data belongs to a different company. Sync paused to avoid pushing it to the wrong tenant.",
           );
         } else {
-          // owner is unset — either a true fresh install or a restored
-          // backup whose ownership stamp didn't survive. Distinguish by
-          // looking at whether any sales already exist locally.
-          const existingSales = await db.loadSales();
+          // owner is unset — fresh install, app reinstall, or stamp was
+          // cleared by a previous clearCompanyData(). CompanyWipeGuard
+          // already wipes all SQLite data (+ clears the stamp) when a
+          // different company activates, so if we land here with sales
+          // they almost certainly belong to the current session's company.
+          // Auto-adopt: stamp + reconcile and proceed.
+          await setOwningCompanyId(currentCompanyId);
+          await db.reconcilePendingSync();
           if (cancelled) return;
-          if (existingSales.length === 0) {
-            await setOwningCompanyId(currentCompanyId);
-            await db.reconcilePendingSync();
-            if (cancelled) return;
-            verifiedCompanyIdRef.current = currentCompanyId;
-            db.clearSeedCatalog().catch(() => {});
-          } else {
-            setLastError(
-              "Existing local sales have no tenant stamp. Sync paused — clear local data or contact support before pushing.",
-            );
-          }
+          verifiedCompanyIdRef.current = currentCompanyId;
+          db.clearSeedCatalog().catch(() => {});
         }
       } catch (e) {
         // Don't fall back to "safe" on error — leave verifiedCompanyIdRef

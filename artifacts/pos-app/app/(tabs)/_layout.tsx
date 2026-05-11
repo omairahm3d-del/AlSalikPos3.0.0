@@ -5,6 +5,7 @@ import { SymbolView } from "expo-symbols";
 import { Feather } from "@expo/vector-icons";
 import React from "react";
 import { Platform } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useWorkMode } from "@/context/WorkModeContext";
 
@@ -59,9 +60,16 @@ function NativeTabLayout() {
 
 function ClassicTabLayout() {
   const colors = useColors();
+  const insets = useSafeAreaInsets();
   const isIOS = Platform.OS === "ios";
   const { tableLabel, isSaloon, isLaundry, isRetail } = useWorkMode();
   const hideTablesAndKot = isLaundry || isRetail;
+
+  // On Android the tab bar must be tall enough to clear the system navigation
+  // bar (gesture strip or 3-button bar). We take the safe-area bottom inset
+  // into account so the bar is always fully visible regardless of nav mode.
+  const tabBarHeight = Platform.OS === "android" ? 60 + insets.bottom : undefined;
+  const tabBarItemPaddingBottom = Platform.OS === "android" ? 4 + insets.bottom : undefined;
 
   return (
     <Tabs
@@ -75,9 +83,9 @@ function ClassicTabLayout() {
           borderTopColor: colors.border,
           elevation: 0,
           shadowOpacity: 0,
-          height: Platform.OS === "android" ? 60 : undefined,
+          height: tabBarHeight,
         },
-        tabBarItemStyle: Platform.OS === "android" ? { paddingBottom: 4 } : undefined,
+        tabBarItemStyle: Platform.OS === "android" ? { paddingBottom: tabBarItemPaddingBottom } : undefined,
         tabBarLabelStyle: { fontSize: 11 },
       }}
     >
