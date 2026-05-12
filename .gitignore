@@ -57,3 +57,14 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Large binary release artifacts — keep locally, never commit
+*.zip
+*.tar.gz
+downloads/
+attached_assets/
+desktop-app/web-build/
+desktop-app/dist/
+Al-Salik-POS-*.zip
+Al-Salik-POS-*.tar.gz
+desktop-installer/AlSalikPOS-*.tar.gz
