@@ -36,6 +36,9 @@ minimumReleaseAgeExclude:
   - '@replit/*'
   - stripe-replit-sync
 
+ignoredBuiltDependencies:
+  - dtrace-provider
+
 onlyBuiltDependencies:
   - '@swc/core'
   - esbuild
