@@ -14,6 +14,50 @@
         "EXPO_PUBLIC_API_BASE": "https://retail-hub-omairahm3d.replit.app"
       }
     },
+    "laundry": {
+      "distribution": "internal",
+      "channel": "laundry",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE": "https://retail-hub-omairahm3d.replit.app",
+        "EXPO_PUBLIC_WORK_MODE": "laundry"
+      }
+    },
+    "saloon": {
+      "distribution": "internal",
+      "channel": "saloon",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE": "https://retail-hub-omairahm3d.replit.app",
+        "EXPO_PUBLIC_WORK_MODE": "saloon"
+      }
+    },
+    "retail": {
+      "distribution": "internal",
+      "channel": "retail",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE": "https://retail-hub-omairahm3d.replit.app",
+        "EXPO_PUBLIC_WORK_MODE": "retail"
+      }
+    },
+    "standard": {
+      "distribution": "internal",
+      "channel": "standard",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE": "https://retail-hub-omairahm3d.replit.app",
+        "EXPO_PUBLIC_WORK_MODE": "standard"
+      }
+    },
     "production": {
       "android": {
         "buildType": "app-bundle"

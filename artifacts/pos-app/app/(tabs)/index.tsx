@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { LaundryRegister } from "./_register/LaundryRegister";
 import {
   ActivityIndicator,
   Alert,
@@ -58,7 +59,7 @@ const LAUNDRY_ORDER_TYPES: { key: OrderType; label: string; icon: string }[] = [
   { key: "delivery", label: "Express", icon: "zap" },
 ];
 
-export default function POSScreen() {
+function StandardPOSScreen() {
   const colors = useColors();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -2847,3 +2848,14 @@ const styles = StyleSheet.create({
   itemDiscBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderRadius: 6, gap: 4 },
   itemDiscSheet: { width: "100%", maxWidth: 360, padding: 24 },
 });
+
+/**
+ * POSScreen — thin mode router.
+ * Laundry mode renders the fully-isolated LaundryRegister (no restaurant/saloon code).
+ * All other modes fall through to StandardPOSScreen.
+ */
+export default function POSScreen() {
+  const { isLaundry } = useWorkMode();
+  if (isLaundry) return <LaundryRegister />;
+  return <StandardPOSScreen />;
+}

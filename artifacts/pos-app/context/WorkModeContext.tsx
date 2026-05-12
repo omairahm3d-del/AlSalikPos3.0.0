@@ -24,9 +24,21 @@ interface WorkModeContextValue {
 
 const WorkModeContext = createContext<WorkModeContextValue | null>(null);
 
+/**
+ * Build-time mode lock: when EXPO_PUBLIC_WORK_MODE is set in eas.json,
+ * the APK is permanently locked to that mode regardless of what the server
+ * returns in the license JWT. This prevents cross-mode regressions — e.g.
+ * a laundry APK will never accidentally render saloon UI.
+ *
+ * Falls back to session.workMode (server-returned) for the multi-mode
+ * "preview" build and desktop installer where no lock is configured.
+ */
+const BUILD_TIME_MODE = process.env.EXPO_PUBLIC_WORK_MODE as WorkMode | undefined;
+
 export function WorkModeProvider({ children }: { children: React.ReactNode }) {
   const { session } = useLicense();
-  const workMode: WorkMode = (session?.workMode as WorkMode) ?? "standard";
+  const workMode: WorkMode =
+    BUILD_TIME_MODE ?? (session?.workMode as WorkMode) ?? "standard";
   const isSaloon = workMode === "saloon";
   const isLaundry = workMode === "laundry";
   const isRetail = workMode === "retail";
