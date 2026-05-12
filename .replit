@@ -58,10 +58,10 @@ externalPort = 3002
 [userenv]
 
 [userenv.shared]
-GITHUB_TOKEN = "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"
 EXPO_TOKEN = "TyI0n6c-MDvhH8HVodRz77smlSxnntsjF-HSJswm"
 DESKTOP_LATEST_VERSION = "1.0.1"
 DESKTOP_UPDATE_NOTES = "Fixes work mode (laundry/saloon) not applying correctly after admin changes company settings. All devices should update."
+Replit_Token = "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"
 
 [nix]
 channel = "stable-25_05"
