@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { LaundryRegister } from "./_register/LaundryRegister";
+import { SaloonRegister } from "./_register/SaloonRegister";
+import { RetailRegister } from "./_register/RetailRegister";
 import {
   ActivityIndicator,
   Alert,
@@ -2855,7 +2857,9 @@ const styles = StyleSheet.create({
  * All other modes fall through to StandardPOSScreen.
  */
 export default function POSScreen() {
-  const { isLaundry } = useWorkMode();
+  const { isLaundry, isSaloon, isRetail } = useWorkMode();
   if (isLaundry) return <LaundryRegister />;
+  if (isSaloon) return <SaloonRegister />;
+  if (isRetail) return <RetailRegister />;
   return <StandardPOSScreen />;
 }
