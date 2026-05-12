@@ -14,6 +14,20 @@ A mobile-first Point of Sale (POS) system for the UAE market, offering sales, in
 -   **Run API tests**: `pnpm --filter @workspace/api-server run test` (Vitest + supertest, hits the real `SAAS_DATABASE_URL`; tests isolate by per-test company and clean up via cascade)
 -   **Environment Variables**: `DATABASE_URL`, `SAAS_DATABASE_URL`, `SAAS_JWT_SECRET`, `SAAS_ADMIN_API_KEY`
 
+## EAS Android Builds (mode-locked APKs)
+
+Run from `artifacts/pos-app/`. Each profile produces a separate APK with its own package ID and display name so all 4 can be sideloaded on the same device simultaneously.
+
+| Profile | Command | App name | Android package |
+|---------|---------|----------|-----------------|
+| Standard/Restaurant | `eas build --platform android --profile standard` | Al Salik POS | `com.alsalikcomputers.pos` |
+| Saloon | `eas build --platform android --profile saloon` | Al Salik Saloon | `com.alsalikcomputers.pos.saloon` |
+| Laundry | `eas build --platform android --profile laundry` | Al Salik Laundry | `com.alsalikcomputers.pos.laundry` |
+| Retail | `eas build --platform android --profile retail` | Al Salik Retail | `com.alsalikcomputers.pos.retail` |
+| Multi-mode preview | `eas build --platform android --profile preview` | Al Salik POS | `com.alsalikcomputers.pos` |
+
+The `EXPO_PUBLIC_WORK_MODE` env var is baked in at build time by `eas.json`. `app.config.js` reads it to set the app name and package ID dynamically. The POS register screen for each mode lives in `app/(tabs)/_register/<Mode>Register.tsx` — completely isolated, no cross-mode branches.
+
 ## Stack
 
 -   **Runtime**: Node.js 24
