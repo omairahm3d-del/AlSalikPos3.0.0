@@ -1,16 +1,15 @@
 @echo off
 :: ============================================================
-::  Al Salik POS — Local Windows Installer Build
-::  Produces: desktop-installer\dist\Al Salik POS Setup X.X.X.exe
-:: ============================================================
+::  Al Salik Restaurant v3.0.0 — Windows Installer Build
+::  Produces: desktop-installer\dist\Al Salik Restaurant Setup 3.0.0.exe
 ::
 ::  Requirements:
 ::    1. Node.js 18+  — https://nodejs.org
 ::    2. pnpm         — npm install -g pnpm
 ::    3. NSIS 3.x     — https://nsis.sourceforge.io/Download
-::       (adds makensis.exe; needed for the custom installer script)
-::       If NSIS is NOT installed, this script falls back to
-::       electron-builder's built-in NSIS (simpler, still functional).
+::       (needed for the custom installer script)
+::       If NSIS is NOT installed, the script falls back to
+::       electron-builder's built-in NSIS (still functional).
 ::
 ::  Usage:
 ::    build-windows.bat           — 64-bit installer (Windows 10/11)
@@ -27,7 +26,7 @@ if /i "%~1"=="--32" set BUILD_32=1
 
 echo.
 echo  ============================================================
-echo   Al Salik POS — Windows Installer Local Build
+echo   Al Salik Restaurant v3.0.0 — Windows Installer Build
 echo  ============================================================
 echo.
 
@@ -80,7 +79,7 @@ if errorlevel 1 ( echo  FAILED: pnpm install & pause & exit /b 1 )
 
 :: ── Export Expo web build ─────────────────────────────────────────────────────
 echo.
-echo  Step 2: Exporting Expo web app...
+echo  Step 2: Exporting Expo web app (Al Salik Restaurant mode)...
 cd /d "%ROOT%\artifacts\pos-app"
 call pnpm exec expo export --platform web --output-dir ..\..\desktop-installer\www-new --clear
 if errorlevel 1 ( echo  FAILED: expo export & pause & exit /b 1 )
@@ -149,7 +148,7 @@ if "%BUILD_32%"=="1" (
     echo.
     echo  ============================================================
     echo   BUILD COMPLETE (32-bit)
-    echo   Installer: desktop-installer\dist-32\Al Salik POS Setup %APP_VER% (32-bit).exe
+    echo   Installer: desktop-installer\dist-32\Al Salik Restaurant Setup %APP_VER% (32-bit).exe
     echo  ============================================================
 
 ) else (
@@ -172,7 +171,7 @@ if "%BUILD_32%"=="1" (
     echo.
     echo  ============================================================
     echo   BUILD COMPLETE (64-bit)
-    echo   Installer: desktop-installer\dist\Al Salik POS Setup %APP_VER%.exe
+    echo   Installer: desktop-installer\dist\Al Salik Restaurant Setup %APP_VER%.exe
     echo  ============================================================
 )
 
