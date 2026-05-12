@@ -6,6 +6,7 @@ import { companyRepo } from "../repositories/companyRepo";
 import { licenseRepo } from "../repositories/licenseRepo";
 import { deviceRepo } from "../repositories/deviceRepo";
 import { notFound } from "../lib/errors";
+import { invalidateWorkModeCache } from "../middlewares/requireWorkMode";
 
 const isoDate = z.iso
   .datetime()
@@ -74,7 +75,10 @@ export const adminController = {
     const { workMode } = updateCompanyBody.parse(req.body);
     const company = await companyRepo.update(companyId, { workMode });
     if (!company) throw notFound("company_not_found", "Company not found");
-    req.log.info({ companyId, workMode }, "Company updated");
+    // Bust the in-process cache so the new work_mode takes effect immediately
+    // on the next request rather than waiting for the 5-minute TTL.
+    invalidateWorkModeCache(companyId);
+    req.log.info({ companyId, workMode }, "Company work mode updated");
     res.json({ company });
   },
 
