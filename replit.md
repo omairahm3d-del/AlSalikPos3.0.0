@@ -14,19 +14,45 @@ A mobile-first Point of Sale (POS) system for the UAE market, offering sales, in
 -   **Run API tests**: `pnpm --filter @workspace/api-server run test` (Vitest + supertest, hits the real `SAAS_DATABASE_URL`; tests isolate by per-test company and clean up via cascade)
 -   **Environment Variables**: `DATABASE_URL`, `SAAS_DATABASE_URL`, `SAAS_JWT_SECRET`, `SAAS_ADMIN_API_KEY`
 
-## EAS Android Builds (mode-locked APKs)
+## Android APK Local Builds (v3.0.0, no cloud)
 
-Run from `artifacts/pos-app/`. Each profile produces a separate APK with its own package ID and display name so all 4 can be sideloaded on the same device simultaneously.
+Run from `artifacts/pos-app/`. Add `--local` so EAS runs the build pipeline on **your laptop** instead of the EAS cloud. All 4 APKs have distinct app names, package IDs, and icons and can be sideloaded simultaneously on the same device.
 
-| Profile | Command | App name | Android package |
-|---------|---------|----------|-----------------|
-| Standard/Restaurant | `eas build --platform android --profile standard` | Al Salik POS | `com.alsalikcomputers.pos` |
-| Saloon | `eas build --platform android --profile saloon` | Al Salik Saloon | `com.alsalikcomputers.pos.saloon` |
-| Laundry | `eas build --platform android --profile laundry` | Al Salik Laundry | `com.alsalikcomputers.pos.laundry` |
-| Retail | `eas build --platform android --profile retail` | Al Salik Retail | `com.alsalikcomputers.pos.retail` |
-| Multi-mode preview | `eas build --platform android --profile preview` | Al Salik POS | `com.alsalikcomputers.pos` |
+**Prerequisites (laptop):** Android SDK, Java 17+, EAS CLI (`npm i -g eas-cli`), logged in (`eas login`).
 
-The `EXPO_PUBLIC_WORK_MODE` env var is baked in at build time by `eas.json`. `app.config.js` reads it to set the app name and package ID dynamically. The POS register screen for each mode lives in `app/(tabs)/_register/<Mode>Register.tsx` — completely isolated, no cross-mode branches.
+| Mode | Local build command | App name | Android package | Icon |
+|------|--------------------|-----------|-----------------|----|
+| Restaurant | `eas build --local --platform android --profile standard` | Al Salik Restaurant | `com.alsalikcomputers.pos` | Fork & knife |
+| Saloon | `eas build --local --platform android --profile saloon` | Al Salik Saloon | `com.alsalikcomputers.pos.saloon` | Golden scissors |
+| Laundry | `eas build --local --platform android --profile laundry` | Al Salik Laundry | `com.alsalikcomputers.pos.laundry` | Washing machine |
+| Retail | `eas build --local --platform android --profile retail` | Al Salik Retail | `com.alsalikcomputers.pos.retail` | Shopping bag |
+| Multi-mode preview | `eas build --local --platform android --profile preview` | Al Salik Restaurant | `com.alsalikcomputers.pos` | — |
+
+Each command produces a `.apk` file in `artifacts/pos-app/build/` on the laptop.
+
+## Windows Installer Local Build (v3.0.0)
+
+The Windows installer always wraps the **Restaurant** (standard) mode via the Electron shell.
+
+**Steps (run from `desktop-installer/`):**
+
+```bash
+# 1. Export Expo web (from repo root)
+pnpm --filter @workspace/desktop-installer run export-web
+
+# 2. Swap in the new web bundle and rebuild Electron unpacked dir
+pnpm --filter @workspace/desktop-installer run rebuild-web
+
+# 3. Build the Electron app (win x64, no signing)
+pnpm --filter @workspace/desktop-installer run build:win
+
+# 4. Package the NSIS installer  →  dist/Al Salik Restaurant Setup 3.0.0.exe
+pnpm --filter @workspace/desktop-installer run build:installer
+```
+
+For 32-bit / Windows 7: swap steps 3–4 with `build:win7-32` + `build:installer-32`.
+
+The `EXPO_PUBLIC_WORK_MODE` env var is baked in at build time by `eas.json`. `app.config.js` reads it to set the app name, icon, and package ID dynamically. The POS register screen for each mode lives in `app/(tabs)/_register/<Mode>Register.tsx` — completely isolated, no cross-mode branches.
 
 ## Stack
 

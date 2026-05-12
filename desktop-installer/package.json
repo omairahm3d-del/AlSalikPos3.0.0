@@ -1,7 +1,7 @@
 {
   "name": "alsalik-pos",
-  "productName": "Al Salik POS",
-  "version": "2.0.0",
+  "productName": "Al Salik Restaurant",
+  "version": "3.0.0",
   "description": "Point of Sale system by Al Salik Computers",
   "main": "main.js",
   "author": {
@@ -34,7 +34,7 @@
   },
   "build": {
     "appId": "com.alsalikcomputers.pos",
-    "productName": "Al Salik POS",
+    "productName": "Al Salik Restaurant",
     "copyright": "© 2025 Al Salik Computers. All rights reserved.",
     "asar": false,
     "directories": {
@@ -69,7 +69,7 @@
       "uninstallerIcon": "assets/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Al Salik POS",
+      "shortcutName": "Al Salik Restaurant",
       "menuCategory": "Al Salik Computers",
       "language": "1033"
     }

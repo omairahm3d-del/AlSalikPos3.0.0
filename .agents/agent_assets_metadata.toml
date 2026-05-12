@@ -42,6 +42,30 @@ uri = "file://attached_assets/slide_analytics.png"
 type = "image"
 title = "generated_image"
 
+[[generated]]
+id = "M5pHNStqpvl_LgTgmuhpC"
+uri = "file://artifacts/pos-app/assets/images/icon-restaurant.png"
+type = "image"
+title = "restaurant icon"
+
+[[generated]]
+id = "xlHtaxcVHiWCGbprchT2M"
+uri = "file://artifacts/pos-app/assets/images/icon-laundry.png"
+type = "image"
+title = "laundry icon"
+
+[[generated]]
+id = "EjvGhSjUc7eI58LXUxcJv"
+uri = "file://artifacts/pos-app/assets/images/icon-saloon.png"
+type = "image"
+title = "saloon icon"
+
+[[generated]]
+id = "EDpu94v146EzgaIrVIs4c"
+uri = "file://artifacts/pos-app/assets/images/icon-retail.png"
+type = "image"
+title = "retail icon"
+
 [[outputs]]
 id = "ac2cruQ1vTpPmBUTFt5gd"
 uri = "file://Al-Salik-POS-Windows-Installer.zip"

@@ -1,9 +1,9 @@
-; Al Salik POS — Windows Installer Script
+; Al Salik Restaurant — Windows Installer Script
 ; Publisher: Al Salik Computers
 
 Unicode True
 
-!define APP_NAME      "Al Salik POS"
+!define APP_NAME      "Al Salik Restaurant"
 ; APP_VERSION is injected at build time via: makensis /DAPP_VERSION=<version>
 ; Set the version in desktop-installer/package.json — that is the single source of truth.
 !ifndef APP_VERSION
@@ -11,16 +11,16 @@ Unicode True
 !endif
 !define PUBLISHER     "Al Salik Computers"
 !define APP_ID        "com.alsalikcomputers.pos"
-!define INSTALL_DIR   "$PROGRAMFILES64\Al Salik Computers\Al Salik POS"
+!define INSTALL_DIR   "$PROGRAMFILES64\Al Salik Computers\Al Salik Restaurant"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_ID}"
-!define APP_EXE       "Al Salik POS.exe"
+!define APP_EXE       "Al Salik Restaurant.exe"
 
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
 
 ; General
 Name          "${APP_NAME}"
-OutFile       "dist\Al Salik POS Setup ${APP_VERSION}.exe"
+OutFile       "dist\Al Salik Restaurant Setup ${APP_VERSION}.exe"
 InstallDir    "${INSTALL_DIR}"
 InstallDirRegKey HKLM "${UNINSTALL_KEY}" "InstallLocation"
 RequestExecutionLevel admin
@@ -32,7 +32,7 @@ RequestExecutionLevel admin
 !define MUI_HEADERIMAGE
 !define MUI_WELCOMEFINISHPAGE_BITMAP_NOSTRETCH
 !define MUI_FINISHPAGE_RUN          "$INSTDIR\${APP_EXE}"
-!define MUI_FINISHPAGE_RUN_TEXT     "Launch Al Salik POS"
+!define MUI_FINISHPAGE_RUN_TEXT     "Launch Al Salik Restaurant"
 
 ; Pages
 !insertmacro MUI_PAGE_WELCOME
@@ -49,7 +49,7 @@ RequestExecutionLevel admin
 Section "Install" SecInstall
   ; Close any running instance so we can overwrite locked files (icons, fonts, dlls)
   DetailPrint "Closing any running ${APP_NAME} instance..."
-  nsExec::Exec 'taskkill /F /IM "Al Salik POS.exe" /T'
+  nsExec::Exec 'taskkill /F /IM "Al Salik Restaurant.exe" /T'
   Sleep 1500
 
   SetOutPath "$INSTDIR"
@@ -95,6 +95,6 @@ Section "Uninstall"
   RMDir  "$SMPROGRAMS\${PUBLISHER}"
   RMDir /r "$INSTDIR"
   ; Remove app data so a fresh reinstall starts with a clean database
-  RMDir /r "$APPDATA\Al Salik POS"
+  RMDir /r "$APPDATA\Al Salik Restaurant"
   DeleteRegKey HKLM "${UNINSTALL_KEY}"
 SectionEnd
