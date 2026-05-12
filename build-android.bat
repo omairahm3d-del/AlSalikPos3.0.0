@@ -104,12 +104,18 @@ if errorlevel 1 (
 echo.
 echo  Step 2: Checking EAS login...
 cd /d "%POSAPP%"
-eas whoami >nul 2>&1
-if errorlevel 1 (
-    echo  Not logged in. Running: eas login
-    eas login
-    if errorlevel 1 ( echo  FAILED: eas login & pause & exit /b 1 )
+for /f "tokens=*" %%u in ('eas whoami 2^>^&1') do set EAS_USER=%%u
+if "!EAS_USER!"=="" (
+    echo.
+    echo  ============================================================
+    echo   Not logged in to EAS. Please log in now:
+    echo   Run:  eas login
+    echo   Then re-run build-android.bat
+    echo  ============================================================
+    echo.
+    pause & exit /b 1
 )
+echo  EAS user : !EAS_USER!
 
 mkdir "%DISTDIR%" 2>nul
 
