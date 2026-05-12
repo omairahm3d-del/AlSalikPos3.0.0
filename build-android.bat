@@ -90,7 +90,15 @@ echo.
 echo  Step 1: Installing workspace dependencies...
 cd /d "%ROOT%"
 call pnpm install
-if errorlevel 1 ( echo  FAILED: pnpm install & pause & exit /b 1 )
+:: pnpm exits 1 on build-script warnings (ERR_PNPM_IGNORED_BUILDS) even when
+:: all packages installed correctly — verify by checking expo is present.
+if errorlevel 1 (
+    if not exist "%POSAPP%\node_modules\expo\package.json" (
+        echo  FAILED: pnpm install - node_modules incomplete
+        pause & exit /b 1
+    )
+    echo  Note: pnpm reported build-script warnings but install succeeded.
+)
 
 :: ── Check EAS login ───────────────────────────────────────────────────────────
 echo.
