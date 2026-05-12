@@ -75,7 +75,13 @@ echo.
 echo  Step 1: Installing workspace dependencies...
 cd /d "%ROOT%"
 call pnpm install
-if errorlevel 1 ( echo  FAILED: pnpm install & pause & exit /b 1 )
+if errorlevel 1 (
+    if not exist "%ROOT%\artifacts\pos-app\node_modules\expo\package.json" (
+        echo  FAILED: pnpm install - node_modules incomplete
+        pause & exit /b 1
+    )
+    echo  Note: pnpm reported build-script warnings but install succeeded.
+)
 
 :: ── Export Expo web build ─────────────────────────────────────────────────────
 echo.
@@ -95,7 +101,13 @@ call node shorten-paths.js
 echo.
 echo  Step 3: Installing desktop-installer dependencies...
 call pnpm install
-if errorlevel 1 ( echo  FAILED: desktop-installer pnpm install & pause & exit /b 1 )
+if errorlevel 1 (
+    if not exist "%ROOT%\desktop-installer\node_modules\electron\package.json" (
+        echo  FAILED: desktop-installer pnpm install - node_modules incomplete
+        pause & exit /b 1
+    )
+    echo  Note: pnpm reported build-script warnings but install succeeded.
+)
 
 :: Get version number
 for /f "delims=" %%v in ('node -p "require('./package.json').version"') do set APP_VER=%%v

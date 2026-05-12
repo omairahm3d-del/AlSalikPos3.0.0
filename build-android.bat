@@ -134,19 +134,10 @@ echo  ════════════════════════�
 echo   [1/4]  Al Salik Restaurant  (standard profile)
 echo  ════════════════════════════════════════════════════════════
 cd /d "%POSAPP%"
-eas build --local --platform android --profile standard --non-interactive
+eas build --platform android --profile standard --wait
 if errorlevel 1 (
     echo  WARNING: Restaurant build failed — continuing with next mode.
-    goto :next_after_restaurant
 )
-:: EAS local places the APK inside artifacts/pos-app/  — find it
-for /f "delims=" %%f in ('dir /s /b "%POSAPP%\*.apk" 2^>nul') do (
-    copy /y "%%f" "%DISTDIR%\AlSalik-Restaurant-3.0.0.apk" >nul
-    echo  Output: dist\AlSalik-Restaurant-3.0.0.apk
-    del /f /q "%%f" >nul 2>&1
-    goto :next_after_restaurant
-)
-:next_after_restaurant
 if /i "!BUILD_MODE!"=="restaurant" goto :done
 if /i "!BUILD_MODE!"=="standard"   goto :done
 
@@ -156,18 +147,10 @@ echo  ════════════════════════�
 echo   [2/4]  Al Salik Saloon  (saloon profile)
 echo  ════════════════════════════════════════════════════════════
 cd /d "%POSAPP%"
-eas build --local --platform android --profile saloon --non-interactive
+eas build --platform android --profile saloon --wait
 if errorlevel 1 (
     echo  WARNING: Saloon build failed — continuing with next mode.
-    goto :next_after_saloon
 )
-for /f "delims=" %%f in ('dir /s /b "%POSAPP%\*.apk" 2^>nul') do (
-    copy /y "%%f" "%DISTDIR%\AlSalik-Saloon-3.0.0.apk" >nul
-    echo  Output: dist\AlSalik-Saloon-3.0.0.apk
-    del /f /q "%%f" >nul 2>&1
-    goto :next_after_saloon
-)
-:next_after_saloon
 if /i "!BUILD_MODE!"=="saloon" goto :done
 
 :build_laundry
@@ -176,18 +159,10 @@ echo  ════════════════════════�
 echo   [3/4]  Al Salik Laundry  (laundry profile)
 echo  ════════════════════════════════════════════════════════════
 cd /d "%POSAPP%"
-eas build --local --platform android --profile laundry --non-interactive
+eas build --platform android --profile laundry --wait
 if errorlevel 1 (
     echo  WARNING: Laundry build failed — continuing with next mode.
-    goto :next_after_laundry
 )
-for /f "delims=" %%f in ('dir /s /b "%POSAPP%\*.apk" 2^>nul') do (
-    copy /y "%%f" "%DISTDIR%\AlSalik-Laundry-3.0.0.apk" >nul
-    echo  Output: dist\AlSalik-Laundry-3.0.0.apk
-    del /f /q "%%f" >nul 2>&1
-    goto :next_after_laundry
-)
-:next_after_laundry
 if /i "!BUILD_MODE!"=="laundry" goto :done
 
 :build_retail
@@ -196,27 +171,19 @@ echo  ════════════════════════�
 echo   [4/4]  Al Salik Retail  (retail profile)
 echo  ════════════════════════════════════════════════════════════
 cd /d "%POSAPP%"
-eas build --local --platform android --profile retail --non-interactive
+eas build --platform android --profile retail --wait
 if errorlevel 1 (
     echo  WARNING: Retail build failed.
-    goto :done
-)
-for /f "delims=" %%f in ('dir /s /b "%POSAPP%\*.apk" 2^>nul') do (
-    copy /y "%%f" "%DISTDIR%\AlSalik-Retail-3.0.0.apk" >nul
-    echo  Output: dist\AlSalik-Retail-3.0.0.apk
-    del /f /q "%%f" >nul 2>&1
-    goto :done
 )
 
 :done
 echo.
 echo  ============================================================
-echo   DONE — APKs are in the dist\ folder:
+echo   DONE — Download your APKs from the EAS dashboard:
+echo   https://expo.dev/accounts/al-salik-computers/builds
 echo.
-echo   dist\AlSalik-Restaurant-3.0.0.apk
-echo   dist\AlSalik-Saloon-3.0.0.apk
-echo   dist\AlSalik-Laundry-3.0.0.apk
-echo   dist\AlSalik-Retail-3.0.0.apk
+echo   Or download each APK directly using:
+echo     eas build:download --platform android
 echo.
 echo   Install on a device via USB:
 echo     adb install -r dist\AlSalik-Restaurant-3.0.0.apk
